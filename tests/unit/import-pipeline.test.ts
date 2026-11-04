@@ -165,7 +165,8 @@ describe('CSV', () => {
       [2, 'invalid_row'],
       [3, 'invalid_row'],
     ]);
-    expect(t.rows[2]!.raw).toEqual({ a: '1', b: null });
+    // fehlende Zellen bleiben aus (keine Platzhalter je Spalte)
+    expect(t.rows[2]!.raw).toEqual({ a: '1' });
   });
 
   test('leere Datei', () => {
@@ -372,7 +373,11 @@ describe('Personenabgleich', () => {
     resolveAthletes(rows, lookup(), ctx);
     expect(rows[0]!.athleteId).toBe('a1');
     expect(codes(rows[1]!)).toEqual(['athlete_not_found:']);
-    expect(rows[1]!.issues[0]!.rawValue).toBe('Unbekannt, Anna, 2001-04-24');
+    // keine Personenkennung als Rohwert, nur die Zuordnungsfelder als Hinweis
+    expect(rows[1]!.issues[0]).toMatchObject({
+      rawValue: null,
+      params: { fields: 'athlete.last_name,athlete.first_name,athlete.date_of_birth' },
+    });
     expect(rows[2]!.issues[0]).toMatchObject({ code: 'athlete_ambiguous', params: { count: 2 } });
   });
 
@@ -392,7 +397,7 @@ describe('Personenabgleich', () => {
     expect(rows[2]!.issues[0]).toMatchObject({
       code: 'athlete_not_found',
       field: 'athlete.external_id',
-      rawValue: 'N-3',
+      rawValue: null,
       params: { system: 'osp-id' },
     });
   });
@@ -541,7 +546,7 @@ describe('HTTP-Quelle', () => {
   const config = (over: Record<string, unknown> = {}) =>
     HttpApiConfig.parse({
       type: 'http_api',
-      url: 'http://measure.mesh.test/v1/measurements',
+      url: 'https://measure.mesh.test/v1/measurements',
       itemsPath: 'data',
       auth: { type: 'bearer' },
       pagination: { type: 'page', pageParam: 'page', sizeParam: 'page_size', pageSize: 50 },

@@ -31,6 +31,9 @@ Hintergrundaufgaben des Servers (abschaltbar mit `MESH_WORKERS=false`, z. B. auf
   *failed* (sichtbar unter *Partner › Ausgangspostfach*, erneut anstoßbar mit *Jetzt zustellen*).
 - **Aufbewahrung** (minütlich): empfangene Daten abgelaufener Freigaben löschen, Replay-Schutz-Einträge
   (Nonces) nach 15 Minuten entfernen.
+- **Ablauf von Importvorschauen** (beim Start und stündlich): nicht übernommene Vorschauen, die älter als
+  7 Tage sind, werden verworfen (Status *verworfen*, vorgemerkte Zeilen, Vorschauzeilen und Rohwerte des
+  Fehlerprotokolls gelöscht; Audit-Eintrag `import.expire`).
 - **BI-Aktualisierung**: BI-Views nach Datenänderungen (entprellt) und periodisch (10 min) neu aufbauen.
 - **Sicherungen** nach `MESH_BACKUP_INTERVAL_HOURS` (Standard 24 h), Aufbewahrung der neuesten
   `MESH_BACKUP_RETENTION` (Standard 14) Sicherungen.
@@ -191,6 +194,22 @@ Auf einem **getrennten Testsystem** ohne Verbindung zu Partnern:
 | `MESH_BACKUP_KEY` | Sicherungsdateien | wie oben, **getrennt** von den Sicherungen | Sicherungen nicht wiederherstellbar |
 | Passwörter `mesh_owner`, `mesh_app`, `mesh_bi`, `postgres` | Datenbankzugänge | Passwortverwaltung | Zurücksetzen per `bootstrap.sql` (idempotent) |
 | Ed25519-Knotenschlüssel | Identität gegenüber Partnern | nur verschlüsselt in der Datenbank, nie exportiert | siehe Master-Key |
+| Zugangsgeheimnisse von API-Quellen | Zugang zu Messsystemen | verschlüsselt in der Datenbank (AAD `connector.secret:<id>`), nie ausgegeben | in der Oberfläche neu setzen |
+
+### Zugangsgeheimnisse von API-Quellen
+
+Ein gespeichertes Geheimnis (Bearer-Token oder Header-Wert) ist an das Ziel des Connectors gebunden:
+
+- Ändert sich der **Origin** der URL (Schema, Host, Port) oder die **Art der Authentifizierung**
+  (einschließlich des Header-Namens), wird das Geheimnis gelöscht (Audit `connector.secret_cleared`) und
+  muss für das neue Ziel neu gesetzt werden. Pfad, Abfrageparameter und Paginierung dürfen sich ändern.
+- *Beispiel abrufen* mit einem gespeicherten Connector verwendet ausschließlich dessen gespeicherte URL und
+  Authentifizierung.
+- Geheimnisse werden nur über **https://** gesendet. Ausnahmen: Loopback-Adressen (`127.0.0.1`, `::1`,
+  `localhost`, z. B. ein Messsystem-Adapter auf demselben Server) oder ausdrücklich
+  `MESH_SOURCE_ALLOW_INSECURE_HTTP=true` (Standard `false`; nur in abgeschotteten Netzen, da das
+  Geheimnis dann im Klartext übertragen wird). Sonst wird der Abruf mit `source_not_allowed`
+  (Grund `insecure_http`) abgewiesen und protokolliert.
 
 ### Master-Key rotieren
 
@@ -285,7 +304,8 @@ Danach in *System* die Version prüfen. Weitere Updates:
 | Sicherungen | neueste `MESH_BACKUP_RETENTION` Dateien | Aufbewahrung ausgelagerter Kopien |
 | Athleten- und Messdaten | bis zur Löschung durch Datenverantwortliche | Löschfristen je Datensatz (z. B. Ende der Kaderzugehörigkeit + x Jahre), regelmäßige Prüfung |
 | Audit-Log, Austauschprotokoll | **nur anhängbar, keine automatische Löschung** | Aufbewahrungsfrist (Nachweispflicht vs. Datenminimierung); Archivierung/Kürzung ist im Prototyp nicht vorgesehen |
-| Importläufe, Fehlerprotokolle | bleiben bis zur Löschung des Connectors | Frist festlegen |
+| Importläufe, Fehlerprotokolle (Metadaten) | Zeitpunkt, Dateiname, Prüfsumme, Zähler sowie Zeile, Feld und Prüfcode je Fehler bleiben dauerhaft erhalten (Connectoren können nicht gelöscht, nur deaktiviert werden). Der Dateiname wird unverändert übernommen – Dateien nicht nach Personen benennen | Frist festlegen; eine Löschfunktion ist im Prototyp nicht vorgesehen |
+| Importvorschauen (vorgemerkte Zeilen, Vorschauzeilen, Rohwerte im Fehlerprotokoll) | gelöscht bei Übernahme oder Verwerfen, spätestens nach **7 Tagen** (stündliche Prüfung); Zeilen einer Person sofort bei deren Löschung. Zuordnungsfehler speichern keine Namen, Geburtsdaten oder Kennungen als Rohwert | – |
 
 ## Prüfung der Audit-Kette
 
@@ -307,6 +327,9 @@ erkennbar wird.
   Datensatz. Freigaberegeln werden in TypeScript ausgewertet (siehe [ADR 0004](adr/0004-freigabelogik-reine-funktionen.md)).
 - Uploads bis 20 MB je CSV-Datei, Antworten im Partneraustausch bis 50 MB; der Datenabruf (`access.data`)
   ist auf 100 000 Zeilen je Anfrage begrenzt.
+- Importe: höchstens 500 Spalten und 100 000 Zeilen (bzw. API-Einträge) je Lauf, API-Antworten insgesamt
+  bis 50 MB; darüber schlägt der Lauf mit `too_many_columns` bzw. `too_many_rows` (bzw.
+  `invalid_response`) fehl, ohne die Quelle weiter zu lesen.
 - Datenbankgröße: überschlägig 1–2 KB je Messwert inkl. Indizes; Audit-Log wächst mit jedem Zugriff
   (einige hundert Byte je Eintrag).
 - Sicherungsdauer und -größe nach der ersten Sicherung messen und Plattenplatz für

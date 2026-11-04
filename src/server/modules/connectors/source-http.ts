@@ -1,15 +1,70 @@
 /**
  * Abruf von API-Quellen (JSON über HTTP): Host-Freigabeliste (SSRF-Schutz), Authentifizierung,
  * Seitenweise Abfrage, Zeitlimit, Größenbegrenzung. Keine Weiterleitungen (könnten die Freigabeliste umgehen).
+ *
+ * Zugangsgeheimnisse gehen nur über https:// (oder an Loopback-Adressen bzw. mit
+ * MESH_SOURCE_ALLOW_INSECURE_HTTP=true) und nur an das gespeicherte Ziel ihres Connectors (siehe index.ts).
  */
 import { createHash } from 'node:crypto';
-import type { HttpApiConfig } from '../../../shared/contract/connectors.ts';
+import type { ConnectorConfig, HttpApiConfig } from '../../../shared/contract/connectors.ts';
 import type { Deps } from '../../core/deps.ts';
-import { getPath } from './pipeline.ts';
+import { getPath, MAX_SOURCE_ROWS } from './pipeline.ts';
 import type { IssueParams } from './validate.ts';
 
+export { MAX_SOURCE_ROWS };
 export const MAX_API_BYTES = 50 * 1024 * 1024;
-export const MAX_SOURCE_ROWS = 100_000;
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
+
+/** Darf ein Zugangsgeheimnis an diese URL gesendet werden? (https, Loopback oder ausdrücklich erlaubt) */
+export function secureTransport(url: string, allowInsecureHttp: boolean): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol === 'https:') return true;
+  if (u.protocol !== 'http:') return false;
+  return allowInsecureHttp || LOOPBACK_HOSTS.has(u.hostname.toLowerCase());
+}
+
+/** Wird beim Abruf ein Geheimnis mitgesendet? */
+export function sendsSecret(config: HttpApiConfig, secret: string | null): boolean {
+  return !!secret && config.auth.type !== 'none';
+}
+
+/**
+ * Ziel, an das ein gespeichertes Geheimnis gebunden ist: Origin (Schema, Host, Port) und Art der
+ * Authentifizierung. Ändert sich das Ziel, wird das Geheimnis verworfen. CSV-Quellen: null.
+ */
+export function secretTarget(config: ConnectorConfig): string | null {
+  if (config.type !== 'http_api') return null;
+  let origin: string;
+  try {
+    origin = new URL(config.url).origin.toLowerCase();
+  } catch {
+    origin = config.url;
+  }
+  const auth =
+    config.auth.type === 'header' ? `header:${config.auth.headerName.toLowerCase()}` : config.auth.type;
+  return `${origin}|${auth}`;
+}
+
+export type SourceDenial = 'source_not_allowed' | 'insecure_http';
+
+/** Prüfung vor jedem Abruf: Host freigegeben, Geheimnis nur über sichere Verbindung */
+export function checkSource(
+  config: HttpApiConfig,
+  secret: string | null,
+  cfg: { MESH_SOURCE_ALLOWED_HOSTS: readonly string[]; MESH_SOURCE_ALLOW_INSECURE_HTTP: boolean },
+): SourceDenial | null {
+  if (!isHostAllowed(config.url, cfg.MESH_SOURCE_ALLOWED_HOSTS)) return 'source_not_allowed';
+  if (sendsSecret(config, secret) && !secureTransport(config.url, cfg.MESH_SOURCE_ALLOW_INSECURE_HTTP)) {
+    return 'insecure_http';
+  }
+  return null;
+}
 
 /** host[:port] der URL steht in MESH_SOURCE_ALLOWED_HOSTS (Vergleich in Kleinbuchstaben) */
 export function isHostAllowed(url: string, allowed: readonly string[]): boolean {
@@ -40,22 +95,52 @@ export function sourceNameOf(url: string): string {
   }
 }
 
+type ApiFailure = 'source_unreachable' | 'invalid_response' | 'too_many_rows';
+
 export type ApiFetchResult =
   | { ok: true; items: unknown[]; sha256: string; size: number; pages: number; truncated: boolean }
-  | {
-      ok: false;
-      code: 'source_unreachable' | 'invalid_response';
-      params: IssueParams;
-      sha256: string;
-      size: number;
-    };
+  | { ok: false; code: ApiFailure; params: IssueParams; sha256: string; size: number };
+
+/** Antwortkörper lesen, höchstens budget Bytes (bricht beim Überschreiten ab, statt alles zu laden) */
+async function readBody(res: Response, budget: number): Promise<Uint8Array | null> {
+  const declared = Number(res.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > budget) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > budget) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.byteLength;
+  }
+  return out;
+}
 
 export async function fetchApiItems(
   fetchFn: Deps['fetch'],
   config: HttpApiConfig,
   secret: string | null,
-  opts: { maxPages?: number } = {},
+  opts: { maxPages?: number; allowInsecureHttp?: boolean } = {},
 ): Promise<ApiFetchResult> {
+  // Absicherung: Aufrufer prüfen vorher mit checkSource (Audit, verständlicher Fehler)
+  if (sendsSecret(config, secret) && !secureTransport(config.url, opts.allowInsecureHttp ?? false)) {
+    throw new Error('refusing to send source credentials over insecure transport');
+  }
   const hash = createHash('sha256');
   let size = 0;
   const items: unknown[] = [];
@@ -71,7 +156,7 @@ export async function fetchApiItems(
     if (config.auth.type === 'bearer') headers.authorization = `Bearer ${secret}`;
     else if (config.auth.type === 'header') headers[config.auth.headerName] = secret;
   }
-  const fail = (code: 'source_unreachable' | 'invalid_response', params: IssueParams): ApiFetchResult => ({
+  const fail = (code: ApiFailure, params: IssueParams): ApiFetchResult => ({
     ok: false,
     code,
     params,
@@ -105,17 +190,17 @@ export async function fetchApiItems(
       await res.body?.cancel().catch(() => {});
       return fail('source_unreachable', { status: res.status });
     }
-    let bytes: Uint8Array;
+    let bytes: Uint8Array | null;
     try {
-      bytes = new Uint8Array(await res.arrayBuffer());
+      bytes = await readBody(res, MAX_API_BYTES - size);
     } catch (err) {
       const name = (err as { name?: string })?.name;
       return fail('source_unreachable', { reason: name === 'TimeoutError' ? 'timeout' : 'network' });
     }
+    if (!bytes) return fail('invalid_response', { reason: 'too_large' });
     pages++;
     size += bytes.byteLength;
     hash.update(bytes);
-    if (size > MAX_API_BYTES) return fail('invalid_response', { reason: 'too_large' });
 
     let json: unknown;
     try {
@@ -125,8 +210,10 @@ export async function fetchApiItems(
     }
     const pageItems = getPath(json, config.itemsPath);
     if (!Array.isArray(pageItems)) return fail('invalid_response', { reason: 'items_not_array' });
-    items.push(...pageItems);
-    if (items.length > MAX_SOURCE_ROWS) return fail('invalid_response', { reason: 'too_many_items' });
+    // vor dem Übernehmen prüfen; kein Spread (große Seiten würden den Aufrufstapel sprengen)
+    if (items.length + pageItems.length > MAX_SOURCE_ROWS)
+      return fail('too_many_rows', { max: MAX_SOURCE_ROWS });
+    for (const item of pageItems) items.push(item);
 
     if (pg.type === 'none') {
       done = true;

@@ -99,6 +99,10 @@ export const Product = z.object({
 });
 export type Product = z.infer<typeof Product>;
 
+/**
+ * Vollständige Statistik (nur für Datenverantwortliche: products.preview, releases.preview). Enthält
+ * Angaben über Zeilen außerhalb der Freigabe, z. B. wie viele Personen keine Einwilligung haben.
+ */
 export const DataStats = z.object({
   /** Zeilen des Produkts vor Anwendung der Freigabe */
   total: z.number().int(),
@@ -108,12 +112,25 @@ export const DataStats = z.object({
   excludedByConsent: z.number().int(),
 });
 
+/** Ergebnis der Vorschau für Datenverantwortliche (mit vollständiger Statistik) */
 export const DataResult = z.object({
   columns: z.array(ColumnDef),
   rows: z.array(z.record(z.string(), Scalar)),
   stats: DataStats,
 });
 export type DataResult = z.infer<typeof DataResult>;
+
+/**
+ * Ergebnis eines Datenabrufs durch Empfänger (access.data): nur die gelieferten Zeilen und deren Anzahl.
+ * Keine Angaben über Zeilen außerhalb der Freigabe (Gesamtzahl, Ausschlüsse nach Filter, Zeitraum oder
+ * fehlender Einwilligung) – sie verrieten etwa, für wie viele Personen keine Einwilligung vorliegt.
+ */
+export const AccessDataResult = z.object({
+  columns: z.array(ColumnDef),
+  rows: z.array(z.record(z.string(), Scalar)),
+  stats: z.object({ returned: z.number().int() }),
+});
+export type AccessDataResult = z.infer<typeof AccessDataResult>;
 
 export const AccessGrant = z.object({
   releaseId: Uuid,
@@ -214,7 +231,7 @@ export const productRoutes = {
       format: ExportFormat.default('json'),
       limit: z.coerce.number().int().min(1).max(100000).optional(),
     }),
-    response: DataResult,
+    response: AccessDataResult,
     download: true,
   }),
 } as const;

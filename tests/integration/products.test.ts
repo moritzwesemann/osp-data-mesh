@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { DataResult, Product } from '../../src/shared/contract/products.ts';
+import type { AccessDataResult, DataResult, Product } from '../../src/shared/contract/products.ts';
 import { createTestNode, type TestNode, type TestUser } from '../helpers/node.ts';
 import { type StandardSeed, seedApiToken, seedDataset, seedRelease, seedStandard } from '../helpers/seed.ts';
 
@@ -386,7 +386,7 @@ describe('Datenzugriff (access.*)', () => {
   });
 
   test('access.data JSON: nur freigegebene Spalten und Zeilen, protokolliert', async () => {
-    const res = await node.request<DataResult>(
+    const res = await node.request<AccessDataResult>(
       'GET',
       `/api/v1/access/${coachRelease}/data?purpose=training_steering`,
       { as: coach },
@@ -395,7 +395,8 @@ describe('Datenzugriff (access.*)', () => {
     expect(res.json.columns.map((c) => c.key)).toEqual(['last_name', 'cmj']);
     expect(res.json.rows).toHaveLength(4);
     expect(new Set(res.json.rows.map((r) => r.last_name))).toEqual(new Set(['Clausen', 'Dorn']));
-    expect(res.json.stats.excludedByFilter).toBe(6);
+    // Empfänger erfahren nichts über Zeilen außerhalb der Freigabe (hier: 6 durch die Zeilenbeschränkung)
+    expect(res.json.stats).toEqual({ returned: 4 });
     const entry = (await audit('access.data')).at(-1)!;
     expect(entry.outcome).toBe('success');
     expect(entry.actor_id).toBe(coach.id);
@@ -491,7 +492,7 @@ describe('Datenzugriff (access.*)', () => {
 
   test('API-Token (Bearer) für Werkzeuge wie Python oder Power BI', async () => {
     const { token } = await seedApiToken(node.deps.db, analyst.id);
-    const res = await node.request<DataResult>(
+    const res = await node.request<AccessDataResult>(
       'GET',
       `/api/v1/access/${analystRelease}/data?purpose=training_steering&limit=2`,
       { headers: { authorization: `Bearer ${token}` } },

@@ -3,8 +3,10 @@
  * speichern (Status "previewed"), Übernahme (Athletenkern bzw. dataset_record) oder Verwerfen.
  *
  * Datenschutz: Die Rohdatei wird nicht gespeichert (nur SHA-256 und Größe). Vorgemerkte Zeilen
- * (import_run.staged) und Vorschauzeilen werden bei Übernahme oder Verwerfen gelöscht; es bleiben
- * Zähler, Prüfsumme und das Fehlerprotokoll (import_error).
+ * (import_run.staged), Vorschauzeilen und Rohwerte im Fehlerprotokoll gibt es nur während der Vorschau;
+ * sie werden bei Übernahme, Verwerfen oder Ablauf gelöscht, die Zeilen einer gelöschten Person sofort
+ * (siehe retention.ts). Es bleiben Zähler, Prüfsumme und das Fehlerprotokoll (Zeile, Feld, Code).
+ * Zuordnungsfehler speichern keine Personenkennungen als Rohwert.
  */
 import { sql } from 'kysely';
 import type { Scalar } from '../../../shared/contract/common.ts';
@@ -23,6 +25,8 @@ import {
   existingRecordKey,
   flagRecordUpdates,
   type Issue,
+  MAX_SOURCE_COLUMNS,
+  MAX_SOURCE_ROWS,
   type MappedRow,
   mapRow,
   markDuplicates,
@@ -30,14 +34,24 @@ import {
   naturalKeyOf,
   type PipelineContext,
   parseCsv,
-  type RowStatus,
   resolveAthletes,
   type SourceTable,
   summarize,
   tableFromItems,
 } from './pipeline.ts';
 import { connectorInputOf, loadDataset, toImportRun } from './repo.ts';
-import { fetchApiItems, hostOf, isHostAllowed, MAX_SOURCE_ROWS, sourceNameOf } from './source-http.ts';
+import {
+  CLEARED_PREVIEW,
+  clearRawValues,
+  type PreviewData,
+  type RowSubject,
+  readStaged,
+  recordVanished,
+  type StagedRun,
+  subjectsOf,
+  withoutRows,
+} from './retention.ts';
+import { checkSource, fetchApiItems, hostOf, type SourceDenial, sourceNameOf } from './source-http.ts';
 import { type ConvertOptions, localDate } from './validate.ts';
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -46,6 +60,13 @@ const MAX_RAW_VALUE = 500;
 
 /** AAD des verschlüsselten Zugangsgeheimnisses (die Schlüsselrotation der CLI verlässt sich darauf) */
 export const secretAad = (connectorId: string) => `connector.secret:${connectorId}`;
+
+/** Abweisung einer API-Quelle (Host nicht freigegeben oder Geheimnis über unverschlüsseltes http) */
+export function sourceDenied(denial: SourceDenial): AppError {
+  return denial === 'insecure_http'
+    ? new AppError('source_not_allowed', { reason: 'insecure_http' })
+    : new AppError('source_not_allowed');
+}
 
 export interface RequestContext {
   deps: Deps;
@@ -69,16 +90,6 @@ interface StagedRecord {
   recordKey: string;
   observedAt: string | null;
   data: Record<string, Scalar>;
-}
-
-interface PreviewData {
-  sourceColumns: string[];
-  rows: {
-    rowNumber: number;
-    raw: Record<string, string | null>;
-    mapped: Record<string, Scalar>;
-    status: RowStatus;
-  }[];
 }
 
 export interface ImportRunDetailOut {
@@ -154,6 +165,7 @@ export async function startRun(
       });
     }
     table = parseCsv(decoded.text, input.config.delimiter);
+    if (table.limit) return persistLimit(rc, connector, source, table, sourceIssues);
     convert = {
       decimalSeparator: input.config.decimalSeparator,
       dateFormat: input.config.dateFormat,
@@ -161,21 +173,24 @@ export async function startRun(
     };
   } else {
     const cfg = input.config;
-    if (!isHostAllowed(cfg.url, deps.config.MESH_SOURCE_ALLOWED_HOSTS)) {
+    const secret = connector.secret_enc ? deps.box.open(connector.secret_enc, secretAad(connector.id)) : null;
+    const denial = checkSource(cfg, secret, deps.config);
+    if (denial) {
       await deps.audit.record({
         actor: rc.actor,
         action: 'import.start',
         outcome: 'denied',
         objectType: 'connector',
         objectId: connector.id,
-        details: { reason: 'source_not_allowed', host: hostOf(cfg.url) },
+        details: { reason: denial, host: hostOf(cfg.url) },
         ip: rc.ip,
         requestId: rc.requestId,
       });
-      throw new AppError('source_not_allowed');
+      throw sourceDenied(denial);
     }
-    const secret = connector.secret_enc ? deps.box.open(connector.secret_enc, secretAad(connector.id)) : null;
-    const res = await fetchApiItems(deps.fetch, cfg, secret);
+    const res = await fetchApiItems(deps.fetch, cfg, secret, {
+      allowInsecureHttp: deps.config.MESH_SOURCE_ALLOW_INSECURE_HTTP,
+    });
     source = { name: sourceNameOf(cfg.url), sha256: res.sha256, size: res.size };
     if (!res.ok) {
       return persistRun(rc, connector, {
@@ -207,10 +222,9 @@ export async function startRun(
       });
     }
     table = tableFromItems(res.items);
+    if (table.limit) return persistLimit(rc, connector, source, table, sourceIssues);
     convert = { decimalSeparator: '.', dateFormat: cfg.dateFormat, ...base };
   }
-  if (table.rows.length > MAX_SOURCE_ROWS)
-    throw new AppError('payload_too_large', { reason: 'too_many_rows' });
 
   // Fehlende Quellspalten machen den ganzen Lauf unbrauchbar (bei leerer API-Antwort gibt es keine Spalten)
   const missing =
@@ -255,10 +269,14 @@ export async function startRun(
 
   const identifierSystem =
     input.athleteMatch.strategy === 'external_id' ? input.athleteMatch.system : connector.slug;
-  const staged =
+  const stagedRows: (StagedAthlete | StagedRecord)[] =
     input.targetType === 'athletes'
       ? summary.valid.map((r) => stageAthlete(r, identifierSystem))
       : summary.valid.map((r) => stageRecord(r));
+  const staged: StagedRun<StagedAthlete | StagedRecord> = {
+    rows: stagedRows,
+    subjects: subjectsOf(rows, identifierSystem),
+  };
 
   return persistRun(rc, connector, {
     status: 'previewed',
@@ -380,8 +398,52 @@ interface PersistInput {
   errorRows?: number;
   warningRows?: number;
   issues: Issue[];
-  staged?: unknown[];
+  staged?: StagedRun<StagedAthlete | StagedRecord>;
   previewRows?: PreviewData['rows'];
+}
+
+/** Quelle überschreitet eine Obergrenze (Spalten, Zeilen): Lauf schlägt fehl, ohne Zeilen zu verarbeiten */
+function persistLimit(
+  rc: RequestContext,
+  connector: Row<'connector'>,
+  source: PersistInput['source'],
+  table: SourceTable,
+  sourceIssues: Issue[],
+): Promise<ImportRunDetailOut> {
+  const code = table.limit!;
+  return persistRun(rc, connector, {
+    status: 'failed',
+    failureCode: code,
+    source,
+    columns: code === 'too_many_columns' ? [] : table.columns,
+    totalRows: 0,
+    issues: [
+      ...sourceIssues,
+      {
+        rowNumber: 0,
+        field: null,
+        code,
+        severity: 'error',
+        rawValue: null,
+        params: { max: code === 'too_many_columns' ? MAX_SOURCE_COLUMNS : MAX_SOURCE_ROWS },
+      },
+    ],
+  });
+}
+
+/**
+ * Personen, die seit dem Nachschlagen gelöscht wurden, nicht in die Vorschau übernehmen. Die
+ * Lesesperre sorgt dafür, dass eine gleichzeitige Löschung entweder vorher abgeschlossen ist (Person
+ * fehlt hier) oder auf diesen Lauf wartet und ihn danach bereinigt.
+ */
+async function rowsOfVanishedAthletes(trx: DbOrTx, subjects: readonly RowSubject[]): Promise<Set<number>> {
+  const ids = [...new Set(subjects.map((s) => s.a).filter((a): a is string => !!a))];
+  const present = new Set<string>();
+  for (const chunk of chunks(ids)) {
+    const found = await trx.selectFrom('athlete').select('id').where('id', 'in', chunk).forShare().execute();
+    for (const f of found) present.add(f.id);
+  }
+  return new Set(subjects.filter((s) => s.a && !present.has(s.a)).map((s) => s.r));
 }
 
 async function persistRun(
@@ -391,8 +453,22 @@ async function persistRun(
 ): Promise<ImportRunDetailOut> {
   const { deps } = rc;
   const now = deps.now();
-  const preview: PreviewData = { sourceColumns: p.columns, rows: p.previewRows ?? [] };
-  const run = await deps.db.transaction().execute(async (trx) => {
+  const result = await deps.db.transaction().execute(async (trx) => {
+    let staged = p.staged ?? { rows: [], subjects: [] };
+    let previewRows = p.previewRows ?? [];
+    let issues = p.issues;
+    let vanished: number[] = [];
+    if (p.status === 'previewed') {
+      const gone = await rowsOfVanishedAthletes(trx, staged.subjects);
+      if (gone.size > 0) {
+        const next = withoutRows(staged, previewRows, gone);
+        staged = next.staged;
+        previewRows = next.preview;
+        vanished = next.removedStaged;
+        issues = issues.map((i) => (gone.has(i.rowNumber) ? { ...i, rawValue: null } : i));
+      }
+    }
+    const preview: PreviewData = { sourceColumns: p.columns, rows: previewRows };
     const created = await trx
       .insertInto('import_run')
       .values({
@@ -402,7 +478,7 @@ async function persistRun(
         source_name: p.source.name,
         source_sha256: p.source.sha256,
         source_size: p.source.size,
-        staged: p.status === 'previewed' ? JSON.stringify(p.staged ?? []) : null,
+        staged: p.status === 'previewed' ? JSON.stringify(staged) : null,
         preview: JSON.stringify(preview),
         total_rows: p.totalRows,
         valid_rows: p.validRows ?? 0,
@@ -415,7 +491,7 @@ async function persistRun(
       })
       .returningAll()
       .executeTakeFirstOrThrow();
-    for (const chunk of chunks(p.issues, 1000)) {
+    for (const chunk of chunks(issues, 1000)) {
       await trx
         .insertInto('import_error')
         .values(
@@ -425,12 +501,15 @@ async function persistRun(
             field: i.field,
             code: i.code,
             severity: i.severity,
-            raw_value: i.rawValue === null ? null : i.rawValue.slice(0, MAX_RAW_VALUE),
+            // Rohwerte nur während der Vorschau (zur Korrektur der Quelle)
+            raw_value:
+              p.status !== 'previewed' || i.rawValue === null ? null : i.rawValue.slice(0, MAX_RAW_VALUE),
             params: JSON.stringify(i.params),
           })),
         )
         .execute();
     }
+    await recordVanished(trx, created.id, vanished, 'preview');
     await deps.audit.record(
       {
         actor: rc.actor,
@@ -455,9 +534,14 @@ async function persistRun(
       },
       trx,
     );
-    return created;
+    const vanishedIssues = vanished.map(() => ({ code: 'athlete_not_found' as const, field: null }));
+    return { run: created, preview, issues: [...issues, ...vanishedIssues] };
   });
-  return { run: toImportRun(run, connector.name), preview, errorSummary: summarizeIssues(p.issues) };
+  return {
+    run: toImportRun(result.run, connector.name),
+    preview: result.preview,
+    errorSummary: summarizeIssues(result.issues),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -495,9 +579,6 @@ export async function loadRunDetail(db: DbOrTx, runId: string): Promise<ImportRu
 
 const NATURAL_KEY_COLUMNS = new Set(['last_name', 'first_name', 'date_of_birth']);
 
-/** Vorschauzeilen (Rohwerte mit Personenbezug) nach Übernahme/Verwerfen entfernen; Spalten bleiben */
-const CLEARED_PREVIEW = sql`jsonb_set(coalesce(preview, '{}'::jsonb), '{rows}', '[]'::jsonb)`;
-
 export async function commitRun(rc: RequestContext, runId: string): Promise<ImportRun> {
   const { deps } = rc;
   const result = await deps.db
@@ -522,27 +603,11 @@ export async function commitRun(rc: RequestContext, runId: string): Promise<Impo
 
       const counts =
         input.targetType === 'athletes'
-          ? await commitAthletes(trx, rc, (run.staged ?? []) as StagedAthlete[])
-          : await commitRecords(trx, run, input.targetDatasetId!, (run.staged ?? []) as StagedRecord[]);
+          ? await commitAthletes(trx, rc, readStaged<StagedAthlete>(run.staged).rows)
+          : await commitRecords(trx, run, input.targetDatasetId!, readStaged<StagedRecord>(run.staged).rows);
 
-      if (counts.vanished.length > 0) {
-        for (const chunk of chunks(counts.vanished, 1000)) {
-          await trx
-            .insertInto('import_error')
-            .values(
-              chunk.map((rowNumber) => ({
-                run_id: run.id,
-                row_number: rowNumber,
-                field: null,
-                code: 'athlete_not_found',
-                severity: 'warning' as const,
-                raw_value: null,
-                params: JSON.stringify({ phase: 'commit' }),
-              })),
-            )
-            .execute();
-        }
-      }
+      await recordVanished(trx, run.id, counts.vanished, 'commit');
+      await clearRawValues(trx, [run.id]);
       const updated = await trx
         .updateTable('import_run')
         .set({
@@ -731,6 +796,7 @@ export async function discardRun(rc: RequestContext, runId: string): Promise<Imp
       .where('id', '=', runId)
       .returningAll()
       .executeTakeFirstOrThrow();
+    await clearRawValues(trx, [runId]);
     const c = await trx
       .selectFrom('connector')
       .select('name')

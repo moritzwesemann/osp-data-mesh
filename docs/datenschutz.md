@@ -31,6 +31,7 @@ zusammenlaufen. Jeder Knoten entscheidet selbst über seine Freigaben.
 | | Mess- und Fachdaten je Datensatz-Kategorie: Leistung (`performance`), Training (`training`), Wettkampf (`competition`), **Gesundheit (`health`, Art. 9)**, Sonstiges | `dataset_record` |
 | | Einwilligungsnachweise (Zweck, Kategorie, Gültigkeit, Vermerk zum Nachweis) | `consent_record` |
 | | empfangene Daten anderer OSP (nur freigabebezogene Pseudonyme + freigegebene Spalten) | `received_row` |
+| | Importvorschauen: geprüfte, noch nicht übernommene Zeilen einer Quelle, Auszug der Rohwerte, Rohwerte fehlerhafter Felder – nur bis zur Übernahme, zum Verwerfen oder höchstens 7 Tage (siehe [Datenminimierung](#datenminimierung)) | `import_run.staged`, `import_run.preview`, `import_error.raw_value` |
 | Nutzende des Systems (Beschäftigte des OSP, Partner-Administrationen) | E-Mail, Name, Rollen, Anmeldezeitpunkte, Sperrstatus, IP-Adresse und User-Agent der Sitzung, API-Token-Metadaten | `app_user`, `user_session`, `api_token` |
 | | Protokolldaten: Wer hat wann was getan (inkl. IP-Adresse) | `audit_log`, `exchange_log` |
 
@@ -94,6 +95,12 @@ Audit- bzw. Austauschprotokoll festgehalten.
   Freigabe liefern würde.
 - **Keine Gesamtsynchronisation:** Partner erhalten nur einzelne freigegebene Produkte; jeder Abruf
   ersetzt die bisherige Kopie vollständig.
+- **Importe:** Die hochgeladene Datei bzw. API-Antwort wird nicht gespeichert (nur Prüfsumme und Größe).
+  Geprüfte Zeilen, die Vorschau und die Rohwerte fehlerhafter Felder bleiben nur, solange die Vorschau
+  offen ist: Sie werden bei Übernahme oder Verwerfen gelöscht, spätestens nach **7 Tagen** automatisch
+  (Audit `import.expire`). Fehler bei der Personenzuordnung (`athlete_not_found`, `athlete_ambiguous`)
+  speichern keine Namen, Geburtsdaten oder Kennungen, nur Zeile und Zuordnungsfelder. Dauerhaft bleiben
+  nur Zähler, Prüfsumme, Dateiname, Spaltennamen und das Fehlerprotokoll aus Zeile, Feld und Prüfcode.
 
 ## Pseudonymisierung im Austausch
 
@@ -123,7 +130,7 @@ Zähler und Codes.
 |---|---|
 | Auskunft (Art. 15) | Personendetail (Rolle `data_steward`): Stammdaten, Kennungen, Einwilligungen, Anzahl Einträge je Datensatz; Einträge je Datensatz abrufbar. Empfänger: Austauschprotokoll je Freigabe (welcher Partner hat wann welche Spalten erhalten). Eine Gesamtauskunft „auf Knopfdruck“ ist nicht umgesetzt; sie wird aus diesen Ansichten zusammengestellt. |
 | Berichtigung (Art. 16) | Stammdaten und Messwerte ändern bzw. per Import korrigieren. Partner erhalten den berichtigten Stand mit ihrem nächsten Abruf (Pull, vollständiger Ersatz der Kopie); eine aktive Berichtigungsmitteilung gibt es nicht. |
-| Löschung (Art. 17) | *Person löschen* entfernt die Person mit allen Einträgen, Kennungen und Einwilligungen und erzeugt **signierte Löschmitteilungen** an alle Partner, die Daten der Person erhalten haben (Art. 19). BI-Zeilen werden in derselben Transaktion entfernt. |
+| Löschung (Art. 17) | *Person löschen* entfernt die Person mit allen Einträgen, Kennungen und Einwilligungen und erzeugt **signierte Löschmitteilungen** an alle Partner, die Daten der Person erhalten haben (Art. 19). BI-Zeilen werden in derselben Transaktion entfernt, ebenso die Zeilen der Person in **offenen Importvorschauen** (vorgemerkte Zeilen, Vorschau, Rohwerte im Fehlerprotokoll; Audit `import.erase`), damit eine spätere Übernahme sie nicht wieder anlegt. Übernommene oder verworfene Importläufe enthalten keine Personendaten mehr. Nicht erfasst sind Audit-Log (nur IDs) und Sicherungen (siehe unten). |
 | Einschränkung (Art. 18) | kein eigener Status; Umsetzung durch Widerruf der Einwilligung bzw. Ausschluss über Freigabebedingungen und Dokumentation |
 | Datenübertragbarkeit (Art. 20) | Export von Datenprodukten als CSV, JSON oder XML |
 | Widerspruch (Art. 21), Widerruf der Einwilligung (Art. 7 Abs. 3) | Widerruf erfassen → sofort wirksam für Ausgaben mit Einwilligungsprüfung; Mitteilungen an betroffene Partner |
@@ -137,7 +144,8 @@ Verarbeitungstätigkeiten zu dokumentieren.
 ## Speicherdauer
 
 Technische Löschregeln und organisatorisch festzulegende Fristen: siehe
-[Betrieb › Aufbewahrung](betrieb.md#aufbewahrung-und-löschfristen). Festzulegen sind insbesondere Fristen
+[Betrieb › Aufbewahrung](betrieb.md#aufbewahrung-und-löschfristen). Importvorschauen werden nach höchstens
+7 Tagen automatisch verworfen. Festzulegen sind insbesondere Fristen
 für Mess- und Gesundheitsdaten (z. B. nach Ende der Kaderzugehörigkeit), für Einwilligungsnachweise und für
 das Audit-Log (Abwägung zwischen Nachweisfunktion und Datenminimierung).
 

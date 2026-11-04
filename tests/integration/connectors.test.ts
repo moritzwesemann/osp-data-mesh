@@ -15,7 +15,8 @@ import {
 import { TestMesh, type TestNode, type TestUser } from '../helpers/node.ts';
 
 const API_TOKEN = 'test-messsystem-token';
-const API_URL = 'http://measure.mesh.test/v1/measurements';
+// Zugangsgeheimnisse gehen nur über https (bzw. an Loopback-Adressen)
+const API_URL = 'https://measure.mesh.test/v1/measurements';
 
 let mesh: TestMesh;
 let node: TestNode;
@@ -26,7 +27,7 @@ const apiRequests: string[] = [];
 beforeAll(async () => {
   mesh = new TestMesh();
   const api = createMockMeasurementApi({ token: API_TOKEN });
-  mesh.routes.set('http://measure.mesh.test', (req) => {
+  mesh.routes.set('https://measure.mesh.test', (req) => {
     apiRequests.push(req.url);
     return api(req);
   });
@@ -155,7 +156,7 @@ describe('CSV: Athleten-Stammdaten (osp-nord)', () => {
       .select('staged')
       .where('id', '=', preview.run.id)
       .executeTakeFirstOrThrow();
-    expect((row.staged as unknown[]).length).toBe(40);
+    expect((row.staged as { rows: unknown[] }).rows.length).toBe(40);
     expect(await athleteCount()).toBe(0);
   });
 
@@ -393,15 +394,17 @@ describe('CSV: Leistungsdiagnostik (natürlicher Schlüssel)', () => {
     const content =
       'Nachname,Vorname,Geburtsdatum,Testdatum,Protokoll,VO2max,Laktatschwelle_W,HFmax\n' +
       'Testperson,Erika,2002-02-02,2026-01-15,Stufentest Laufband,55.5,,190\n';
+    const person = {
+      lastName: 'Testperson',
+      firstName: 'Erika',
+      dateOfBirth: '2002-02-02',
+      sport: 'Leichtathletik',
+      squadStatus: 'LK',
+    };
+    // Löschung über die API: Person wird sofort aus der offenen Vorschau entfernt
     const created = await node.request<{ id: string }>('POST', '/api/v1/athletes', {
       as: steward,
-      body: {
-        lastName: 'Testperson',
-        firstName: 'Erika',
-        dateOfBirth: '2002-02-02',
-        sport: 'Leichtathletik',
-        squadStatus: 'LK',
-      },
+      body: person,
     });
     const r = await startImport(node, steward, ldConnector.id, fileForm(content, 'eine-zeile.csv'));
     expect(r.run.validRows).toBe(1);
@@ -410,9 +413,27 @@ describe('CSV: Leistungsdiagnostik (natürlicher Schlüssel)', () => {
     ).toBe(200);
     const run = await commitRun(node, steward, r.run.id);
     expect(run).toMatchObject({ insertedRows: 0, updatedRows: 0 });
+    expect((await auditEntries(node, 'import.commit'))[0]!.details).toMatchObject({ skipped: 0 });
+    expect((await errorsOf(r.run.id)).items).toContainEqual(
+      expect.objectContaining({
+        rowNumber: 1,
+        code: 'athlete_not_found',
+        severity: 'warning',
+        params: { phase: 'erasure' },
+      }),
+    );
+
+    // Absicherung bei der Übernahme (Person fehlt, ohne dass der Lauf bereinigt wurde)
+    const again = await node.request<{ id: string }>('POST', '/api/v1/athletes', {
+      as: steward,
+      body: person,
+    });
+    const r2 = await startImport(node, steward, ldConnector.id, fileForm(content, 'eine-zeile.csv'));
+    await node.deps.db.deleteFrom('athlete').where('id', '=', again.json.id).execute();
+    const run2 = await commitRun(node, steward, r2.run.id);
+    expect(run2).toMatchObject({ insertedRows: 0, updatedRows: 0 });
     expect((await auditEntries(node, 'import.commit'))[0]!.details).toMatchObject({ skipped: 1 });
-    const errors = await errorsOf(r.run.id);
-    expect(errors.items).toContainEqual(
+    expect((await errorsOf(r2.run.id)).items).toContainEqual(
       expect.objectContaining({
         rowNumber: 1,
         code: 'athlete_not_found',
@@ -523,9 +544,14 @@ describe('API-Quelle: Sprungkraft-Messsystem', () => {
       'out_of_range:data.jump_height_cm',
     ]);
     const errors = await errorsOf(r.run.id);
-    expect(errors.items.find((e) => e.code === 'athlete_not_found')!.rawValue).toBe(
-      BAD_MEASUREMENTS.unknownAthlete,
-    );
+    // keine Personenkennung als Rohwert, nur Zeile, Feld und Kennungssystem
+    const notFound = errors.items.find((e) => e.code === 'athlete_not_found')!;
+    expect(notFound).toMatchObject({
+      field: 'athlete.external_id',
+      rawValue: null,
+      params: { system: 'osp-id' },
+    });
+    expect(JSON.stringify(errors)).not.toContain(BAD_MEASUREMENTS.unknownAthlete);
     const run = await commitRun(node, steward, r.run.id);
     expect(run).toMatchObject({ insertedRows: 120, updatedRows: 0 });
     const records = await node.request<{

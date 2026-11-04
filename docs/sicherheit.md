@@ -36,7 +36,9 @@ Grundsätze:
   liegt nur mit dem Master-Key verschlüsselt in der Datenbank.
 - **Vertrauensaufnahme** ausschließlich manuell: Knotenkarte austauschen, **Fingerprint über einen zweiten
   Kanal abgleichen**, Vertrauen bestätigen (Rolle `admin`); beidseitig erforderlich. Sperren
-  (`suspended`) beendet jeden Austausch sofort.
+  (`suspended`) beendet jeden Austausch sofort – nur Mitteilungen (`notice`) des gesperrten Partners werden
+  weiter angenommen, weil sie ausschließlich von ihm stammende Kopien löschen (Widerruf, Löschung,
+  Einwilligungswiderruf).
 - Jede Anfrage und jede Antwort ist über die **exakten Body-Bytes** signiert (keine Kanonisierung). Der
   Empfänger prüft bekannten/vertrauten Absender, Signatur, Schema, Empfänger, Zeitstempel (± 5 min) und
   Einmaligkeit der Nachrichten-ID (Replay-Schutz, 15 min). Antworten sind über `inReplyTo` an die Anfrage
@@ -45,6 +47,11 @@ Grundsätze:
   Daten verschiedener Freigaben lassen sich beim Empfänger nicht verknüpfen.
 - Fehlerantworten verraten Nicht-Empfängern nichts über Existenz oder Status von Freigaben
   (einheitlich `not_found`).
+- **Schutz vor Überflutung:** Absender werden geprüft, bevor der Body gelesen wird; Anfragen höchstens
+  2 MB. Abgelehnte Anfragen stehen alle im Betriebslog, im Audit-Log nur die erste je Quelle und Code in
+  5 Minuten (höchstens 20 je 5 Minuten). Nach 60 Ablehnungen je IP-Adresse (bzw. je behauptetem, nicht
+  zugelassenem Absender) in 5 Minuten antwortet der Knoten mit 429, ohne weitere Prüfung. Eine gefälschte
+  Absenderkennung sperrt keinen echten Partner aus. Details: [Protokoll](protokoll.md#schutz-vor-überflutung).
 
 Details: [Föderationsprotokoll](protokoll.md), [ADR 0005](adr/0005-pull-austausch-ed25519.md).
 
@@ -55,13 +62,20 @@ Details: [Föderationsprotokoll](protokoll.md), [ADR 0005](adr/0005-pull-austaus
 | Passwortspeicherung | **Argon2id** (`Bun.password`), nie im Klartext |
 | Passwortregeln | mind. 12 Zeichen, nicht gleich E-Mail-Adresse, nicht gleich bisherigem Passwort |
 | Initialpasswörter | von Administration bzw. `create-admin` erzeugt; Änderung bei der ersten Anmeldung erzwungen (bis dahin nur Passwortwechsel möglich) |
-| Kontosperre | nach **5** Fehlversuchen in Folge für **15 Minuten**; Entsperren durch Administration möglich |
+| Kontosperre | nach **5** Fehlversuchen in Folge für **15 Minuten** (gilt auch mit richtigem Passwort; Fehlversuche während der Sperre verlängern sie nicht); Entsperren durch Administration (*Benutzer › Sperre aufheben*, `users.update` mit `unlock: true`) |
 | Ratenbegrenzung | 30 Anmeldeversuche je IP-Adresse in 5 Minuten (im Speicher des Prozesses) |
-| Konto-Aufzählung | bei unbekannter E-Mail wird trotzdem ein Hash geprüft (gleiche Antwortzeit), einheitliche Fehlermeldung |
+| Konto-Aufzählung | bei unbekannter E-Mail wird trotzdem ein Hash geprüft (gleiche Antwortzeit); **einheitliche Antwort** 401 `invalid_credentials` für unbekannte E-Mail, falsches Passwort, inaktives und gesperrtes Konto (Meldung: „E-Mail-Adresse oder Passwort ist falsch, oder das Konto ist vorübergehend gesperrt.“); der tatsächliche Grund (`invalid_credentials`, `inactive`, `locked`) steht nur im Audit-Log |
 | Sitzungen | zufälliges 256-Bit-Token im Cookie `osp_session` (`HttpOnly`, `SameSite=Strict`, `Secure`); in der Datenbank nur SHA-256; Ablauf nach `MESH_SESSION_TTL_HOURS` (Standard 12 h); Passwort-Reset beendet alle Sitzungen der Person |
 | CSRF | zustandsändernde Anfragen mit Sitzungs-Cookie benötigen zusätzlich den Header `X-OSP-CSRF: 1` (fremde Seiten können ihn ohne CORS-Freigabe nicht setzen) + `SameSite=Strict` |
-| API-Tokens | für Werkzeuge (Excel, Power BI, Python): `Authorization: Bearer osp_…`, 256 Bit Zufall, nur SHA-256 gespeichert, **einmalige Anzeige**, Ablauf 1–365 Tage (Standard 90), jederzeit widerrufbar; Rechte = Rollen der Person |
-| Inaktive Konten | sofort abgewiesen (Sitzungen und Tokens) |
+| API-Tokens | für Werkzeuge (Excel, Power BI, Python): `Authorization: Bearer osp_…`, 256 Bit Zufall, nur SHA-256 gespeichert, **einmalige Anzeige**, Ablauf 1–365 Tage (Standard 90), jederzeit widerrufbar; Rechte = Rollen der Person. Erzeugen nur mit Sitzung (Passwort-Anmeldung), nicht mit einem Token (403 `forbidden`, Grund `session_required`). **Alle Tokens einer Person werden widerrufen** bei eigenem Passwortwechsel, Zurücksetzen durch die Administration und Deaktivierung (Audit `token.revoke` je Token) |
+| Inaktive Konten | sofort abgewiesen (Sitzungen beendet, Tokens widerrufen; auch nach einer Reaktivierung bleiben sie ungültig) |
+
+**Restrisiko Kontosperre als Angriff:** Wer eine E-Mail-Adresse kennt, kann das Konto mit fünf
+Fehlversuchen je 15 Minuten gesperrt halten (Verfügbarkeit, keine Vertraulichkeit). Die Ratenbegrenzung je
+IP-Adresse bremst das, verhindert es aber nicht (z. B. bei verteilten Angriffen). Erkennung über das
+Audit-Log (`auth.login`, `outcome = denied`, Grund `locked`); Gegenmaßnahmen: Entsperren durch die
+Administration, Quelle am Proxy bzw. an der Firewall sperren. Die einheitliche Antwort verrät dabei nicht,
+ob ein Konto existiert oder gesperrt ist.
 
 Nicht umgesetzt (offen): Zwei-Faktor-Authentisierung, Single Sign-on (SAML/OIDC) mit dem
 Verzeichnisdienst des OSP.
@@ -79,7 +93,8 @@ keinen impliziten Zugriff auf Fachdaten.** Daten erhalten Rollen nur über Freig
 - **Validierung** jeder Anfrage (Pfad, Query, Body) gegen das zod-Schema des Vertrags; Fehler →
   `validation_failed` mit Feldcodes. **Ausgaben** werden gegen das Antwortschema gefiltert (unbekannte
   Felder entfernt) – verhindert versehentliche Datenabflüsse.
-- **Größenbegrenzung:** API 1 MB, CSV-Uploads 20 MB, Föderation 50 MB.
+- **Größenbegrenzung:** API 1 MB, CSV-Uploads 20 MB, Föderationsanfragen 2 MB (Body erst nach der
+  Absenderprüfung gelesen), Antworten von Partnern beim Abruf bis 50 MB.
 - **SQL** ausschließlich parametrisiert (Kysely); dynamische Bezeichner (BI-Views) werden gegen ein
   striktes Muster geprüft.
 - **Sicherheits-Header:** Content-Security-Policy (`default-src 'self'`, keine fremden Skripte,
@@ -161,7 +176,9 @@ Partneradressen werden nur bei der manuellen Vertrauensaufnahme festgelegt.
   Rollenänderungen, Zugriffe auf Personendaten (auch lesend), Importe, Freigaben, Widerrufe, Einwilligungen,
   Löschungen, jeder Austausch (gesendet/empfangen/abgelehnt), Sicherungen, Wiederherstellungen,
   Schlüsselrotation, abgewiesene Zugriffe (`outcome = denied`). Keine personenbezogenen Rohdaten in den
-  Details, nur IDs und Zähler.
+  Details, nur IDs und Zähler. Abgelehnte Föderationsanfragen ohne gültige, frische Signatur werden
+  **zusammengefasst** (erste je Quelle und Code in 5 Minuten, höchstens 20 je 5 Minuten; Rest im
+  Betriebslog), damit unauthentifizierte Anfragen das Log nicht fluten können.
 - **Austauschprotokoll** (`exchange_log`): jede gelieferte oder abgelehnte Partneranfrage mit Spalten,
   Zeilenzahl, übermittelten Pseudonymen und Prüfsumme.
 - **Betriebslog** (JSON-Zeilen, stdout/stderr) ohne personenbezogene Daten; **Fehlerprotokoll** in der
@@ -176,7 +193,9 @@ Partneradressen werden nur bei der manuellen Vertrauensaufnahme festgelegt.
 - Unerwartete Fehler → HTTP 500 `internal_error`; Details nur im Log und in `app_error` (Administration:
   *System › Fehler*).
 - Föderationsfehler werden mit Code beim Partner gespeichert (`last_error`) und im Austauschprotokoll
-  vermerkt; Zustellfehler des Ausgangspostfachs sind sichtbar und werden wiederholt.
+  vermerkt; Zustellfehler des Ausgangspostfachs sind sichtbar und werden wiederholt. Nach 20 Fehlversuchen
+  ist eine Mitteilung *fehlgeschlagen*; *Jetzt zustellen* (`outbox.flush`) versucht sie erneut (Audit
+  `outbox.requeue`), z. B. nachdem die Verbindung wiederhergestellt ist.
 
 ## Schwachstellenmanagement
 
@@ -262,6 +281,7 @@ schema- und strukturgültig).
 2. Zwei-Faktor-Authentisierung bzw. Anbindung an das Identitätsmanagement des OSP.
 3. Werkzeug für den Wechsel des Ed25519-Knotenschlüssels mit Benachrichtigung der Partner.
 4. Sicherheitskontakt, signierte Releases und signierte SBOM; Container-SBOM.
-5. Ratenbegrenzung prozessübergreifend (derzeit im Speicher eines Prozesses) und für die Föderation.
+5. Ratenbegrenzung prozessübergreifend (Anmeldung und Föderation derzeit im Speicher eines Prozesses; nach
+   einem Neustart beginnen die Zähler neu).
 6. Festlegung der Aufbewahrungsfristen (insbesondere Audit-Log) und eines Archivierungsverfahrens.
 7. Datenträgerverschlüsselung und Härtung des Hosts nach BSI IT-Grundschutz (Bausteine SYS.1.3, APP.4.3).

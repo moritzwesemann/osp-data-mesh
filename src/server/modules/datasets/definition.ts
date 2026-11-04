@@ -7,6 +7,7 @@ import type { Actor, AuditWriter } from '../../core/audit.ts';
 import { type DbOrTx, isoReq, pgCode } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import { conflict, invalid } from '../../core/errors.ts';
+import type { DomainEvents } from '../../core/events.ts';
 
 /**
  * Prüft eine Datensatz-Definition. Liefert die normalisierte Definition (Gesundheitsdaten sind immer
@@ -63,6 +64,49 @@ export function isCompatibleFieldChange(
     }
   }
   return true;
+}
+
+/**
+ * Felder, deren Änderung Produktspalten betrifft: entfernt oder mit anderem Typ bzw. anderer Einheit.
+ * (Label, Beschreibung, Prüfregeln und neue Felder ändern keine ausgegebenen Werte oder Typen.)
+ */
+export function productRelevantFieldChanges(
+  oldFields: readonly FieldDef[],
+  newFields: readonly FieldDef[],
+): string[] {
+  const changed: string[] = [];
+  for (const before of oldFields) {
+    const after = newFields.find((f) => f.name === before.name);
+    if (!after || after.type !== before.type || (after.unit ?? '') !== (before.unit ?? '')) {
+      changed.push(before.name);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Wirkung einer Datensatzänderung auf darauf aufbauende Produkte (Ereignis 'dataset.changed') oder null,
+ * wenn keine Produkte betroffen sein können (z. B. nur Name, Beschreibung, Label, Prüfregeln, neue Felder).
+ */
+export function productImpact(
+  datasetId: string,
+  before: DatasetInput,
+  after: DatasetInput,
+): DomainEvents['dataset.changed'] | null {
+  const classification = (d: DatasetInput) => ({
+    category: d.category,
+    // Gesundheitsdaten sind immer besondere Kategorie
+    specialCategory: d.specialCategory || d.category === 'health',
+    shareability: d.shareability,
+  });
+  const b = classification(before);
+  const a = classification(after);
+  const classificationChanged =
+    b.category !== a.category || b.specialCategory !== a.specialCategory || b.shareability !== a.shareability;
+  const observedAtChanged = (before.observedAtField ?? null) !== (after.observedAtField ?? null);
+  const changedFields = productRelevantFieldChanges(before.fields, after.fields);
+  if (!classificationChanged && !observedAtChanged && changedFields.length === 0) return null;
+  return { datasetId, classificationChanged, before: b, after: a, observedAtChanged, changedFields };
 }
 
 /** true, wenn sich die Struktur (Felder, Schlüssel, Beobachtungsdatum) geändert hat → neue Version */

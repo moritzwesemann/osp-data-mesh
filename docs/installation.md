@@ -236,7 +236,7 @@ Bei Problemen: `sudo docker compose logs migrate node`.
 
 Ablauf beim Start: `db` initialisiert beim ersten Start mit `deploy/postgres/init/10-osp-bootstrap.sh`
 Rollen und Datenbank → `migrate` wendet die Migrationen als `mesh_owner` an → `node` startet mit der
-Rolle `mesh_app` → `caddy` stellt HTTPS bereit. Nur Caddy veröffentlicht Ports (80, 443, 8443); Datenbank
+Rolle `mesh_app` → `caddy` stellt HTTPS bereit. Nur Caddy veröffentlicht Ports (80, 443); Datenbank
 und Knoten liegen im internen Netz.
 
 ### B3. Administration anlegen
@@ -327,8 +327,22 @@ sudo docker compose --profile bi up -d --build
 sudo docker compose --profile bi logs superset-bootstrap
 ```
 
-Superset ist danach unter `https://mesh.osp-beispiel.example.de:8443/` erreichbar. Einzelheiten,
-Vertrag der BI-Views und manuelle Schritte: [BI-Anbindung](bi.md) und `deploy/superset/README.md`.
+Superset läuft unter einem **eigenen Hostnamen**, Standard `bi.<CADDY_DOMAIN>`, also
+`https://bi.mesh.osp-beispiel.example.de/`; abweichend in `deploy/.env` mit
+`MESH_BI_DOMAIN=bi.osp-beispiel.example.de` festlegen. Für diesen Namen einen DNS-Eintrag auf denselben
+Server anlegen (bei ACME öffentlich auflösbar; mit `CADDY_TLS=internal` stellt Caddy das Zertifikat selbst
+aus). Ohne Superset antwortet der Name mit 502; bei ACME ohne DNS-Eintrag meldet Caddy im Log, dass es
+für ihn kein Zertifikat erhält – der Knoten selbst ist davon nicht betroffen.
+
+**Warum ein eigener Hostname?** Cookies sind nicht an Ports gebunden (RFC 6265, Abschnitt 8.5): Liefe
+Superset unter dem Namen des Knotens mit anderem Port, schickte der Browser das Sitzungs-Cookie des Knotens
+(`osp_session`) bei jeder Anfrage auch an Superset – Superset (oder wer es kompromittiert) erhielte die
+Sitzungen aller angemeldeten Personen. Das Cookie gilt ohne `Domain`-Attribut nur für genau den Namen des
+Knotens und wird an `bi.<knoten>` nicht gesendet. Superset deshalb nie unter dem Namen des Knotens (auch
+nicht mit anderem Port) betreiben.
+
+Einzelheiten, Vertrag der BI-Views und manuelle Schritte: [BI-Anbindung](bi.md) und
+`deploy/superset/README.md`.
 **Nicht lokal verifiziert.**
 
 ## Lokale Demo und Tests (Entwicklungsrechner)

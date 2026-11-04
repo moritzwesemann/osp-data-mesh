@@ -193,10 +193,20 @@ export const IMPORT_ERROR_CODES = [
   /** Zeile 0 eines fehlgeschlagenen API-Abrufs (params.status = HTTP-Status, falls vorhanden) */
   'source_unreachable',
   'invalid_response',
+  /** Zeile 0: Quelle hat mehr Spalten als zulässig (params.max) */
+  'too_many_columns',
+  /** Zeile 0: Quelle hat mehr Zeilen bzw. Einträge als zulässig (params.max) */
+  'too_many_rows',
 ] as const;
 
 /** Übersetzbare Gründe für status=failed eines Importlaufs (ImportRun.failureCode) */
-export const IMPORT_FAILURE_CODES = ['missing_column', 'source_unreachable', 'invalid_response'] as const;
+export const IMPORT_FAILURE_CODES = [
+  'missing_column',
+  'source_unreachable',
+  'invalid_response',
+  'too_many_columns',
+  'too_many_rows',
+] as const;
 
 export const ImportError = z.object({
   rowNumber: z.number().int(),

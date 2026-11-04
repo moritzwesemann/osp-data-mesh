@@ -13,7 +13,7 @@ import { conflict, forbidden, notFound } from '../../core/errors.ts';
 import type { Handlers } from '../../core/http.ts';
 import { toUser } from './map.ts';
 import { assertPasswordPolicy } from './policy.ts';
-import { hashPassword } from './sessions.ts';
+import { hashPassword, revokeAllApiTokens } from './sessions.ts';
 
 function uniqueRoles(roles: readonly Role[]): Role[] {
   return [...new Set(roles)];
@@ -154,8 +154,15 @@ export function userHandlers(deps: Deps): Handlers {
           .returningAll()
           .executeTakeFirstOrThrow();
         if (!newActive && target.active) {
-          // deaktivierte Konten: Sitzungen beenden (Tokens weist der Authenticator ab)
+          // deaktivierte Konten: Sitzungen beenden und Tokens widerrufen (der Authenticator weist sie zwar
+          // schon ab, nach einer Reaktivierung sollen sie aber nicht wieder gelten)
           await trx.deleteFrom('user_session').where('user_id', '=', target.id).execute();
+          details.tokensRevoked = await revokeAllApiTokens(deps, trx, target.id, 'user_deactivated', {
+            actor,
+            ip,
+            requestId,
+            now: deps.now(),
+          });
         }
         await deps.audit.record(
           {
@@ -193,13 +200,20 @@ export function userHandlers(deps: Deps): Handlers {
           .deleteFrom('user_session')
           .where('user_id', '=', target.id)
           .executeTakeFirst();
+        // API-Tokens widerrufen: sonst gälten sie nach dem erzwungenen Passwortwechsel wieder
+        const tokensRevoked = await revokeAllApiTokens(deps, trx, target.id, 'password_reset', {
+          actor,
+          ip,
+          requestId,
+          now: deps.now(),
+        });
         await deps.audit.record(
           {
             actor,
             action: 'user.reset_password',
             objectType: 'user',
             objectId: target.id,
-            details: { sessionsEnded: Number(ended.numDeletedRows) },
+            details: { sessionsEnded: Number(ended.numDeletedRows), tokensRevoked },
             ip,
             requestId,
           },

@@ -15,6 +15,7 @@ import {
   createDataset,
   datasetInputOf,
   isCompatibleFieldChange,
+  productImpact,
   structureChanged,
   toDataset,
   validateDatasetInput,
@@ -92,7 +93,7 @@ export const datasetsModule: Module = {
               throw conflict('dataset_in_use');
             }
           }
-          if (changedKeys.length === 0) return { row: existing, recordCount };
+          if (changedKeys.length === 0) return { row: existing, recordCount, event: null };
           const set: RowUpdate<'dataset'> = {
             name: merged.name,
             description: merged.description,
@@ -123,8 +124,12 @@ export const datasetsModule: Module = {
             },
             trx,
           );
-          return { row, recordCount };
+          // Folgen für Produkte (neue Version, ggf. Widerruf von Partnerfreigaben) atomar mit der Änderung
+          const event = productImpact(params.id, before, merged);
+          if (event) await deps.events.inTx(trx, 'dataset.changed', event);
+          return { row, recordCount, event };
         });
+        if (result.event) await deps.events.after('dataset.changed', result.event);
         return toDataset(result.row, result.recordCount);
       },
 

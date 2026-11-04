@@ -143,7 +143,7 @@ export const errors = {
   conflict: 'Die Aktion passt nicht zum aktuellen Stand, z. B. weil die Kennung schon vergeben ist.',
   rate_limited: 'Zu viele Anfragen – bitte warten Sie einen Moment.',
   account_locked: 'Das Konto ist nach mehreren Fehlversuchen vorübergehend gesperrt.',
-  invalid_credentials: 'E-Mail-Adresse oder Passwort ist falsch.',
+  invalid_credentials: 'E-Mail-Adresse oder Passwort ist falsch, oder das Konto ist vorübergehend gesperrt.',
   password_too_weak: 'Das Passwort ist zu schwach.',
   payload_too_large: 'Die Datei oder Anfrage ist zu groß.',
   unsupported_format: 'Das Dateiformat wird nicht unterstützt.',

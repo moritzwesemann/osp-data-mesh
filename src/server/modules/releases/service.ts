@@ -15,6 +15,7 @@ import { type DbOrTx, iso, isoReq, type Tx } from '../../core/db.ts';
 import type { Deps } from '../../core/deps.ts';
 import { AppError, conflict, notFound } from '../../core/errors.ts';
 import type { DomainEvents } from '../../core/events.ts';
+import { lockDeliveries } from '../../core/locks.ts';
 import { type LoadedProduct, loadProductRows, normalizeConditions, productMeta } from '../products/rows.ts';
 import {
   applyRelease,
@@ -371,7 +372,7 @@ export async function revokeInTx(
   deps: Deps,
   trx: Tx,
   row: ReleaseRow,
-  opts: { meta: RequestMeta; reason: string; cause: 'manual' | 'product_retired' },
+  opts: { meta: RequestMeta; reason: string; cause: 'manual' | 'product_retired' | 'dataset_reclassified' },
 ): Promise<RevokedPayload> {
   const at = deps.now();
   const currentVersion =
@@ -448,34 +449,39 @@ export async function revokeRelease(
 
 /**
  * Stilllegung eines Produkts: alle nicht widerrufenen Freigaben werden in der Transaktion der
- * Stilllegung widerrufen. Die Ereignisse nach dem Commit werden nach 'product.changed' (after) ausgelöst.
+ * Stilllegung widerrufen. Hochstufung des Datensatzes (revokePeerReleases, siehe products): alle nicht
+ * widerrufenen Partnerfreigaben werden widerrufen; Partner erhalten release_revoked und löschen ihre Kopien.
+ * Die Ereignisse nach dem Commit werden nach 'product.changed' (after) ausgelöst.
  */
 export function registerRetirementHandler(deps: Deps): void {
   const pending = new Map<string, RevokedPayload[]>();
   deps.events.onTx('product.changed', async (p, trx) => {
-    if (!p.retired) return;
-    const rows = await trx
+    if (!p.retired && !p.revokePeerReleases) return;
+    // Liefersperre vor den Zeilensperren der Freigaben: dieselbe Reihenfolge wie Lieferungen (Partner-Pull,
+    // BI-Materialisierung: erst Liefersperre, dann Freigabe). Wartet auf laufende Lieferungen.
+    await lockDeliveries(trx, 'exclusive');
+    let query = trx
       .selectFrom('data_release')
       .selectAll()
       .where('product_id', '=', p.productId)
-      .where('revoked_at', 'is', null)
-      .orderBy('created_at')
-      .forUpdate()
-      .execute();
+      .where('revoked_at', 'is', null);
+    if (!p.retired) query = query.where('recipient_type', '=', 'peer');
+    const rows = await query.orderBy('created_at').forUpdate().execute();
+    const reason = p.retired ? 'product_retired' : (p.revokePeerReleases ?? 'dataset_reclassified');
     const payloads: RevokedPayload[] = [];
     for (const r of rows) {
       payloads.push(
         await revokeInTx(deps, trx, r, {
           meta: { actor: SYSTEM_ACTOR, userId: null, ip: null, requestId: null },
-          reason: 'product_retired',
-          cause: 'product_retired',
+          reason,
+          cause: reason,
         }),
       );
     }
     pending.set(p.productId, payloads);
   });
   deps.events.onAfter('product.changed', async (p) => {
-    if (!p.retired) return;
+    if (!p.retired && !p.revokePeerReleases) return;
     const payloads = pending.get(p.productId) ?? [];
     pending.delete(p.productId);
     for (const payload of payloads) await deps.events.after('release.revoked', payload);

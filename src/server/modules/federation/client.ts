@@ -22,7 +22,7 @@ import {
   FEDERATION_PATH,
   HEADER_NODE,
   HEADER_SIGNATURE,
-  MAX_MESSAGE_BYTES,
+  MAX_RESPONSE_BYTES,
   normalizeBaseUrl,
   parseJson,
   readLimited,
@@ -133,7 +133,7 @@ async function exchange<T>(
 
   let bytes: Uint8Array | null;
   try {
-    bytes = await readLimited(res, MAX_MESSAGE_BYTES);
+    bytes = await readLimited(res, MAX_RESPONSE_BYTES);
   } catch (cause) {
     throw new PeerCallError('peer_unreachable', { cause });
   }
@@ -145,6 +145,8 @@ async function exchange<T>(
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       throw new PeerCallError('peer_unreachable', { reason: 'gateway_error' });
     }
+    // Ratenbegrenzung des Partners (zu viele abgelehnte Anfragen von hier): später erneut versuchen
+    if (res.status === 429) throw new PeerCallError('peer_unreachable', { reason: 'rate_limited' });
     throw new PeerCallError('signature_invalid', { reason: 'unsigned_response' });
   }
   if (res.headers.get(HEADER_NODE) !== peer.node_id) {

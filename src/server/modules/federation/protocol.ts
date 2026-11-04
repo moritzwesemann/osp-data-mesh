@@ -19,8 +19,13 @@ export const HEADER_NODE = 'x-mesh-node';
 export const HEADER_SIGNATURE = 'x-mesh-signature';
 export const FEDERATION_PATH = '/federation/v1';
 
-/** Höchstgröße einer Nachricht (Anfrage wie Antwort); entspricht dem Body-Limit in app.ts */
-export const MAX_MESSAGE_BYTES = 50 * 1024 * 1024;
+/**
+ * Höchstgröße einer Anfrage (Body-Limit in app.ts und im Endpunkt). Anfragen sind klein (größte: Mitteilung
+ * mit bis zu 10 000 Pseudonymen, < 1 MB); groß sind nur Antworten auf Abrufe.
+ */
+export const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+/** Höchstgröße einer Antwort (vom Client beim Lesen erzwungen) */
+export const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
 /** Nonces werden 15 Minuten gespeichert (Zeitfenster ±5 Minuten → Replays danach scheitern an clock_skew) */
 export const NONCE_TTL_MS = 15 * 60 * 1000;
 
@@ -126,15 +131,31 @@ export function parseJson(text: string | null): unknown {
   }
 }
 
-/** Liest einen Antwort-Body bis max Bytes; null, wenn größer. */
-export async function readLimited(res: Response, max: number): Promise<Uint8Array | null> {
-  const declared = Number(res.headers.get('content-length') ?? '');
+/** Anfrage oder Antwort, deren Body gelesen wird */
+interface BodySource {
+  headers: Headers;
+  body: ReadableStream<Uint8Array> | null;
+}
+
+function concat(chunks: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
+
+/** Liest einen Body (Anfrage oder Antwort) bis max Bytes; null, wenn größer (der Rest wird nicht gelesen). */
+export async function readLimited(src: BodySource, max: number): Promise<Uint8Array | null> {
+  const declared = Number(src.headers.get('content-length') ?? '');
   if (Number.isFinite(declared) && declared > max) {
-    await res.body?.cancel().catch(() => {});
+    await src.body?.cancel().catch(() => {});
     return null;
   }
-  if (!res.body) return new Uint8Array(0);
-  const reader = res.body.getReader();
+  if (!src.body) return new Uint8Array(0);
+  const reader = src.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
@@ -147,13 +168,23 @@ export async function readLimited(res: Response, max: number): Promise<Uint8Arra
     }
     chunks.push(value);
   }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.byteLength;
+  return concat(chunks, total);
+}
+
+/** Liest höchstens die ersten max Bytes eines Bodys (Rest wird verworfen), z. B. um eine Anfrage-id zu finden. */
+export async function readHead(src: BodySource, max: number): Promise<Uint8Array> {
+  if (!src.body) return new Uint8Array(0);
+  const reader = src.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (total < max) {
+    const { done, value } = await reader.read();
+    if (done) return concat(chunks, total);
+    chunks.push(value);
+    total += value.byteLength;
   }
-  return out;
+  await reader.cancel().catch(() => {});
+  return concat(chunks, total).subarray(0, max);
 }
 
 /**

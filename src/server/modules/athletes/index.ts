@@ -3,7 +3,8 @@
  *
  * Löschen einer Person ist die Umsetzung des Rechts auf Löschung (Art. 17 DSGVO): alle zugehörigen
  * Einträge (Datensätze, Einwilligungen, Kennungen) werden per Fremdschlüssel-Kaskade entfernt; das
- * Ereignis "athlete.deleted" läuft in derselben Transaktion (z. B. Löschmitteilungen an Partner).
+ * Ereignis "athlete.deleted" läuft in derselben Transaktion, solange Person und Kennungen noch lesbar
+ * sind (Löschmitteilungen an Partner, BI-Zeilen, Zeilen der Person in offenen Importvorschauen).
  */
 import { sql } from 'kysely';
 import { pgCode } from '../../core/db.ts';

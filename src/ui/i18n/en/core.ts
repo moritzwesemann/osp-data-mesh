@@ -140,7 +140,7 @@ export const errors: Messages['errors'] = {
   conflict: 'The action conflicts with the current state, e.g. because the identifier is already taken.',
   rate_limited: 'Too many requests – please wait a moment.',
   account_locked: 'The account is temporarily locked after several failed attempts.',
-  invalid_credentials: 'Email address or password is incorrect.',
+  invalid_credentials: 'Email or password is incorrect, or the account is temporarily locked.',
   password_too_weak: 'The password is too weak.',
   payload_too_large: 'The file or request is too large.',
   unsupported_format: 'The file format is not supported.',

@@ -2,8 +2,10 @@
  * Server des Föderationsprotokolls: POST /federation/v1/:type (ping | catalog | pull | notice).
  *
  * Prüfreihenfolge (docs/protokoll.md): unknown_node → untrusted → bad_signature → bad_request →
- * wrong_recipient → clock_skew → replay. Jede Ablehnung wird auditiert und signiert beantwortet.
- * Antworten werden immer über die exakt gesendeten Bytes signiert (X-Mesh-Node, X-Mesh-Signature).
+ * wrong_recipient → clock_skew → replay. Absender (unknown_node/untrusted) werden geprüft, bevor der Body
+ * gelesen wird; Ablehnungen werden signiert beantwortet, gezählt (Ratenbegrenzung) und zusammengefasst
+ * auditiert (guard.ts). Antworten werden immer über die exakt gesendeten Bytes signiert (X-Mesh-Node,
+ * X-Mesh-Signature).
  */
 import type { Context, Hono } from 'hono';
 import { Uuid } from '../../../shared/contract/common.ts';
@@ -26,15 +28,19 @@ import type { Tx } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import type { AppEnv, Deps } from '../../core/deps.ts';
 import type { DenyReason } from '../releases/engine.ts';
+import { REJECTION_WINDOW_MS, RejectionGuard } from './guard.ts';
 import {
   decodeUtf8,
   FEDERATION_PATH,
   FEDERATION_STATUS,
   HEADER_NODE,
   HEADER_SIGNATURE,
+  MAX_REQUEST_BYTES,
   NODE_ID_RE,
   parseJson,
   type ResponseResult,
+  readHead,
+  readLimited,
   type Signed,
   signResponse,
   withinSkew,
@@ -55,8 +61,11 @@ const HIDDEN_DENY_REASONS = new Set<DenyReason>([
   'recipient_mismatch',
 ]);
 
-/** Größe, bis zu der vor der Signaturprüfung die Anfrage-id für inReplyTo gelesen wird */
-const PEEK_LIMIT_BYTES = 1024 * 1024;
+/**
+ * Anfang des Bodys, in dem vor der Signaturprüfung die Anfrage-id (für inReplyTo der Ablehnung) gesucht
+ * wird. Von nicht zugelassenen Absendern wird nur dieser Anfang gelesen.
+ */
+const PEEK_HEAD_BYTES = 4096;
 
 /**
  * Gleichzeitig bediente Abrufe je Knoten. Ein Abruf hält eine Verbindung (Transaktion mit Liefersperre),
@@ -91,12 +100,25 @@ function pullSlot(deps: Deps): Semaphore {
   return s;
 }
 
+const guards = new WeakMap<Deps, RejectionGuard>();
+/** Ratenbegrenzung und Audit-Zusammenfassung je Knoten (Tests mit mehreren Knoten im selben Prozess) */
+function rejectionGuard(deps: Deps): RejectionGuard {
+  let g = guards.get(deps);
+  if (!g) {
+    g = new RejectionGuard();
+    guards.set(deps, g);
+  }
+  return g;
+}
+
 interface RequestMeta {
   deps: Deps;
   pathType: string;
   headerNode: string;
   httpRequestId: string;
   ip: string | null;
+  /** bekannter Partner laut X-Mesh-Node (noch nicht authentifiziert) */
+  peer: Row<'peer'> | null;
 }
 
 interface Inbound extends RequestMeta {
@@ -134,23 +156,103 @@ function sendResult(meta: RequestMeta, to: string, inReplyTo: string | null, res
   return respond(status, deps.identity.nodeId, signed);
 }
 
-/** Anfrage-id vor der Signaturprüfung (nur zur Zuordnung der Ablehnung beim Absender) */
+const ENVELOPE_ID_RE = /"id"\s*:\s*"([0-9a-fA-F-]{36})"/;
+const lenientUtf8 = new TextDecoder('utf-8');
+
+/**
+ * Anfrage-id vor der Signaturprüfung (nur zur Zuordnung der Ablehnung beim Absender). Gesucht wird im
+ * Anfang des Bodys (Umschläge beginnen mit v, type, id); kurze Bodys werden vollständig geparst.
+ */
 function peekId(bytes: Uint8Array): string | null {
-  if (bytes.byteLength > PEEK_LIMIT_BYTES) return null;
-  const json = parseJson(decodeUtf8(bytes));
-  if (typeof json !== 'object' || json === null) return null;
-  const id = Uuid.safeParse((json as { id?: unknown }).id);
+  const whole = bytes.byteLength <= PEEK_HEAD_BYTES;
+  const text = lenientUtf8.decode(whole ? bytes : bytes.subarray(0, PEEK_HEAD_BYTES));
+  let candidate: unknown = ENVELOPE_ID_RE.exec(text)?.[1];
+  if (candidate === undefined && whole) {
+    const json = parseJson(text);
+    if (typeof json === 'object' && json !== null) candidate = (json as { id?: unknown }).id;
+  }
+  const id = Uuid.safeParse(candidate);
   return id.success ? id.data : null;
+}
+
+/**
+ * Absender, deren Nachrichten dieses Typs angenommen werden (geprüft, bevor der Body gelesen wird).
+ * Gesperrte Partner dürfen weiterhin Mitteilungen senden: eine Mitteilung kann beim Empfänger nur Daten
+ * löschen, die von genau diesem Partner stammen (Widerruf, Löschung, Einwilligungswiderruf).
+ */
+function acceptsFrom(peer: Row<'peer'>, pathType: string): boolean {
+  if (peer.status === 'trusted') return true;
+  return peer.status === 'suspended' && pathType === 'notice';
+}
+
+/**
+ * Protokoll-Ablehnung zählen (Ratenbegrenzung) und zusammengefasst auditieren: jede im Betriebslog, im
+ * Audit-Log nur die erste je Quelle und Code im Zeitfenster (guard.ts).
+ */
+async function noteRejection(
+  meta: RequestMeta,
+  code: FederationErrorCode | 'rate_limited',
+  inReplyTo: string | null,
+  reason?: string,
+): Promise<void> {
+  const { deps } = meta;
+  const guard = rejectionGuard(deps);
+  const nowMs = deps.now().getTime();
+  if (code !== 'rate_limited') guard.count(meta.ip, meta.headerNode, nowMs);
+  const decision = guard.decide(code, meta.ip, meta.peer?.node_id ?? '?', nowMs);
+  const type = meta.pathType.slice(0, 20);
+  deps.log.info('federation request rejected', {
+    requestId: meta.httpRequestId,
+    code,
+    type,
+    node: meta.headerNode.slice(0, 100),
+    ip: meta.ip,
+    audited: decision.audit,
+  });
+  if (decision.budgetExhausted) {
+    deps.log.warn('federation rejections: audit budget of this window exhausted, further ones only logged', {
+      requestId: meta.httpRequestId,
+      windowMinutes: REJECTION_WINDOW_MS / 60_000,
+    });
+  }
+  if (!decision.audit) return;
+  await deps.audit.record({
+    actor: peerActor(meta.headerNode || 'unknown'),
+    action: 'federation.request.rejected',
+    outcome: 'denied',
+    objectType: 'federation_message',
+    objectId: inReplyTo,
+    details: {
+      code,
+      type,
+      ...(reason ? { reason } : {}),
+      ...(decision.suppressed > 0 ? { suppressed: decision.suppressed } : {}),
+    },
+    ip: meta.ip,
+    requestId: meta.httpRequestId,
+  });
 }
 
 async function reject(
   meta: RequestMeta,
   code: FederationErrorCode,
   inReplyTo: string | null,
-  opts: { reason?: string; audited?: boolean } = {},
+  opts: {
+    reason?: string;
+    /** bereits vom Nachrichten-Handler auditiert */
+    audited?: boolean;
+    /**
+     * Ablehnung der Protokollprüfung (Schritte 1–6): gezählt und zusammengefasst auditiert. Sonst ein
+     * Ergebnis des Handlers zu einer frischen, gültig signierten Nachricht eines zugelassenen Partners:
+     * jede wird auditiert.
+     */
+    protocol?: boolean;
+  } = {},
 ): Promise<Response> {
   const { deps } = meta;
-  if (!opts.audited) {
+  if (opts.protocol) {
+    await noteRejection(meta, code, inReplyTo, opts.reason);
+  } else if (!opts.audited) {
     await deps.audit.record({
       actor: peerActor(meta.headerNode || 'unknown'),
       action: code === 'internal_error' ? 'federation.request.failed' : 'federation.request.rejected',
@@ -166,6 +268,19 @@ async function reject(
   return sendResult(meta, to, inReplyTo, { ok: false, code, reason: opts.reason });
 }
 
+/** Zu viele Ablehnungen von dieser Quelle: 429 ohne Lesen des Bodys und ohne weitere Prüfung (unsigniert) */
+async function tooManyRejections(meta: RequestMeta): Promise<Response> {
+  await noteRejection(meta, 'rate_limited', null);
+  return new Response(JSON.stringify({ error: { code: 'rate_limited', requestId: meta.httpRequestId } }), {
+    status: 429,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'retry-after': String(Math.ceil(REJECTION_WINDOW_MS / 1000)),
+    },
+  });
+}
+
 async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> {
   const meta: RequestMeta = {
     deps,
@@ -173,34 +288,48 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
     headerNode: c.req.header(HEADER_NODE) ?? '',
     httpRequestId: c.get('requestId'),
     ip: c.get('ip'),
+    peer: null,
   };
-  const signature = c.req.header(HEADER_SIGNATURE) ?? '';
-  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  const guard = rejectionGuard(deps);
 
-  // 1. bekannter und vertrauenswürdiger Partner
+  // 0. Ratenbegrenzung je IP-Adresse: weder Datenbank noch Body
+  if (guard.ipBlocked(meta.ip, deps.now().getTime())) return tooManyRejections(meta);
+
+  // 1. bekannter und zugelassener Absender – geprüft, bevor der Body gelesen wird
   const peer = NODE_ID_RE.test(meta.headerNode)
     ? await deps.db.selectFrom('peer').selectAll().where('node_id', '=', meta.headerNode).executeTakeFirst()
     : undefined;
-  if (!peer) return reject(meta, 'unknown_node', peekId(bytes));
-  if (peer.status !== 'trusted') return reject(meta, 'untrusted', peekId(bytes));
+  meta.peer = peer ?? null;
+  if (!peer || !acceptsFrom(peer, meta.pathType)) {
+    // je behauptetem Absender nur hier: zugelassene Partner kann eine gefälschte Kennung nicht aussperren
+    if (guard.nodeBlocked(meta.headerNode, deps.now().getTime())) return tooManyRejections(meta);
+    // nur den Anfang lesen: Anfrage-id, damit der Absender die signierte Ablehnung zuordnen kann
+    const head = await readHead(c.req.raw, PEEK_HEAD_BYTES);
+    return reject(meta, peer ? 'untrusted' : 'unknown_node', peekId(head), { protocol: true });
+  }
 
-  // 2. Signatur über die exakt empfangenen Bytes
+  // 2. Signatur über die exakt empfangenen Bytes (höchstens MAX_REQUEST_BYTES, auch ohne Content-Length)
+  const bytes = await readLimited(c.req.raw, MAX_REQUEST_BYTES);
+  if (!bytes) return reject(meta, 'bad_request', null, { reason: 'payload_too_large', protocol: true });
+  const signature = c.req.header(HEADER_SIGNATURE) ?? '';
   if (!signature || !ed25519Verify(peer.public_key, bytes, signature)) {
-    return reject(meta, 'bad_signature', peekId(bytes));
+    return reject(meta, 'bad_signature', peekId(bytes), { protocol: true });
   }
 
   // 3. Aufbau: Schema, v = 1, from = Header, type = Pfad
   const parsed = RequestEnvelopeSchema.safeParse(parseJson(decodeUtf8(bytes)));
-  if (!parsed.success) return reject(meta, 'bad_request', peekId(bytes));
+  if (!parsed.success) return reject(meta, 'bad_request', peekId(bytes), { protocol: true });
   const env = parsed.data;
-  if (env.from !== peer.node_id || env.type !== meta.pathType) return reject(meta, 'bad_request', env.id);
+  if (env.from !== peer.node_id || env.type !== meta.pathType) {
+    return reject(meta, 'bad_request', env.id, { protocol: true });
+  }
 
   // 4. Empfänger
-  if (env.to !== deps.identity.nodeId) return reject(meta, 'wrong_recipient', env.id);
+  if (env.to !== deps.identity.nodeId) return reject(meta, 'wrong_recipient', env.id, { protocol: true });
 
   // 5. Uhrzeit
   const now = deps.now();
-  if (!withinSkew(env.ts, now)) return reject(meta, 'clock_skew', env.id);
+  if (!withinSkew(env.ts, now)) return reject(meta, 'clock_skew', env.id, { protocol: true });
 
   // 6. Replay-Schutz: id je Absender nur einmal
   const fresh = await deps.db
@@ -209,7 +338,7 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
     .onConflict((oc) => oc.columns(['node_id', 'nonce']).doNothing())
     .returning('nonce')
     .executeTakeFirst();
-  if (!fresh) return reject(meta, 'replay', env.id);
+  if (!fresh) return reject(meta, 'replay', env.id, { protocol: true });
 
   const inbound: Inbound = { ...meta, peer, envelope: env, now };
   let outcome: Outcome;

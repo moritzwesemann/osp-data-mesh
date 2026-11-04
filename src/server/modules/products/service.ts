@@ -8,10 +8,11 @@ import type {
   ProductInput,
   ProductUpdateInput,
 } from '../../../shared/contract/products.ts';
-import type { Actor } from '../../core/audit.ts';
+import { type Actor, SYSTEM_ACTOR } from '../../core/audit.ts';
 import { type DbOrTx, isoReq, pgCode } from '../../core/db.ts';
 import type { Deps } from '../../core/deps.ts';
 import { AppError, conflict, notFound } from '../../core/errors.ts';
+import type { DomainEvents } from '../../core/events.ts';
 import { conditionValueFits } from '../releases/engine.ts';
 import { statusOf } from '../releases/rules.ts';
 import {
@@ -281,6 +282,91 @@ export async function updateProduct(
   });
   await deps.events.after('product.changed', { productId: id, retired: false });
   return result;
+}
+
+type ProductChanged = DomainEvents['product.changed'];
+type DatasetChanged = DomainEvents['dataset.changed'];
+
+/**
+ * Partnerfreigaben enden, wenn bereits gelieferte Kopien nach der neuen Einstufung nicht hätten geliefert
+ * werden dürfen: neu besondere Kategorie (Art. 9; auch Kategoriewechsel einer besonderen Kategorie, weil die
+ * Einwilligung je Kategorie gilt) oder neu intern.
+ */
+export function peerReleasesEnd(e: DatasetChanged): boolean {
+  const special =
+    e.after.specialCategory && (!e.before.specialCategory || e.before.category !== e.after.category);
+  const internal = e.after.shareability === 'internal' && e.before.shareability !== 'internal';
+  return special || internal;
+}
+
+/** true, wenn die Datensatzänderung dieses Produkt betrifft (Einstufung, Beobachtungsdatum oder genutzte Felder) */
+function productAffected(e: DatasetChanged, columns: readonly ProductColumn[]): boolean {
+  if (e.classificationChanged || e.observedAtChanged) return true;
+  return columns.some((c) => c.source.startsWith('data.') && e.changedFields.includes(c.source.slice(5)));
+}
+
+/**
+ * Datensatzänderung wie eine Produktänderung behandeln (in der Transaktion der Datensatzänderung):
+ * jedes betroffene aktive Produkt erhält eine neue Version (bestehende Freigaben veralten mit
+ * product_changed; BI-Views prüfen die Version in SQL und liefern sofort keine Zeilen mehr), wird bei einem
+ * internen Datensatz intern gespeichert, die Änderung wird protokolliert und 'product.changed' ausgelöst.
+ * Bei Hochstufung (peerReleasesEnd) widerruft das Modul releases zusätzlich alle Partnerfreigaben.
+ */
+export function registerDatasetChangeHandler(deps: Deps): void {
+  const pending = new Map<string, ProductChanged[]>();
+  deps.events.onTx('dataset.changed', async (e, trx) => {
+    const rows = await trx
+      .selectFrom('data_product')
+      .selectAll()
+      .where('dataset_id', '=', e.datasetId)
+      .where('status', '=', 'active')
+      .orderBy('id')
+      .forUpdate()
+      .execute();
+    const revokePeerReleases = peerReleasesEnd(e);
+    const payloads: ProductChanged[] = [];
+    for (const row of rows) {
+      const columns = (Array.isArray(row.columns) ? row.columns : []) as ProductColumn[];
+      if (!productAffected(e, columns)) continue;
+      const shareability = e.after.shareability === 'internal' ? 'internal' : row.shareability;
+      const version = row.version + 1;
+      await trx.updateTable('data_product').set({ version, shareability }).where('id', '=', row.id).execute();
+      await deps.audit.record(
+        {
+          actor: SYSTEM_ACTOR,
+          action: 'product.update',
+          objectType: 'product',
+          objectId: row.id,
+          details: {
+            cause: 'dataset_changed',
+            datasetId: e.datasetId,
+            changed: shareability !== row.shareability ? ['shareability'] : [],
+            version,
+            previousVersion: row.version,
+            versionChanged: true,
+            classificationChanged: e.classificationChanged,
+            observedAtChanged: e.observedAtChanged,
+            changedFields: e.changedFields,
+            peerReleasesRevoked: revokePeerReleases,
+          },
+          ip: null,
+          requestId: null,
+        },
+        trx,
+      );
+      const payload: ProductChanged = revokePeerReleases
+        ? { productId: row.id, retired: false, revokePeerReleases: 'dataset_reclassified' }
+        : { productId: row.id, retired: false };
+      await deps.events.inTx(trx, 'product.changed', payload);
+      payloads.push(payload);
+    }
+    pending.set(e.datasetId, payloads);
+  });
+  deps.events.onAfter('dataset.changed', async (e) => {
+    const payloads = pending.get(e.datasetId) ?? [];
+    pending.delete(e.datasetId);
+    for (const p of payloads) await deps.events.after('product.changed', p);
+  });
 }
 
 export async function retireProduct(deps: Deps, id: string, meta: RequestMeta): Promise<Product> {

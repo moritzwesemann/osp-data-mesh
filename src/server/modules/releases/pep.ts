@@ -6,6 +6,8 @@
  * applyRelease() → Limit. Alles in einer lesenden Transaktion (REPEATABLE READ), damit Freigabe, Produkt,
  * Zeilen und Einwilligungen aus demselben Datenbankstand stammen.
  * Protokolliert nicht selbst; Aufrufer schreiben Audit-/Austauschprotokoll.
+ * Nimmt keine Zeilensperren und schreibt nicht: Lieferungen rufen den PEP unter der geteilten Liefersperre
+ * auf (core/locks.ts), auf deren exklusive Hälfte Widerrufe und Löschungen mit eigenen Sperren warten.
  */
 import type { Deps, PepService, ServeRequest, ServeResult } from '../../core/deps.ts';
 import { loadProductRows, productMeta, servedProduct, UUID_RE } from '../products/rows.ts';

@@ -144,4 +144,10 @@ Optional enthält `deploy/` eine Superset-Installation (Docker-Profil `bi`), die
 
 Die Views entstehen, wenn es Datenprodukte mit den Kürzeln `kader_uebersicht`, `sprungkraft` und
 `leistungsdiagnostik` und dazu je eine gültige Freigabe an die Rolle `bi` gibt (in der Demo automatisch).
-Superset ist danach unter `https://<knoten>:8443/` erreichbar.
+Superset ist danach unter einem **eigenen Hostnamen** erreichbar: `https://bi.<knoten>/` (Variable
+`MESH_BI_DOMAIN` in `deploy/.env`, Standard `bi.<CADDY_DOMAIN>`; der Name braucht einen DNS-Eintrag auf
+denselben Server). **Warum ein eigener Hostname?** Cookies sind nicht an Ports gebunden (RFC 6265, Abschnitt
+8.5): Liefe Superset unter dem Namen des Knotens mit anderem Port, schickte der Browser das Sitzungs-Cookie
+des Knotens (`osp_session`) bei jeder Anfrage auch an Superset – Superset (oder wer es kompromittiert)
+erhielte die Sitzungen aller angemeldeten Personen. Das Cookie gilt ohne `Domain`-Attribut nur für genau den
+Namen des Knotens und wird an `bi.<knoten>` nicht gesendet.

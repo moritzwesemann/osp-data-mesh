@@ -36,7 +36,14 @@ docker compose --profile bi logs -f superset-bootstrap
 
 Ablauf: `superset-init` (Metadaten-Datenbank anlegen/aktualisieren, Administrationskonto, Rollen) →
 `superset` (Webserver, Port 8088 nur intern) → `superset-bootstrap` (Einrichtung über die REST-API,
-wartet auf `/health`). Erreichbar über Caddy unter `https://<CADDY_DOMAIN>:8443/`.
+wartet auf `/health`). Erreichbar über Caddy unter einem **eigenen Hostnamen**: `https://<MESH_BI_DOMAIN>/`,
+Standard `bi.<CADDY_DOMAIN>` (in `deploy/.env` änderbar; DNS-Eintrag auf denselben Server nötig).
+
+**Warum ein eigener Hostname?** Cookies sind nicht an Ports gebunden (RFC 6265, Abschnitt 8.5): Liefe
+Superset unter dem Namen des Knotens mit anderem Port, schickte der Browser das Sitzungs-Cookie des Knotens
+(`osp_session`) bei jeder Anfrage auch an Superset – Superset (oder wer es kompromittiert) erhielte die
+Sitzungen aller angemeldeten Personen. Das Cookie gilt ohne `Domain`-Attribut nur für genau den Namen des
+Knotens und wird an `<MESH_BI_DOMAIN>` nicht gesendet.
 
 Die Einrichtung kann jederzeit wiederholt werden (z. B. nachdem die BI-Freigaben angelegt wurden oder das
 Passwort von `mesh_bi` geändert wurde):
@@ -103,6 +110,9 @@ Verwendete Superset-Diagrammtypen: `big_number_total`, `echarts_timeseries_bar`,
    anlegen (Dashboard-Zugriff über Rollen ist mit `DASHBOARD_RBAC` aktiviert).
 
 ## Sicherheitshinweise
+
+- Eigener Hostname (`MESH_BI_DOMAIN`), nie der Name des Knotens mit anderem Port: sonst erhielte Superset
+  das Sitzungs-Cookie des Knotens (siehe oben und `deploy/Caddyfile`).
 
 - Superset sieht nur, was `mesh_bi` sieht: Views im Schema `bi`, nur lesend, Abfragezeit ≤ 60 s.
 - Die Verbindungsdaten speichert Superset mit `SUPERSET_SECRET_KEY` verschlüsselt in seiner

@@ -131,7 +131,7 @@ describe('Anmeldung', () => {
     expect(JSON.stringify(denied[0]!.details)).not.toContain('niemand');
   });
 
-  test('Kontosperre nach 5 Fehlversuchen → 423 auch mit richtigem Passwort; nach 15 min wieder frei', async () => {
+  test('Kontosperre nach 5 Fehlversuchen → einheitlich 401 auch mit richtigem Passwort; nach 15 min wieder frei', async () => {
     const u = await node.user(['analyst']);
     const ip = freshIp();
     for (let i = 1; i <= 4; i++) {
@@ -139,16 +139,25 @@ describe('Anmeldung', () => {
       expect(r.status).toBe(401);
     }
     const fifth = await login(u.email, 'falsch-falsch-5', ip);
-    expect(fifth.status).toBe(423);
-    expect(fifth.json.error.code).toBe('account_locked');
+    expect(fifth.status).toBe(401);
+    expect(fifth.json.error.code).toBe('invalid_credentials');
+    const lockedRow = await node.deps.db
+      .selectFrom('app_user')
+      .select('locked_until')
+      .where('id', '=', u.id)
+      .executeTakeFirstOrThrow();
+    expect(lockedRow.locked_until!.getTime()).toBeGreaterThan(node.deps.now().getTime());
 
+    // Sperre gilt auch mit richtigem Passwort; der wahre Grund steht nur im Audit-Log
     const correctWhileLocked = await login(u.email, u.password, ip);
-    expect(correctWhileLocked.status).toBe(423);
+    expect(correctWhileLocked.status).toBe(401);
+    expect(correctWhileLocked.json.error.code).toBe('invalid_credentials');
+    expect(correctWhileLocked.headers.get('set-cookie')).toBeNull();
     const locked = await auditRows('auth.login', 'denied');
     expect((locked[0]!.details as { reason: string }).reason).toBe('locked');
 
     offsetMs = 14 * 60_000;
-    expect((await login(u.email, u.password, ip)).status).toBe(423);
+    expect((await login(u.email, u.password, ip)).status).toBe(401);
 
     offsetMs = 16 * 60_000;
     const after = await login(u.email, u.password, ip);
@@ -173,7 +182,7 @@ describe('Anmeldung', () => {
   test('Admin hebt Sperre auf', async () => {
     const u = await node.user(['analyst']);
     for (let i = 0; i < 5; i++) await login(u.email, `falsch-falsch-${i}`);
-    expect((await login(u.email, u.password)).status).toBe(423);
+    expect((await login(u.email, u.password)).status).toBe(401);
     const r = await node.request<{ lockedUntil: string | null }>('PATCH', `/api/v1/users/${u.id}`, {
       as: admin,
       body: { unlock: true },
@@ -327,9 +336,12 @@ describe('CSRF, Rollen, Token', () => {
     expect(me.status).toBe(200);
     expect(me.json.user.id).toBe(u.id);
     // zustandsändernde Anfrage mit Token braucht keinen CSRF-Header
-    const viaToken = await node.request('POST', '/api/v1/auth/tokens', {
-      headers: bearer,
+    const second = await node.request<{ item: { id: string } }>('POST', '/api/v1/auth/tokens', {
+      as: u,
       body: { name: 'python' },
+    });
+    const viaToken = await node.request('DELETE', `/api/v1/auth/tokens/${second.json.item.id}`, {
+      headers: bearer,
       csrf: false,
     });
     expect(viaToken.status).toBe(200);

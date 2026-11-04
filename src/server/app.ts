@@ -16,6 +16,7 @@ import { AppError } from './core/errors.ts';
 import { EventBus } from './core/events.ts';
 import { createLogger, type Logger } from './core/logger.ts';
 import { NodeIdentity } from './core/node-identity.ts';
+import { MAX_REQUEST_BYTES } from './modules/federation/protocol.ts';
 import { allModules } from './modules/index.ts';
 
 export interface BuildOptions {
@@ -100,12 +101,18 @@ export function createApp(deps: Deps, modules: Module[] = allModules): Hono<AppE
     }),
   );
 
-  // Uploads (CSV) bis 20 MB, Föderation bis 50 MB, sonst 1 MB
+  // Uploads (CSV) bis 20 MB, Föderationsanfragen bis 2 MB, sonst 1 MB
   const tooLarge = () => {
     throw new AppError('payload_too_large');
   };
   app.use('/api/v1/connectors/*', bodyLimit({ maxSize: 20 * 1024 * 1024, onError: tooLarge }));
-  app.use('/federation/*', bodyLimit({ maxSize: 50 * 1024 * 1024, onError: tooLarge }));
+  // Föderation: hier nur die angekündigte Länge (ohne den Body zu lesen). Den Body liest der Endpunkt erst
+  // nach der Absenderprüfung und begrenzt ihn dabei selbst, auch ohne Content-Length (federation/server.ts).
+  app.use('/federation/*', async (c, next) => {
+    const declared = Number(c.req.header('content-length') ?? '');
+    if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) tooLarge();
+    return next();
+  });
   app.use('/api/*', async (c, next) => {
     if (c.req.path.startsWith('/api/v1/connectors/')) return next();
     return bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge })(c, next);

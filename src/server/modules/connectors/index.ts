@@ -4,7 +4,12 @@
  *
  * Schreibt: connector, import_run, import_error, dataset_record, athlete/athlete_identifier (Import),
  * dataset (nur beim Import einer Definition mit Datensatz-Struktur, über das Modul datasets).
- * Ereignis nach jeder Übernahme: data.changed.
+ * Ereignis nach jeder Übernahme: data.changed. Reagiert auf athlete.deleted (Person aus offenen
+ * Importläufen entfernen); Hintergrundaufgabe: Ablauf nicht übernommener Vorschauen (retention.ts).
+ *
+ * Zugangsgeheimnisse von API-Quellen sind an das gespeicherte Ziel (Origin und Authentifizierung)
+ * gebunden: Ändert sich das Ziel, wird das Geheimnis verworfen; die Analyse mit connectorId nutzt nur
+ * das gespeicherte Ziel.
  */
 import {
   ConnectorConfig,
@@ -22,6 +27,7 @@ import { validateConnectorInput } from './definition.ts';
 import { presentPatch } from './patch.ts';
 import { decodeText, parseCsv, SAMPLE_ROWS, tableFromItems } from './pipeline.ts';
 import { connectorInputOf, loadConnectors, loadDataset, toImportRun, toTargetDataset } from './repo.ts';
+import { eraseSubjectFromRuns, startRetention, stopRetention } from './retention.ts';
 import {
   commitRun,
   discardRun,
@@ -29,9 +35,10 @@ import {
   MAX_UPLOAD_BYTES,
   type RequestContext,
   secretAad,
+  sourceDenied,
   startRun,
 } from './runs.ts';
-import { fetchApiItems, hostOf, isHostAllowed } from './source-http.ts';
+import { checkSource, fetchApiItems, hostOf, secretTarget } from './source-http.ts';
 import { type ConnectorTemplate, loadTemplates } from './templates.ts';
 
 export { secretAad };
@@ -45,8 +52,33 @@ function slugConflict(err: unknown): never {
   throw err;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseConfigField(raw: FormDataEntryValue | null): ConnectorConfigT | null {
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw invalid({ 'body.config': 'invalid_json' });
+  }
+  const parsed = ConnectorConfig.safeParse(json);
+  if (!parsed.success) throw invalid(zodFields(parsed.error, 'body.config'));
+  return parsed.data;
+}
+
 export const connectorsModule: Module = {
   name: 'connectors',
+  init(deps) {
+    // Recht auf Löschung: Person atomar mit der Löschung aus offenen Importläufen entfernen
+    deps.events.onTx('athlete.deleted', (e, trx) => eraseSubjectFromRuns(deps, trx, e.athleteId));
+  },
+  start(deps) {
+    return startRetention(deps);
+  },
+  stop() {
+    stopRetention();
+  },
   routes(app, deps) {
     let templates: ConnectorTemplate[] | null = null;
     const getConnector = async (id: string) => (await loadConnectors(deps.db, id))[0] ?? null;
@@ -115,6 +147,9 @@ export const connectorsModule: Module = {
             (k) => JSON.stringify(input[k]) !== JSON.stringify(before[k]),
           );
           if (changed.length === 0) return;
+          // Geheimnis gilt nur für das Ziel, für das es gesetzt wurde (sonst könnte es umgeleitet werden)
+          const clearSecret =
+            existing.secret_enc !== null && secretTarget(input.config) !== secretTarget(before.config);
           const updated = await trx
             .updateTable('connector')
             .set({
@@ -129,10 +164,25 @@ export const connectorsModule: Module = {
               on_error: input.onError,
               active: input.active,
               version: existing.version + 1,
+              ...(clearSecret ? { secret_enc: null } : {}),
             })
             .where('id', '=', params.id)
             .returning('version')
             .executeTakeFirstOrThrow();
+          if (clearSecret) {
+            await deps.audit.record(
+              {
+                actor,
+                action: 'connector.secret_cleared',
+                objectType: 'connector',
+                objectId: params.id,
+                details: { reason: 'target_changed', version: updated.version },
+                ip,
+                requestId,
+              },
+              trx,
+            );
+          }
           await deps.audit.record(
             {
               actor,
@@ -275,31 +325,28 @@ export const connectorsModule: Module = {
       },
 
       'connectors.inspect': async ({ body: form, actor, ip, requestId }) => {
-        const rawConfig = form.get('config');
-        let config: ConnectorConfigT | null = null;
-        if (typeof rawConfig === 'string' && rawConfig.trim() !== '') {
-          let json: unknown;
-          try {
-            json = JSON.parse(rawConfig);
-          } catch {
-            throw invalid({ 'body.config': 'invalid_json' });
-          }
-          const parsed = ConnectorConfig.safeParse(json);
-          if (!parsed.success) throw invalid(zodFields(parsed.error, 'body.config'));
-          config = parsed.data;
-        }
+        let config = parseConfigField(form.get('config'));
         const file = form.get('file');
         if (isFile(file)) {
           if (config && config.type !== 'csv') throw invalid({ 'body.config.type': 'kind_mismatch' });
           if (file.size > MAX_UPLOAD_BYTES) throw new AppError('payload_too_large');
           const csv = config ?? CsvConfig.parse({ type: 'csv' });
           const decoded = decodeText(new Uint8Array(await file.arrayBuffer()), csv.encoding);
-          const table = parseCsv(decoded.text, csv.delimiter);
+          // für die Zuordnung genügen die Beispielzeilen; die Datei wird nicht weiter gelesen
+          const table = parseCsv(decoded.text, csv.delimiter, { maxRows: SAMPLE_ROWS });
+          if (table.limit === 'too_many_columns') {
+            throw new AppError('payload_too_large', { reason: 'too_many_columns' });
+          }
           await deps.audit.record({
             actor,
             action: 'connector.inspect',
             objectType: 'source',
-            details: { kind: 'csv', columns: table.columns.length, rows: table.rows.length },
+            details: {
+              kind: 'csv',
+              columns: table.columns.length,
+              rows: table.rows.length,
+              truncated: table.limit === 'too_many_rows',
+            },
             ip,
             requestId,
           });
@@ -309,33 +356,51 @@ export const connectorsModule: Module = {
             detectedDelimiter: table.delimiter,
           };
         }
+        // Gespeichertes Geheimnis eines Connectors: nur an dessen gespeichertes Ziel (URL und
+        // Authentifizierung aus der Anfrage werden ignoriert), sonst könnte es an andere Hosts gehen
+        let secret: string | null = null;
+        const connectorId = form.get('connectorId');
+        if (typeof connectorId === 'string' && connectorId !== '') {
+          if (!UUID_RE.test(connectorId)) throw invalid({ 'body.connectorId': 'invalid' });
+          const stored = await deps.db
+            .selectFrom('connector')
+            .select(['id', 'config', 'secret_enc'])
+            .where('id', '=', connectorId)
+            .executeTakeFirst();
+          if (!stored) throw notFound();
+          const storedConfig = stored.config as ConnectorConfigT;
+          if (storedConfig.type !== 'http_api') throw invalid({ 'body.connectorId': 'kind_mismatch' });
+          if (!config) config = storedConfig;
+          else if (config.type === 'http_api') {
+            config = { ...config, url: storedConfig.url, auth: storedConfig.auth };
+          }
+          if (stored.secret_enc) secret = deps.box.open(stored.secret_enc, secretAad(stored.id));
+        }
+        // einmalig mitgegebenes Geheimnis (nicht gespeichert)
+        const formSecret = form.get('secret');
+        if (typeof formSecret === 'string' && formSecret !== '') secret = formSecret;
         if (config?.type !== 'http_api') throw invalid({ 'body.file': 'required' });
-        if (!isHostAllowed(config.url, deps.config.MESH_SOURCE_ALLOWED_HOSTS)) {
+        const denial = checkSource(config, secret, deps.config);
+        if (denial) {
           await deps.audit.record({
             actor,
             action: 'connector.inspect',
             outcome: 'denied',
             objectType: 'source',
-            details: { reason: 'source_not_allowed', host: hostOf(config.url) },
+            details: {
+              reason: denial,
+              host: hostOf(config.url),
+              ...(typeof connectorId === 'string' && connectorId !== '' ? { connectorId } : {}),
+            },
             ip,
             requestId,
           });
-          throw new AppError('source_not_allowed');
+          throw sourceDenied(denial);
         }
-        // Zugangsgeheimnis: einmalig mitgegeben (nicht gespeichert) oder eines vorhandenen Connectors
-        let secret: string | null = null;
-        const formSecret = form.get('secret');
-        const connectorId = form.get('connectorId');
-        if (typeof formSecret === 'string' && formSecret !== '') secret = formSecret;
-        else if (typeof connectorId === 'string' && /^[0-9a-f-]{36}$/i.test(connectorId)) {
-          const c = await deps.db
-            .selectFrom('connector')
-            .select(['id', 'secret_enc'])
-            .where('id', '=', connectorId)
-            .executeTakeFirst();
-          if (c?.secret_enc) secret = deps.box.open(c.secret_enc, secretAad(c.id));
-        }
-        const res = await fetchApiItems(deps.fetch, config, secret, { maxPages: 1 });
+        const res = await fetchApiItems(deps.fetch, config, secret, {
+          maxPages: 1,
+          allowInsecureHttp: deps.config.MESH_SOURCE_ALLOW_INSECURE_HTTP,
+        });
         await deps.audit.record({
           actor,
           action: 'connector.inspect',
@@ -358,6 +423,7 @@ export const connectorsModule: Module = {
           });
         }
         const table = tableFromItems(res.items.slice(0, SAMPLE_ROWS));
+        if (table.limit) throw new AppError('payload_too_large', { reason: table.limit });
         return { columns: table.columns, sampleRows: table.rows.map((r) => r.raw), detectedDelimiter: null };
       },
 

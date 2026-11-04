@@ -7,8 +7,9 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Role } from '../../../shared/contract/common.ts';
+import type { Actor } from '../../core/audit.ts';
 import { randomToken, sha256Hex } from '../../core/crypto.ts';
-import type { DbOrTx } from '../../core/db.ts';
+import type { DbOrTx, Tx } from '../../core/db.ts';
 import type { AppEnv, Authenticator, AuthUser, Deps } from '../../core/deps.ts';
 
 export const SESSION_COOKIE = 'osp_session';
@@ -54,6 +55,45 @@ export async function createSession(
 export function newApiToken(): { token: string; hash: string; prefix: string } {
   const token = `${API_TOKEN_PREFIX}${randomToken(32)}`;
   return { token, hash: sha256Hex(token), prefix: token.slice(0, 10) };
+}
+
+export type TokenRevokeReason = 'password_change' | 'password_reset' | 'user_deactivated';
+
+/**
+ * Widerruft alle noch gültigen API-Tokens einer Person (Passwortwechsel, Zurücksetzen, Deaktivierung):
+ * ein mit einer fremden Sitzung erzeugtes Token überdauert so den Zugangswechsel nicht. Je Token ein
+ * Audit-Eintrag "token.revoke" in der Transaktion des Auslösers. Liefert die Zahl widerrufener Tokens.
+ */
+export async function revokeAllApiTokens(
+  deps: Pick<Deps, 'audit'>,
+  trx: Tx,
+  userId: string,
+  reason: TokenRevokeReason,
+  ctx: { actor: Actor; ip: string | null; requestId: string; now: Date },
+): Promise<number> {
+  const revoked = await trx
+    .updateTable('api_token')
+    .set({ revoked_at: ctx.now })
+    .where('user_id', '=', userId)
+    .where('revoked_at', 'is', null)
+    .where((eb) => eb.or([eb('expires_at', 'is', null), eb('expires_at', '>', ctx.now)]))
+    .returning(['id', 'prefix'])
+    .execute();
+  for (const t of revoked) {
+    await deps.audit.record(
+      {
+        actor: ctx.actor,
+        action: 'token.revoke',
+        objectType: 'api_token',
+        objectId: t.id,
+        details: { reason, prefix: t.prefix, userId },
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+      },
+      trx,
+    );
+  }
+  return revoked.length;
 }
 
 /** Ermittelt die Person aus Sitzungs-Cookie oder Bearer-Token. Inaktive Konten werden abgewiesen. */

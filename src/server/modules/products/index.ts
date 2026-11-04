@@ -14,6 +14,7 @@ import {
   getProductApi,
   listProducts,
   type RequestMeta,
+  registerDatasetChangeHandler,
   retireProduct,
   updateProduct,
 } from './service.ts';
@@ -25,6 +26,9 @@ function meta(ctx: Pick<HandlerCtx<'products.list'>, 'actor' | 'user' | 'ip' | '
 /** Modul "products": Datenprodukte (Definition, Versionierung) und Datenzugriff für lokale Rollen */
 export const productsModule: Module = {
   name: 'products',
+  init(deps) {
+    registerDatasetChangeHandler(deps);
+  },
   routes(app, deps) {
     registerRoutes(app, deps, {
       'products.list': async () => ({ items: await listProducts(deps) }),
@@ -159,7 +163,9 @@ export const productsModule: Module = {
           requestId: ctx.requestId,
         });
         const rows = result.rows.map((r) => r.values);
-        if (query.format === 'json') return { columns: result.columns, rows, stats: result.stats };
+        // Empfänger erfahren nur die Zahl gelieferter Zeilen, nichts über Zeilen außerhalb der Freigabe
+        if (query.format === 'json')
+          return { columns: result.columns, rows, stats: { returned: rows.length } };
         return fileResponse(
           query.format,
           result.product.slug,

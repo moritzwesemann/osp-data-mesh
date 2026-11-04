@@ -176,18 +176,23 @@ describe('Föderation: Prüfungen beim Empfänger', () => {
     expect(r.json.body).toMatchObject({ nodeId: 'osp-b', displayName: 'OSP B' });
   });
 
-  test('unbekannter Knoten → unknown_node (signiert, auditiert)', async () => {
+  test('unbekannter Knoten → unknown_node (signiert; Audit zusammengefasst je Quelle und Code)', async () => {
+    // erste Ablehnung dieser Quelle: Ping von A, bevor B den Knoten A kannte
+    expect(await rejections(b, 'unknown_node')).toBe(1);
     const r = await rawSend(b, { from: a, headerNode: 'osp-ghost', envelope: { from: 'osp-ghost' } });
     expect(r.status).toBe(401);
     expect(r.json.error?.code).toBe('unknown_node');
     expect(r.signedByTarget).toBe(true);
+    // Body wird nicht gelesen, nur sein Anfang: die Ablehnung bleibt für den Absender zuordenbar
+    expect(r.json.inReplyTo).toBe(JSON.parse(r.raw).id);
     const noHeader = await rawSend(b, { from: a, headerNode: null });
     expect(noHeader.json.error?.code).toBe('unknown_node');
-    expect(await rejections(b, 'unknown_node')).toBeGreaterThanOrEqual(2);
+    // weitere Ablehnungen derselben Quelle im Zeitfenster stehen nur im Betriebslog
+    expect(await rejections(b, 'unknown_node')).toBe(1);
     const entry = (await auditEntries(b, 'federation.request.rejected')).find(
-      (e) => e.details.code === 'unknown_node' && e.actor_id === 'osp-ghost',
+      (e) => e.details.code === 'unknown_node',
     );
-    expect(entry).toMatchObject({ actor_type: 'peer', outcome: 'denied' });
+    expect(entry).toMatchObject({ actor_type: 'peer', actor_id: 'osp-a', outcome: 'denied' });
   });
 
   test('manipulierter Body (nach dem Signieren geändert) → bad_signature', async () => {
@@ -203,7 +208,8 @@ describe('Föderation: Prüfungen beim Empfänger', () => {
     // Signatur eines anderen Schlüssels
     const r2 = await rawSend(b, { from: b, headerNode: 'osp-a', envelope: { from: 'osp-a' } });
     expect(r2.json.error?.code).toBe('bad_signature');
-    expect(await rejections(b, 'bad_signature')).toBeGreaterThanOrEqual(2);
+    // zusammengefasst: nur die erste Ablehnung je Quelle und Code im Zeitfenster wird auditiert
+    expect(await rejections(b, 'bad_signature')).toBe(1);
   });
 
   test('ungültiger Aufbau → bad_request', async () => {

@@ -19,7 +19,14 @@ import {
   MAX_FAILED_LOGINS,
   RateLimiter,
 } from './policy.ts';
-import { createSession, hashPassword, newApiToken, SESSION_COOKIE, verifyPassword } from './sessions.ts';
+import {
+  createSession,
+  hashPassword,
+  newApiToken,
+  revokeAllApiTokens,
+  SESSION_COOKIE,
+  verifyPassword,
+} from './sessions.ts';
 
 const ANONYMOUS: Actor = { type: 'anonymous', id: null, label: null };
 
@@ -87,10 +94,11 @@ export function authHandlers(deps: Deps): Handlers {
         throw new AppError('invalid_credentials');
       }
       if (user.locked_until && user.locked_until > now) {
-        // auch mit richtigem Passwort gesperrt; Fehlversuche verlängern die Sperre nicht
+        // auch mit richtigem Passwort gesperrt; Fehlversuche verlängern die Sperre nicht. Gleiche Antwort
+        // wie bei falschem Passwort (verrät weder Existenz noch Sperre des Kontos); Grund nur im Audit.
         await verifyPassword(body.password, await dummyPasswordHash());
         await deny('locked', user.id);
-        throw new AppError('account_locked');
+        throw new AppError('invalid_credentials');
       }
       if (!(await verifyPassword(body.password, user.password_hash))) {
         const lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60_000);
@@ -105,7 +113,7 @@ export function authHandlers(deps: Deps): Handlers {
           .executeTakeFirst();
         const lockedNow = !!updated?.locked_until && updated.locked_until > now;
         await deny('invalid_credentials', user.id, lockedNow ? { locked: true } : {});
-        throw new AppError(lockedNow ? 'account_locked' : 'invalid_credentials');
+        throw new AppError('invalid_credentials');
       }
 
       const previous = getCookie(c, SESSION_COOKIE);
@@ -214,13 +222,20 @@ export function authHandlers(deps: Deps): Handlers {
         let del = trx.deleteFrom('user_session').where('user_id', '=', user.id);
         if (user.via === 'session' && user.sessionId) del = del.where('id', '<>', user.sessionId);
         const ended = await del.executeTakeFirst();
+        // API-Tokens widerrufen: auch ein mit einer gestohlenen Sitzung erzeugtes Token endet hier
+        const tokensRevoked = await revokeAllApiTokens(deps, trx, user.id, 'password_change', {
+          actor,
+          ip,
+          requestId,
+          now,
+        });
         await deps.audit.record(
           {
             actor,
             action: 'auth.password_change',
             objectType: 'user',
             objectId: user.id,
-            details: { sessionsEnded: Number(ended.numDeletedRows) },
+            details: { sessionsEnded: Number(ended.numDeletedRows), tokensRevoked },
             ip,
             requestId,
           },
@@ -241,6 +256,20 @@ export function authHandlers(deps: Deps): Handlers {
     },
 
     'tokens.create': async ({ body, user, actor, ip, requestId }) => {
+      // nur mit Sitzung (Passwort-Anmeldung): ein Token kann keine weiteren Tokens erzeugen
+      if (user.via !== 'session') {
+        await deps.audit.record({
+          actor,
+          action: 'token.create',
+          outcome: 'denied',
+          objectType: 'api_token',
+          objectId: null,
+          details: { reason: 'session_required', via: user.via },
+          ip,
+          requestId,
+        });
+        throw new AppError('forbidden', { reason: 'session_required' });
+      }
       const now = deps.now();
       const t = newApiToken();
       const row = await deps.db.transaction().execute(async (trx) => {

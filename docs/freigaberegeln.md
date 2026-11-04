@@ -64,6 +64,11 @@ Status `granted`, Zweck = angefragter Zweck oder `*`, Kategorie = Datenkategorie
 `validFrom ≤ Stichtag ≤ validUntil` (Stichtag in Europe/Berlin, Grenzen inklusive). Widerrufene Einträge
 zählen nicht. Zeilen ohne Personenbezug können keine Einwilligung nachweisen und entfallen.
 
+**Statistik:** Empfänger erhalten beim Abruf (`access.data`) nur die Zahl der gelieferten Zeilen. Wie
+viele Zeilen das Produkt insgesamt hat und wie viele durch Zeilenbeschränkung, Datenzeitraum oder fehlende
+Einwilligung entfallen, sehen nur Datenverantwortliche in den Vorschauen (`products.preview`,
+`releases.preview`); sonst ließe sich etwa ablesen, für wie viele Personen keine Einwilligung vorliegt.
+
 ## Besondere Kategorien (Art. 9 DSGVO)
 
 Datensätze der Kategorie `health` sind immer besondere Kategorie (Datenbank-Constraint); andere können
@@ -78,6 +83,18 @@ Erteilen und nochmals bei jeder Ausgabe).
 - Ändert sich ein Produkt (Spalten/Filter), werden bestehende Freigaben "veraltet" (`product_changed`)
   und liefern nichts mehr, bis sie neu erteilt sind. So kann eine Produktänderung nie unbemerkt mehr
   Daten freigeben.
+- Eine **Datensatzänderung** gilt als Änderung jedes darauf aufbauenden Produkts, wenn sie die Einstufung
+  (Kategorie, besondere Kategorie, Teilbarkeit), das Beobachtungsdatum oder ein vom Produkt genutztes Feld
+  betrifft (entfernt, anderer Typ, andere Einheit). Das Produkt erhält in derselben Transaktion eine neue
+  Version (Audit `product.update` mit `cause: dataset_changed`): Freigaben sind sofort veraltet, BI-Views
+  liefern sofort keine Zeilen mehr. Wird der Datensatz intern, wird auch das Produkt intern. Name,
+  Beschreibung, Feldbezeichnungen, Prüfregeln und neue Felder ändern keine Produktversion.
+- Wird ein Datensatz **neu besondere Kategorie** (z. B. Kategorie `health`), wechselt ein Datensatz
+  besonderer Kategorie die Kategorie (Einwilligungen gelten je Kategorie) oder wird er **intern**, werden
+  zusätzlich alle nicht widerrufenen Partnerfreigaben der betroffenen Produkte widerrufen (Grund
+  `dataset_reclassified`): Partner erhalten `release_revoked` und löschen ihre Kopien, denn diese Daten
+  hätten nach der neuen Einstufung so nicht übermittelt werden dürfen. Bei allen anderen Änderungen bleibt
+  eine vorher rechtmäßig gelieferte Kopie bis zu Ablauf oder ausdrücklichem Widerruf beim Partner.
 - Widerruf wirkt sofort für künftige Abrufe. Bei Partnerfreigaben wird eine signierte Widerrufsmitteilung
   über das Ausgangspostfach zugestellt (mit Wiederholung); der Empfänger löscht seine Kopie. Siehe
   [Widerruf und Weitergabe](widerruf-und-weitergabe.md).

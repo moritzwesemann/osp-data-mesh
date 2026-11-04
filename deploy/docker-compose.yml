@@ -127,7 +127,9 @@ services:
 
   # ---------------------------------------------------------------------------------------------
   # TLS-Reverse-Proxy. Einziger Dienst mit veröffentlichten Ports.
-  #   443/8443: HTTPS (8443 nur für Superset, Profil "bi"); 80: Weiterleitung auf HTTPS und ACME-Prüfung
+  #   443: HTTPS für den Knoten (CADDY_DOMAIN) und Superset (Profil "bi", eigener Name MESH_BI_DOMAIN,
+  #        Standard bi.<CADDY_DOMAIN>; nie derselbe Name mit anderem Port, sonst erhielte Superset das
+  #        Sitzungs-Cookie des Knotens, siehe Caddyfile); 80: Weiterleitung auf HTTPS und ACME-Prüfung
   caddy:
     image: caddy:2.11
     restart: unless-stopped
@@ -137,12 +139,12 @@ services:
     environment:
       CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN in .env setzen}
       CADDY_TLS: ${CADDY_TLS:-internal}
+      MESH_BI_DOMAIN: ${MESH_BI_DOMAIN:-bi.${CADDY_DOMAIN}}
     # CADDY_BIND: Adresse der Netzwerkschnittstelle (Standard alle); z. B. nur die LAN-Adresse
     ports:
       - "${CADDY_BIND:-0.0.0.0}:80:80"
       - "${CADDY_BIND:-0.0.0.0}:443:443"
       - "${CADDY_BIND:-0.0.0.0}:443:443/udp"
-      - "${CADDY_BIND:-0.0.0.0}:8443:8443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

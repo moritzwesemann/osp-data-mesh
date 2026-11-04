@@ -7,9 +7,11 @@
 #                               Partnerknoten müssen der CA vertrauen, siehe docs/installation.md)
 #                 E-Mail-Adresse → automatisches HTTPS mit Let's Encrypt/ZeroSSL (ACME) für eine
 #                               öffentlich erreichbare Domain (Ports 80/443 aus dem Internet erreichbar)
+#   MESH_BI_DOMAIN eigener DNS-Name für Apache Superset (Profil "bi"), Standard bi.<CADDY_DOMAIN>
+#                 (Vorgabe in docker-compose.yml); nie der Name des Knotens (siehe unten)
 #
 # Native Installation (ohne Docker): Upstream "node:4401" durch "127.0.0.1:4401" und "superset:8088"
-# durch die Superset-Adresse ersetzen bzw. den zweiten Block entfernen.
+# durch die Superset-Adresse ersetzen bzw. den zweiten Block entfernen; MESH_BI_DOMAIN selbst setzen.
 
 # Die Verwaltungs-API von Caddy lauscht nur innerhalb des Containers (localhost:2019) und wird nicht
 # veröffentlicht; Änderungen an dieser Datei: docker compose restart caddy
@@ -45,9 +47,14 @@
 	}
 }
 
-# Optional: Apache Superset (Profil "bi") auf Port 8443 desselben Namens.
-# Ohne laufenden Superset-Dienst antwortet dieser Port mit 502.
-{$CADDY_DOMAIN:localhost}:8443 {
+# Optional: Apache Superset (Profil "bi") unter einem EIGENEN Hostnamen, nie unter dem Namen des Knotens
+# mit anderem Port: Cookies sind nicht an Ports gebunden (RFC 6265, Abschnitt 8.5). Das Sitzungs-Cookie
+# des Knotens (osp_session, ohne Domain-Attribut, also nur für genau diesen Hostnamen) schickte der Browser
+# sonst bei jeder Anfrage auch an Superset – Superset (oder wer es kompromittiert) erhielte die Sitzungen
+# aller angemeldeten Personen des Knotens. An einen anderen Hostnamen sendet der Browser es nicht.
+# Der Name braucht einen DNS-Eintrag (bei ACME öffentlich auflösbar); ohne laufenden Superset-Dienst
+# antwortet er mit 502.
+{$MESH_BI_DOMAIN:bi.localhost} {
 	import common
 	reverse_proxy superset:8088
 }

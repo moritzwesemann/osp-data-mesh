@@ -51,6 +51,11 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
+  /**
+   * Zugangsgeheimnisse von API-Quellen auch über unverschlüsseltes http:// senden (Standard false).
+   * Ohne diese Einstellung nur über https:// bzw. an 127.0.0.1, ::1 und localhost.
+   */
+  MESH_SOURCE_ALLOW_INSECURE_HTTP: bool.default(false),
   /** X-Forwarded-For auswerten (nur hinter vertrauenswürdigem Reverse Proxy, z. B. Caddy) */
   MESH_TRUST_PROXY: bool.default(false),
   MESH_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),

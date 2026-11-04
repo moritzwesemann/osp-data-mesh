@@ -4,7 +4,7 @@
  */
 import { sql } from 'kysely';
 import { NoticeBody, NoticeResponse } from '../../../shared/contract/federation-wire.ts';
-import { SYSTEM_ACTOR } from '../../core/audit.ts';
+import { type Actor, SYSTEM_ACTOR } from '../../core/audit.ts';
 import { sha256Hex } from '../../core/crypto.ts';
 import type { DbOrTx, Tx } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
@@ -279,6 +279,39 @@ async function deliver(
   }
 }
 
+/**
+ * Setzt endgültig fehlgeschlagene Mitteilungen wieder auf "ausstehend" und sofort fällig (Aktion
+ * "Jetzt zustellen", z. B. nachdem die Verbindung zum Partner wiederhergestellt ist). Die Zahl der Versuche
+ * bleibt erhalten: scheitert auch dieser Versuch, ist die Mitteilung sofort wieder fehlgeschlagen.
+ */
+export async function requeueFailed(
+  deps: Deps,
+  ctx: { actor: Actor; ip: string | null; requestId: string },
+): Promise<number> {
+  return deps.db.transaction().execute(async (trx) => {
+    const rows = await trx
+      .updateTable('outbox_message')
+      .set({ status: 'pending', next_attempt_at: deps.now() })
+      .where('status', '=', 'failed')
+      .returning('id')
+      .execute();
+    if (rows.length > 0) {
+      await deps.audit.record(
+        {
+          actor: ctx.actor,
+          action: 'outbox.requeue',
+          objectType: 'outbox',
+          details: { messages: rows.length },
+          ip: ctx.ip,
+          requestId: ctx.requestId,
+        },
+        trx,
+      );
+    }
+    return rows.length;
+  });
+}
+
 /** Stellt fällige Mitteilungen zu (je Partner der Reihe nach, Partner parallel). */
 export async function flushOutbox(deps: Deps): Promise<{ delivered: number; failed: number }> {
   const now = deps.now();
@@ -427,12 +460,14 @@ export const outboxHandlers: Handlers = {
   },
 
   'outbox.flush': async ({ deps, actor, ip, requestId }) => {
+    // fehlgeschlagene Mitteilungen erneut versuchen (manuell; der Hintergrundlauf tut das nicht)
+    const requeued = await requeueFailed(deps, { actor, ip, requestId });
     const result = await flushOutbox(deps);
     await deps.audit.record({
       actor,
       action: 'outbox.flush',
       objectType: 'outbox',
-      details: result,
+      details: { ...result, requeued },
       ip,
       requestId,
     });

@@ -163,16 +163,11 @@ function GrantView({ grant }: { grant: AccessGrant }) {
         ) : (
           <QueryView query={data}>
             {(result) => {
-              const s = result.stats;
-              const parts = [t('myData.statsReturned', { count: s.returned })];
-              if (grant.requiresConsent || grant.product.specialCategory || s.excludedByConsent > 0)
-                parts.push(t('myData.statsConsent', { count: s.excludedByConsent }));
-              if (s.excludedByFilter > 0) parts.push(t('myData.statsFilter', { count: s.excludedByFilter }));
-              if (s.excludedByTime > 0) parts.push(t('myData.statsTime', { count: s.excludedByTime }));
+              // Empfänger erhalten nur die Zahl gelieferter Zeilen (keine Angaben über ausgeschlossene Zeilen)
               const shown = result.rows.slice(0, MAX_SHOWN);
               return (
                 <div className="stack">
-                  <p aria-live="polite">{parts.join('; ')}</p>
+                  <p aria-live="polite">{t('myData.statsReturned', { count: result.stats.returned })}</p>
                   <ResultTable columns={result.columns} rows={shown} caption={grant.product.name} numbered />
                   {result.rows.length > MAX_SHOWN && (
                     <p className="small muted">

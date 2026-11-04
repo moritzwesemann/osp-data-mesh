@@ -48,11 +48,16 @@ export interface SourceRow {
   raw: Record<string, string | null>;
 }
 
+/** Grund, aus dem eine Quelle nicht verarbeitet wird (Fehlercode des Laufs, params.max) */
+export type SourceLimit = 'too_many_columns' | 'too_many_rows';
+
 export interface SourceTable {
   columns: string[];
   rows: SourceRow[];
   /** strukturelle Probleme einzelner Zeilen (z. B. falsche Spaltenzahl) */
   issues: Issue[];
+  /** Obergrenze überschritten: Quelle wurde nicht (vollständig) gelesen */
+  limit?: SourceLimit;
 }
 
 export interface DatasetShape {
@@ -103,6 +108,11 @@ export interface AthleteLookup {
 
 export const PREVIEW_ROWS = 50;
 export const SAMPLE_ROWS = 10;
+/** Obergrenzen je Quelle (Schutz vor Überlastung des Knotens durch eine einzelne Datei/Antwort) */
+export const MAX_SOURCE_ROWS = 100_000;
+export const MAX_SOURCE_COLUMNS = 500;
+/** Verschachtelungstiefe beim Abflachen von JSON-Einträgen; tiefer liegende Teile bleiben JSON-Text */
+export const MAX_FLATTEN_DEPTH = 32;
 
 // ---------------------------------------------------------------------------------------------
 // Dekodierung und CSV
@@ -136,6 +146,7 @@ export function decodeText(
 }
 
 const DELIMITERS = [';', ',', '\t'] as const;
+const DETECT_PREFIX_CHARS = 256 * 1024;
 export type Delimiter = (typeof DELIMITERS)[number];
 
 function countOutsideQuotes(line: string, ch: string): number {
@@ -153,7 +164,9 @@ function countOutsideQuotes(line: string, ch: string): number {
  * (Kopfzeile zählt doppelt). Ohne Treffer: Komma.
  */
 export function detectDelimiter(text: string): Delimiter {
+  // nur der Anfang zählt; nicht die ganze Datei in Zeilen zerlegen
   const lines = text
+    .slice(0, DETECT_PREFIX_CHARS)
     .split(/\r\n|\n|\r/)
     .filter((l) => l.trim() !== '')
     .slice(0, 6);
@@ -174,44 +187,109 @@ export function detectDelimiter(text: string): Delimiter {
   return best;
 }
 
-/** CSV mit Kopfzeile parsen. Leere Zeilen werden übersprungen; Zeilennummern 1-basiert ohne Kopfzeile. */
+/**
+ * Spaltennamen eindeutig machen: leere Namen → "Spalte N", Wiederholungen → "Name (2)", "Name (3)" …
+ * Linear (Menge + Zähler je Grundname), damit eine präparierte Kopfzeile den Knoten nicht blockiert.
+ */
+export function uniqueColumnNames(cells: readonly (string | null | undefined)[]): string[] {
+  const columns: string[] = [];
+  const taken = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+  for (const cell of cells) {
+    const base = (cell ?? '').replace(/^\uFEFF/, '').trim() || `Spalte ${columns.length + 1}`;
+    let name = base;
+    if (taken.has(name)) {
+      // vergebene Namen werden nie wieder frei: der Zähler muss nie zurückgehen
+      let i = nextSuffix.get(base) ?? 2;
+      while (taken.has(`${base} (${i})`)) i++;
+      name = `${base} (${i})`;
+      nextSuffix.set(base, i + 1);
+    }
+    taken.add(name);
+    columns.push(name);
+  }
+  return columns;
+}
+
+/**
+ * Vorprüfung ohne Zerlegen: hat die erste nicht-leere Zeile mehr als max Zellen? Zählt Trennzeichen
+ * außerhalb von Anführungszeichen; Abweichungen zum Parser führen höchstens zu weniger Zellen (die
+ * eigentliche Prüfung erfolgt beim Parsen).
+ */
+function headerExceeds(text: string, delimiter: string, max: number): boolean {
+  let cells = 1;
+  let quoted = false;
+  let content = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      quoted = !quoted;
+      content = true;
+    } else if (!quoted && (c === '\n' || c === '\r')) {
+      if (content) return false;
+    } else if (!quoted && c === delimiter) {
+      content = true;
+      if (++cells > max) return true;
+    } else if (c !== ' ' && c !== '\t') {
+      content = true;
+    }
+  }
+  return false;
+}
+
+/**
+ * CSV mit Kopfzeile parsen. Leere Zeilen werden übersprungen; Zeilennummern 1-basiert ohne Kopfzeile.
+ * Obergrenzen: höchstens MAX_SOURCE_COLUMNS Spalten (sonst limit=too_many_columns, keine Zeilen) und
+ * maxRows Datenzeilen (sonst limit=too_many_rows mit den ersten maxRows Zeilen); das Parsen endet dann.
+ */
 export function parseCsv(
   text: string,
   delimiter: CsvConfig['delimiter'],
+  opts: { maxRows?: number } = {},
 ): SourceTable & { delimiter: Delimiter } {
+  const maxRows = opts.maxRows ?? MAX_SOURCE_ROWS;
   const d: Delimiter = delimiter === 'auto' ? detectDelimiter(text) : delimiter;
-  const result = Papa.parse<string[]>(text.replace(/^\uFEFF/, ''), {
+  const input = text.replace(/^\uFEFF/, '');
+  const tooWide = { columns: [], rows: [], issues: [], delimiter: d, limit: 'too_many_columns' as const };
+  if (headerExceeds(input, d, MAX_SOURCE_COLUMNS)) return tooWide;
+
+  let headerRow: string[] | null = null;
+  let limit: SourceLimit | undefined;
+  const body: { cells: string[]; broken: boolean }[] = [];
+  Papa.parse<string[]>(input, {
     delimiter: d,
     header: false,
     skipEmptyLines: 'greedy',
+    step: (result, parser) => {
+      if (headerRow === null) {
+        headerRow = result.data;
+        if (headerRow.length > MAX_SOURCE_COLUMNS) {
+          limit = 'too_many_columns';
+          parser.abort();
+        }
+        return;
+      }
+      if (body.length >= maxRows) {
+        limit = 'too_many_rows';
+        parser.abort();
+        return;
+      }
+      body.push({ cells: result.data, broken: result.errors.length > 0 });
+    },
   });
-  const [headerRow, ...body] = result.data;
+  if (limit === 'too_many_columns') return tooWide;
   if (!headerRow) return { columns: [], rows: [], issues: [], delimiter: d };
-  const columns: string[] = [];
-  for (const cell of headerRow) {
-    let name = (cell ?? '').replace(/^\uFEFF/, '').trim() || `Spalte ${columns.length + 1}`;
-    if (columns.includes(name)) {
-      let i = 2;
-      while (columns.includes(`${name} (${i})`)) i++;
-      name = `${name} (${i})`;
-    }
-    columns.push(name);
-  }
+  const columns = uniqueColumnNames(headerRow);
   const issues: Issue[] = [];
-  const brokenRows = new Set<number>();
-  for (const e of result.errors) {
-    // Papa zählt Datenzeilen ab 0 inkl. Kopfzeile
-    if (typeof e.row === 'number' && e.row > 0) brokenRows.add(e.row);
-  }
-  const rows: SourceRow[] = body.map((cells, i) => {
+  const rows: SourceRow[] = body.map(({ cells, broken }, i) => {
     const rowNumber = i + 1;
+    // nur vorhandene Zellen: kurze Zeilen erzeugen keine Platzhalter je Spalte (fehlend = leer)
     const raw: Record<string, string | null> = {};
-    columns.forEach((c, j) => {
-      raw[c] = cells[j] ?? null;
-    });
+    const n = Math.min(cells.length, columns.length);
+    for (let j = 0; j < n; j++) raw[columns[j]!] = cells[j] ?? null;
     // überzählige Zellen sind nur zulässig, wenn sie leer sind (z. B. Semikolon am Zeilenende)
     const extra = cells.slice(columns.length).some((c) => c.trim() !== '');
-    if (extra || cells.length < columns.length || brokenRows.has(i + 1)) {
+    if (extra || cells.length < columns.length || broken) {
       issues.push({
         rowNumber,
         field: null,
@@ -223,7 +301,7 @@ export function parseCsv(
     }
     return { rowNumber, raw };
   });
-  return { columns, rows, issues, delimiter: d };
+  return { columns, rows, issues, delimiter: d, ...(limit ? { limit } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -241,19 +319,36 @@ export function getPath(value: unknown, path: string): unknown {
   return cur;
 }
 
-/** Verschachteltes Objekt → flache Spalten mit Punkt-Pfaden; Werte als Text (null bleibt null) */
-export function flattenItem(item: unknown, prefix = '', out: Record<string, string | null> = {}) {
+function jsonText(value: unknown): string | null {
+  try {
+    return JSON.stringify(value) ?? null;
+  } catch {
+    // z. B. Stapelüberlauf bei extrem tiefer Verschachtelung
+    return null;
+  }
+}
+
+/**
+ * Verschachteltes Objekt → flache Spalten mit Punkt-Pfaden; Werte als Text (null bleibt null).
+ * Arrays und Teile unterhalb von MAX_FLATTEN_DEPTH werden als JSON-Text übernommen.
+ */
+export function flattenItem(
+  item: unknown,
+  prefix = '',
+  out: Record<string, string | null> = {},
+  depth = 0,
+): Record<string, string | null> {
   if (item === null || item === undefined) {
     if (prefix) out[prefix] = null;
     return out;
   }
-  if (Array.isArray(item)) {
-    if (prefix) out[prefix] = JSON.stringify(item);
+  if (Array.isArray(item) || (typeof item === 'object' && depth >= MAX_FLATTEN_DEPTH)) {
+    if (prefix) out[prefix] = jsonText(item);
     return out;
   }
   if (typeof item === 'object') {
     for (const [k, v] of Object.entries(item as Record<string, unknown>)) {
-      flattenItem(v, prefix ? `${prefix}.${k}` : k, out);
+      flattenItem(v, prefix ? `${prefix}.${k}` : k, out, depth + 1);
     }
     return out;
   }
@@ -261,19 +356,25 @@ export function flattenItem(item: unknown, prefix = '', out: Record<string, stri
   return out;
 }
 
+/** JSON-Einträge → Tabelle; Spalten = Vereinigung aller Schlüssel (höchstens MAX_SOURCE_COLUMNS) */
 export function tableFromItems(items: readonly unknown[]): SourceTable {
+  if (items.length > MAX_SOURCE_ROWS) return { columns: [], rows: [], issues: [], limit: 'too_many_rows' };
   const columns: string[] = [];
   const seen = new Set<string>();
-  const rows = items.map((item, i) => {
+  const rows: SourceRow[] = [];
+  for (const [i, item] of items.entries()) {
     const raw = flattenItem(item);
     for (const k of Object.keys(raw)) {
       if (!seen.has(k)) {
+        if (seen.size >= MAX_SOURCE_COLUMNS) {
+          return { columns: [], rows: [], issues: [], limit: 'too_many_columns' };
+        }
         seen.add(k);
         columns.push(k);
       }
     }
-    return { rowNumber: i + 1, raw };
-  });
+    rows.push({ rowNumber: i + 1, raw });
+  }
   return { columns, rows, issues: [] };
 }
 
@@ -493,10 +594,11 @@ function hasErrors(row: MappedRow): boolean {
   return row.issues.some((i) => i.severity === 'error');
 }
 
-function displayKey(row: MappedRow): string | null {
-  const { last_name, first_name, date_of_birth } = row.athlete;
-  return last_name && first_name && date_of_birth ? `${last_name}, ${first_name}, ${date_of_birth}` : null;
-}
+/**
+ * Zuordnungsfehler speichern keine Personenkennungen (Name, Geburtsdatum, Kennung) als Rohwert, nur die
+ * für die Zuordnung verwendeten Felder als Hinweis; die Zeile ist über ihre Nummer auffindbar.
+ */
+const NATURAL_KEY_HINT = 'athlete.last_name,athlete.first_name,athlete.date_of_birth';
 
 /** Ordnet Zeilen vorhandenen Personen zu (Kennung, ersatzweise natürlicher Schlüssel). */
 export function resolveAthletes(rows: MappedRow[], lookup: AthleteLookup, ctx: PipelineContext): void {
@@ -519,8 +621,8 @@ export function resolveAthletes(rows: MappedRow[], lookup: AthleteLookup, ctx: P
           field: null,
           code: 'athlete_ambiguous',
           severity: 'error',
-          rawValue: displayKey(row),
-          params: { count: candidates.length },
+          rawValue: null,
+          params: { count: candidates.length, fields: NATURAL_KEY_HINT },
         });
       } else {
         row.issues.push({
@@ -528,8 +630,11 @@ export function resolveAthletes(rows: MappedRow[], lookup: AthleteLookup, ctx: P
           field: byExternal ? 'athlete.external_id' : null,
           code: 'athlete_not_found',
           severity: 'error',
-          rawValue: byExternal ? row.externalId : displayKey(row),
-          params: ctx.athleteMatch.strategy === 'external_id' ? { system: ctx.athleteMatch.system } : {},
+          rawValue: null,
+          params:
+            ctx.athleteMatch.strategy === 'external_id'
+              ? { system: ctx.athleteMatch.system }
+              : { fields: NATURAL_KEY_HINT },
         });
       }
       continue;
@@ -544,8 +649,8 @@ export function resolveAthletes(rows: MappedRow[], lookup: AthleteLookup, ctx: P
           field: null,
           code: 'athlete_ambiguous',
           severity: 'error',
-          rawValue: displayKey(row),
-          params: { reason: 'natural_key_conflict' },
+          rawValue: null,
+          params: { reason: 'natural_key_conflict', fields: NATURAL_KEY_HINT },
         });
         continue;
       }
@@ -555,8 +660,8 @@ export function resolveAthletes(rows: MappedRow[], lookup: AthleteLookup, ctx: P
         field: null,
         code: 'athlete_ambiguous',
         severity: 'error',
-        rawValue: displayKey(row),
-        params: { count: viaNatural.length },
+        rawValue: null,
+        params: { count: viaNatural.length, fields: NATURAL_KEY_HINT },
       });
       continue;
     } else if (viaNatural.length === 1) {

@@ -32,14 +32,17 @@ export async function createSession(
   ttlHours: number,
   ip: string | null,
   userAgent: string | null,
+  now: Date = new Date(),
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomToken(32);
-  const expiresAt = new Date(Date.now() + ttlHours * 3600_000);
+  const expiresAt = new Date(now.getTime() + ttlHours * 3600_000);
   await db
     .insertInto('user_session')
     .values({
       id: sha256Hex(token),
       user_id: userId,
+      created_at: now,
+      last_seen_at: now,
       expires_at: expiresAt,
       ip,
       user_agent: userAgent?.slice(0, 300) ?? null,

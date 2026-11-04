@@ -62,6 +62,21 @@ export const ProductInput = z.object({
 });
 export type ProductInput = z.infer<typeof ProductInput>;
 
+/**
+ * Änderbare Felder eines Produkts. Bewusst ohne Defaults: fehlende Felder bleiben unverändert
+ * (ProductInput.partial() würde Defaults wie filters=[] einsetzen und so Filter stillschweigend entfernen).
+ */
+export const ProductUpdateInput = z
+  .object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000),
+    columns: z.array(ProductColumn).min(1).max(100),
+    filters: z.array(Condition).max(20),
+    shareability: Shareability,
+  })
+  .partial();
+export type ProductUpdateInput = z.infer<typeof ProductUpdateInput>;
+
 export const Product = z.object({
   id: Uuid,
   slug: z.string(),
@@ -156,7 +171,7 @@ export const productRoutes = {
       'Datenprodukt ändern (Änderung an Spalten/Filtern erhöht die Version; bestehende Freigaben müssen neu bestätigt werden)',
     tag: 'Datenprodukte',
     params: IdParam,
-    body: ProductInput.omit({ slug: true, sourceType: true, datasetId: true }).partial(),
+    body: ProductUpdateInput,
     response: Product,
   }),
   'products.retire': route({

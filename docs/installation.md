@@ -334,6 +334,8 @@ Vertrag der BI-Views und manuelle Schritte: [BI-Anbindung](bi.md) und `deploy/su
 ## Lokale Demo und Tests (Entwicklungsrechner)
 
 Für eine Vorführung ohne Server: `bun install` und `bun run demo` starten drei Knoten
-(`osp-nord`, `osp-mitte`, `osp-sued`, Ports 4401–4403) mit eigenen PostgreSQL-Clustern unter `.local/` und
-ein simuliertes Messsystem (Port 4410). `bun test` führt die automatisierten Tests aus (eigener Testcluster
+(`osp-nord`, `osp-mitte`, `osp-sued`, Ports 4401–4403) mit eigenen PostgreSQL-Clustern unter `.local/demo/`
+und ein simuliertes Messsystem (Port 4410), spielen das Szenario durch und stoppen danach alles. Mit
+`bun run demo -- --keep-running` bleiben die Knoten für die Oberfläche erreichbar; beenden mit
+`bun run demo:stop`. `bun test` führt die automatisierten Tests aus (eigener Testcluster
 auf Port 55434). Voraussetzung: PostgreSQL-18-Programme (`initdb`, `pg_ctl`, `psql`) lokal installiert.

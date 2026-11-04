@@ -29,9 +29,12 @@ bun run demo       # drei Knoten osp-nord/-mitte/-sued auf Port 4401–4403, Moc
 bun test           # automatisierte Tests (eigener PostgreSQL-Testcluster auf Port 55434)
 ```
 
-Die Demo legt je Knoten einen eigenen PostgreSQL-Cluster unter `.local/` an (Ports 55431–55433),
-importiert Beispieldaten aus zwei CSV-Quellen und einer API-Quelle, stellt das Vertrauen zwischen den
-Knoten her und erteilt Beispiel-Freigaben. Zugangsdaten gibt die Demo aus.
+Die Demo beginnt immer mit einem leeren Stand unter `.local/demo/`, legt je Knoten einen eigenen
+PostgreSQL-Cluster an (Ports 55431–55433), importiert Beispieldaten aus CSV-Dateien und einer API-Quelle,
+stellt das Vertrauen zwischen den Knoten her, erteilt Freigaben und prüft Austausch, Widerrufe, BI-Zugang,
+Audit und Sicherungen über die echten HTTP-Schnittstellen (Abbruch mit Exit-Code 1 bei jeder Abweichung).
+Danach stoppt sie alles. Mit `bun run demo -- --keep-running` laufen die Knoten weiter (Zugangsdaten gibt
+die Demo aus); beenden mit `bun run demo:stop`.
 
 ## Installation und Betrieb
 

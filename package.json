@@ -23,6 +23,7 @@
     "pg": "bun scripts/pg-local.ts",
     "mock-api": "bun scripts/mock-measurement-api.ts",
     "demo": "bun scripts/demo.ts",
+    "demo:stop": "bun scripts/demo-stop.ts",
     "sbom": "bun scripts/sbom.ts"
   },
   "dependencies": {

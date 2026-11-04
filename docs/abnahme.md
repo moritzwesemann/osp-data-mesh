@@ -29,8 +29,9 @@ bun run build            # Oberfläche + Hilfe
 
 ## AK1 – mindestens zwei CSV-Quellen und eine API-Quelle durchgängig verarbeitet
 
-Nachweis: `bun run demo` (drei Knoten mit Beispieldaten aus zwei CSV-Dateien und einem simulierten
-Messsystem mit HTTP-API auf Port 4410).
+Nachweis: `bun run demo` (drei Knoten mit Beispieldaten aus drei CSV-Dateien und einem simulierten
+Messsystem mit HTTP-API auf Port 4410). Für die Prüfschritte in der Oberfläche die Demo mit
+`bun run demo -- --keep-running` starten und danach mit `bun run demo:stop` beenden.
 
 | # | Prüfschritt | Erwartet | Ergebnis | Bemerkung |
 |---|---|---|---|---|
@@ -44,7 +45,7 @@ Messsystem mit HTTP-API auf Port 4410).
 ## AK2 – mindestens drei Knoten-Instanzen
 
 Nachweis: `bun run demo` – Knoten `osp-nord`, `osp-mitte`, `osp-sued` auf `http://127.0.0.1:4401` bis
-`:4403`, je ein eigener PostgreSQL-Cluster (Ports 55431–55433) unter `.local/`.
+`:4403`, je ein eigener PostgreSQL-Cluster (Ports 55431–55433) unter `.local/demo/`.
 
 | # | Prüfschritt | Erwartet | Ergebnis | Bemerkung |
 |---|---|---|---|---|

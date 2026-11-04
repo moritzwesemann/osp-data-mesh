@@ -461,6 +461,10 @@ describe('matches: Operatoren', () => {
     [{ column: 's', op: 'in', value: 'Rudern' }, false],
     [{ column: 's', op: 'eq', value: ['Rudern'] }, false],
     [{ column: 'i', op: 'in', value: ['3'] }, false],
+    [{ column: 'i', op: 'nin', value: ['3'] }, false],
+    [{ column: 'i', op: 'nin', value: [4, '3'] }, false],
+    [{ column: 'i', op: 'nin', value: [4, 5] }, true],
+    [{ column: 's', op: 'nin', value: [] }, false],
   ];
   for (const [cond, expected] of cases) {
     test(`${cond.column} ${cond.op} ${JSON.stringify(cond.value)} → ${expected}`, () => {

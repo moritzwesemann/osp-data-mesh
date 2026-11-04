@@ -291,7 +291,8 @@ export function matches(values: Record<string, Scalar>, c: Condition): boolean {
     case 'in':
       return Array.isArray(target) && target.some((t) => sameType(v, t) && v === t);
     case 'nin':
-      return Array.isArray(target) && target.every((t) => !(sameType(v, t) && v === t));
+      // Typfremde Listenelemente machen die Bedingung unerfüllbar (wie bei neq): deny by default
+      return Array.isArray(target) && target.length > 0 && target.every((t) => sameType(v, t) && v !== t);
     case 'gt':
     case 'gte':
     case 'lt':

@@ -1,0 +1,54 @@
+{
+  "name": "osp-data-mesh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OSP-Data-Mesh: föderiertes Netz autonomer Datenknoten für Olympiastützpunkte",
+  "license": "EUPL-1.2",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/server/main.ts",
+    "dev:ui": "vite",
+    "build": "bun run build:ui && bun run build:docs",
+    "build:ui": "vite build",
+    "build:docs": "bun scripts/build-docs.ts",
+    "cli": "bun src/server/cli/main.ts",
+    "migrate": "bun src/server/cli/main.ts migrate",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check": "bun run typecheck && bun run lint && bun test",
+    "pg": "bun scripts/pg-local.ts",
+    "mock-api": "bun scripts/mock-measurement-api.ts",
+    "demo": "bun scripts/demo.ts",
+    "sbom": "bun scripts/sbom.ts"
+  },
+  "dependencies": {
+    "hono": "^4.13.16",
+    "kysely": "^0.29.8",
+    "papaparse": "^5.7.0",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.5",
+    "@tanstack/react-query": "^5.106.0",
+    "@types/bun": "^1.4.4",
+    "@types/papaparse": "^5.5.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "marked": "^18.1.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "engines": {
+    "bun": ">=1.3"
+  }
+}

@@ -63,9 +63,9 @@ Details: [Föderationsprotokoll](protokoll.md), [ADR 0005](adr/0005-pull-austaus
 | Passwortregeln | mind. 12 Zeichen, nicht gleich E-Mail-Adresse, nicht gleich bisherigem Passwort |
 | Initialpasswörter | von Administration bzw. `create-admin` erzeugt; Änderung bei der ersten Anmeldung erzwungen (bis dahin nur Passwortwechsel möglich) |
 | Kontosperre | nach **5** Fehlversuchen in Folge für **15 Minuten** (gilt auch mit richtigem Passwort; Fehlversuche während der Sperre verlängern sie nicht); Entsperren durch Administration (*Benutzer › Sperre aufheben*, `users.update` mit `unlock: true`) |
-| Ratenbegrenzung | 30 Anmeldeversuche je IP-Adresse in 5 Minuten (im Speicher des Prozesses) |
+| Ratenbegrenzung | 30 Anmeldeversuche je IP-Adresse in 5 Minuten (im Speicher des Prozesses); maßgeblich ist die Client-Adresse (siehe [Client-Adresse hinter dem Reverse Proxy](#client-adresse-hinter-dem-reverse-proxy)) |
 | Konto-Aufzählung | bei unbekannter E-Mail wird trotzdem ein Hash geprüft (gleiche Antwortzeit); **einheitliche Antwort** 401 `invalid_credentials` für unbekannte E-Mail, falsches Passwort, inaktives und gesperrtes Konto (Meldung: „E-Mail-Adresse oder Passwort ist falsch, oder das Konto ist vorübergehend gesperrt.“); der tatsächliche Grund (`invalid_credentials`, `inactive`, `locked`) steht nur im Audit-Log |
-| Sitzungen | zufälliges 256-Bit-Token im Cookie `osp_session` (`HttpOnly`, `SameSite=Strict`, `Secure`, ohne `Domain`-Attribut, also nur für genau den Hostnamen des Knotens); in der Datenbank nur SHA-256; Ablauf nach `MESH_SESSION_TTL_HOURS` (Standard 12 h); neue Sitzung bei jeder Anmeldung (keine Sitzungsfixierung); Passwort-Reset und Deaktivierung beenden alle Sitzungen der Person, der eigene Passwortwechsel alle anderen |
+| Sitzungen | zufälliges 256-Bit-Token im Cookie **`__Host-osp_session`** (`HttpOnly`, `SameSite=Strict`, `Secure`, `Path=/`, ohne `Domain`-Attribut, also nur für genau den Hostnamen des Knotens). Das Präfix `__Host-` lässt der Browser nur mit `Secure`, `Path=/` und ohne `Domain` zu; so kann auch eine Subdomain (z. B. `bi.<knoten>`) das Cookie nicht setzen oder überschreiben. Nur bei `MESH_COOKIE_SECURE=false` (ausschließlich lokale HTTP-Testinstallation) heißt das Cookie `osp_session` und trägt kein `Secure`. In der Datenbank nur SHA-256; Ablauf nach `MESH_SESSION_TTL_HOURS` (Standard 12 h); neue Sitzung bei jeder Anmeldung (keine Sitzungsfixierung); Passwort-Reset und Deaktivierung beenden alle Sitzungen der Person, der eigene Passwortwechsel alle anderen |
 | CSRF | zustandsändernde Anfragen mit Sitzungs-Cookie benötigen zusätzlich den Header `X-OSP-CSRF: 1` (fremde Seiten können ihn ohne CORS-Freigabe nicht setzen) + `SameSite=Strict` |
 | API-Tokens | für Werkzeuge (Excel, Power BI, Python): `Authorization: Bearer osp_…`, 256 Bit Zufall, nur SHA-256 gespeichert, **einmalige Anzeige**, Ablauf 1–365 Tage (Standard 90), jederzeit widerrufbar; Rechte = Rollen der Person. Erzeugen nur mit Sitzung (Passwort-Anmeldung), nicht mit einem Token (403 `forbidden`, Grund `session_required`). **Alle Tokens einer Person werden widerrufen** bei eigenem Passwortwechsel, Zurücksetzen durch die Administration und Deaktivierung (Audit `token.revoke` je Token) |
 | Inaktive Konten | sofort abgewiesen (Sitzungen beendet, Tokens widerrufen; auch nach einer Reaktivierung bleiben sie ungültig) |
@@ -86,10 +86,20 @@ Administration, Quelle am Proxy bzw. an der Firewall sperren. Die einheitliche A
 ob ein Konto existiert oder gesperrt ist.
 
 Nicht umgesetzt (offen): Zwei-Faktor-Authentisierung, Single Sign-on (SAML/OIDC) mit dem
-Verzeichnisdienst des OSP. Als zusätzliche Härtung möglich, aber **nicht umgesetzt**: das Cookie-Präfix
-`__Host-` (z. B. `__Host-osp_session`), mit dem der Browser erzwingt, dass das Cookie nur mit `Secure`,
-`Path=/` und ohne `Domain` gesetzt werden kann; das schützt zusätzlich vor dem Überschreiben des Cookies
-durch Subdomains (z. B. `bi.<knoten>`). Voraussetzung wäre `MESH_COOKIE_SECURE=true` (Standard).
+Verzeichnisdienst des OSP.
+
+### Client-Adresse hinter dem Reverse Proxy
+
+Ratenbegrenzungen je IP-Adresse (Anmeldung, abgelehnte Föderationsanfragen) und die IP-Adressen im
+Audit-Log brauchen die echte Client-Adresse. Hinter Caddy steht sie im Header `X-Forwarded-For`, den jeder
+Client auch selbst mitsenden kann. Der Server wertet ihn deshalb nur aus, wenn `MESH_TRUST_PROXY=true`
+gesetzt ist **und** die Verbindung von einer Adresse aus `MESH_TRUSTED_PROXIES` kommt (kommagetrennte
+IP-Adressen, Standard `127.0.0.1,::1`). Aus der Kette verwendet er die rechteste Adresse, die nicht in
+`MESH_TRUSTED_PROXIES` steht; weiter links stehende, vom Client gefälschte Einträge bleiben wirkungslos.
+Nativ (Caddy auf demselben Server) passt der Standard; mit Docker Compose hat Caddy im Netz `frontend` die
+feste Adresse `172.31.252.10`, die als einzige eingetragen ist. Ohne Reverse Proxy (lokale
+Testinstallation) `MESH_TRUST_PROXY=false`. Einzelheiten:
+[Betrieb](betrieb.md#föderationsendpunkt-größen-ratenbegrenzung-protokollierung).
 
 ## Rollen und Rechte
 
@@ -122,6 +132,11 @@ keinen impliziten Zugriff auf Fachdaten.** Daten erhalten Rollen nur über Freig
 | `mesh_bi` | nur `USAGE` auf Schema `bi` und Lesen der dortigen Views; `default_transaction_read_only = on`, `statement_timeout = 60s` | BI-Werkzeuge, Superset |
 
 Zusätzlich: `REVOKE ALL ON DATABASE … FROM PUBLIC`, kein `CREATE` im Schema `public` für andere Rollen.
+**Rollen gelten in PostgreSQL clusterweit.** Die Trennung der Knoten setzt deshalb **einen eigenen
+PostgreSQL-Cluster je Knoten** voraus (auch für Test- und Wiederherstellungssysteme): Zwei Knoten in einem
+Cluster teilten sich `mesh_owner`, `mesh_app` und `mesh_bi` samt Passwörtern und könnten gegenseitig ihre
+Datenbanken lesen. `db-bootstrap` bricht ab, wenn der Cluster schon eine andere Datenbank von `mesh_owner`
+enthält (übergehbar nur mit `--force`, siehe [Installation](installation.md#a4-rollen-und-datenbank-anlegen-db-bootstrap)).
 Das Audit-Log ist zusätzlich durch Trigger gegen `UPDATE`, `DELETE` und `TRUNCATE` gesperrt (auch für den
 Eigentümer) und durch eine Hash-Kette gesichert ([ADR 0006](adr/0006-db-rollen-audit-hashkette.md)).
 Rechte werden nach jeder Migration und Wiederherstellung aus `migrations/grants.sql` neu gesetzt.

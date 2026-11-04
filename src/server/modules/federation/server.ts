@@ -27,6 +27,7 @@ import { ed25519Verify, sha256Hex } from '../../core/crypto.ts';
 import type { Tx } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import type { AppEnv, Deps } from '../../core/deps.ts';
+import { writeTx } from '../../core/tx.ts';
 import type { DenyReason } from '../releases/engine.ts';
 import { REJECTION_WINDOW_MS, RejectionGuard } from './guard.ts';
 import {
@@ -68,8 +69,8 @@ const HIDDEN_DENY_REASONS = new Set<DenyReason>([
 const PEEK_HEAD_BYTES = 4096;
 
 /**
- * Gleichzeitig bediente Abrufe je Knoten. Ein Abruf hält eine Verbindung (Transaktion mit Liefersperre),
- * während der PEP weitere Verbindungen nutzt; die Begrenzung verhindert, dass der Pool erschöpft wird.
+ * Gleichzeitig bediente Abrufe je Knoten. Ein Abruf hält eine Pool-Verbindung (Transaktion mit
+ * Liefersperre, auf der auch der PEP liest); die Begrenzung lässt den übrigen Anfragen Verbindungen frei.
  */
 const MAX_CONCURRENT_PULLS = 2;
 
@@ -422,14 +423,18 @@ async function handlePull(ib: Inbound, body: unknown): Promise<Outcome> {
   const req = PullRequest.safeParse(body);
   if (!req.success) return BAD_REQUEST;
   const { deps } = ib;
-  // PEP-Prüfung, Signatur und Protokolleintrag in einer Transaktion unter der Liefersperre (store.ts).
-  // Diese Transaktion schreibt bewusst kein Audit: der Audit-Trigger nimmt eine globale Sperre, die ein
-  // auslösendes Modul (z. B. Einwilligungswiderruf) schon halten kann, bevor es auf die Liefersperre wartet.
+  // PEP-Prüfung (auf dieser Transaktion), Signatur und Protokolleintrag unter der Liefersperre (geteilt,
+  // core/locks.ts). Das Audit folgt nach dem Commit: die Sperre bleibt so kurz wie möglich gehalten, und
+  // die knotenweite Audit-Sperre wird nie zusammen mit ihr gehalten.
   const served = await pullSlot(deps).run(() =>
-    deps.db.transaction().execute(async (trx) => {
-      await lockDeliveries(trx, 'shared');
-      return servePull(ib, trx, req.data.releaseId, req.data.purpose);
-    }),
+    // READ COMMITTED: jede Abfrage des PEP sieht den Stand nach Erhalt der Sperre (ServeRequest.db)
+    deps.db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (trx) => {
+        await lockDeliveries(trx, 'shared');
+        return servePull(ib, trx, req.data.releaseId, req.data.purpose);
+      }),
   );
   try {
     // Audit vor dem Senden: ohne Audit-Eintrag verlassen keine Daten den Knoten
@@ -462,6 +467,7 @@ async function servePull(
     requestId: ib.httpRequestId,
   };
 
+  // auf dieser Transaktion (Liefersperre geteilt): keine zweite Pool-Verbindung, solange sie gehalten wird
   const result = await deps.services.pep.serve({
     releaseId,
     purpose,
@@ -471,6 +477,7 @@ async function servePull(
       peerStatus: peer.status as 'pending' | 'trusted' | 'suspended',
     },
     at: ib.now,
+    db: trx,
   });
 
   let denyReason: DenyReason | null = result.allowed ? null : result.reason;
@@ -567,6 +574,9 @@ async function servePull(
     row_count: rows.length,
     columns: keys,
     subjects: [...subjects],
+    // Einstufung, unter der geliefert wurde: maßgeblich für spätere Einwilligungswiderrufe (outbox.ts)
+    data_category: product.category,
+    consent_applied: result.consentApplied,
     payload_sha256: sha256Hex(signed.raw),
     request_id: envelope.id,
     at: ib.now,
@@ -589,7 +599,7 @@ async function handleNotice(ib: Inbound, body: unknown): Promise<Outcome> {
   const { deps, peer, envelope } = ib;
 
   const subjects = notice.kind === 'subjects_withdrawn' ? [...new Set(notice.subjects)] : [];
-  const affectedRows = await deps.db.transaction().execute(async (trx) => {
+  const affectedRows = await writeTx(deps, async (trx) => {
     // gegen gleichzeitiges Speichern eines Abrufs derselben Freigabe (received.ts: storePull)
     await lockReceivedCopy(trx, peer.id, notice.releaseId);
     // Nur Kopien, die von genau diesem Partner (Datenhalter) stammen

@@ -10,9 +10,10 @@
  *    der nächsten Aktualisierung.
  *  - Widerruf entfernt die View in der Widerrufstransaktion; Einwilligungswiderruf und Löschung einer Person
  *    entfernen deren Zeilen in der auslösenden Transaktion (verborgene Spalte _subject, nie in der View).
- *  - Liefersperre (core/locks.ts): Materialisierung hält sie geteilt vom PEP-Aufruf bis zum Commit, die
- *    Bereinigung bei Einwilligungswiderruf/Löschung nimmt sie exklusiv vor dem Löschen. So kann keine
- *    Materialisierung eine eben entfernte Person aus einem älteren Datenstand zurückbringen.
+ *  - Liefersperre (core/locks.ts): Materialisierung hält sie geteilt vom PEP-Aufruf bis zum Commit (der PEP
+ *    läuft auf derselben Transaktion), Einwilligungswiderruf/Löschung halten sie exklusiv, bevor die
+ *    Bereinigung löscht. So kann keine Materialisierung eine eben entfernte Person aus einem älteren
+ *    Datenstand zurückbringen.
  *  - mesh_bi darf nur Views im Schema bi lesen (grants.sql), nie bi_data oder public.
  */
 import { sql } from 'kysely';
@@ -20,7 +21,7 @@ import type { FieldType } from '../../../shared/contract/common.ts';
 import { type Actor, SYSTEM_ACTOR } from '../../core/audit.ts';
 import type { DbOrTx, Tx } from '../../core/db.ts';
 import type { BiService, Deps, ServeResult } from '../../core/deps.ts';
-import { lockDeliveries } from '../../core/locks.ts';
+import { assertDeliveryLock, lockDeliveries } from '../../core/locks.ts';
 import { UUID_RE } from '../products/rows.ts';
 import { type ReleaseRow, statusOf } from '../releases/rules.ts';
 
@@ -175,23 +176,29 @@ export class BiMaterializer implements BiService {
           code = 'no_purpose';
           throw new Error('bi release without purpose');
         }
-        const count = await db.transaction().execute(async (trx) => {
-          // Liefersperre (geteilt) vom PEP-Aufruf bis zum Commit der neuen Tabelle (core/locks.ts): Ein
-          // Einwilligungswiderruf oder eine Löschung (exklusiv) ist entweder vorher abgeschlossen – dann sieht
-          // der PEP ihn – oder wartet, bis die neue Tabelle steht, und bereinigt dann diese (removeSubject).
-          // Der PEP liest in eigener Transaktion, ohne Zeilensperren und ohne zu schreiben.
-          await lockDeliveries(trx, 'shared');
-          const result = await this.deps.services.pep.serve({
-            releaseId: r.id,
-            requester: { type: 'bi' },
-            purpose,
+        // READ COMMITTED: jede Abfrage des PEP sieht den Stand nach Erhalt der Sperre (ServeRequest.db)
+        const count = await db
+          .transaction()
+          .setIsolationLevel('read committed')
+          .execute(async (trx) => {
+            // Liefersperre (geteilt) vom PEP-Aufruf bis zum Commit der neuen Tabelle (core/locks.ts): Ein
+            // Einwilligungswiderruf oder eine Löschung (exklusiv) ist entweder vorher abgeschlossen – dann sieht
+            // der PEP ihn – oder wartet, bis die neue Tabelle steht, und bereinigt dann diese (removeSubject).
+            // Der PEP liest auf dieser Transaktion (keine zweite Pool-Verbindung, während die Sperre gehalten
+            // wird), ohne Zeilensperren und ohne zu schreiben.
+            await lockDeliveries(trx, 'shared');
+            const result = await this.deps.services.pep.serve({
+              releaseId: r.id,
+              requester: { type: 'bi' },
+              purpose,
+              db: trx,
+            });
+            if (!result.allowed) {
+              code = result.reason;
+              throw new Error(`pep denied: ${result.reason}`);
+            }
+            return this.materialize(trx, r.id, viewName, result);
           });
-          if (!result.allowed) {
-            code = result.reason;
-            throw new Error(`pep denied: ${result.reason}`);
-          }
-          return this.materialize(trx, r.id, viewName, result);
-        });
         if (count === null) continue; // zwischenzeitlich widerrufen
         refreshed++;
         views.push({ releaseId: r.id, viewName, rowCount: count });
@@ -380,10 +387,11 @@ export class BiMaterializer implements BiService {
    * Fehler brechen die auslösende Transaktion nicht ab (Savepoint); die nächste Aktualisierung baut neu auf.
    */
   async removeSubject(trx: Tx, athleteId: string, onlyConsentBound: boolean): Promise<void> {
+    // Die auslösende Transaktion hat die Liefersperre als Erstes exklusiv genommen (core/locks.ts): eine
+    // laufende Materialisierung ist abgeschlossen, ihre neue Tabelle wird hier bereinigt; spätere
+    // Materialisierungen sehen den Widerruf im PEP.
+    assertDeliveryLock(trx, 'exclusive');
     if (!UUID_RE.test(athleteId)) return;
-    // Zuerst die Liefersperre (exklusiv, außerhalb des Savepoints): wartet auf eine laufende Materialisierung
-    // und bereinigt danach deren neue Tabelle; spätere Materialisierungen sehen den Widerruf im PEP.
-    await lockDeliveries(trx, 'exclusive');
     await sql`savepoint bi_remove_subject`.execute(trx);
     try {
       const views = await trx

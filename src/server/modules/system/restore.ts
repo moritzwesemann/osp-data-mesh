@@ -15,7 +15,10 @@
  *     alle Sitzungen beenden (erneute Anmeldung nötig), Audit-Eintrag "backup.restore" mit Kettenprüfung
  *  6. temporäre Dateien löschen, Audit-Kette erneut prüfen
  *
- * Danach: `bun run migrate` (falls die Sicherung ein älteres Schema hat), Knoten starten; die BI-Views
+ * Die CLI prüft vorher, dass der Knoten nicht läuft (runningNodeConnections; --force übergeht das).
+ *
+ * Danach: `bun --env-file=.env --env-file=.env.owner run cli migrate` (falls die Sicherung ein älteres
+ * Schema hat), Knoten starten; die BI-Views
  * werden beim Start (Hintergrundaufgaben) bzw. mit "BI-Views neu aufbauen" aus dem wiederhergestellten
  * Freigabestand neu erzeugt. Ist der Master-Key seit der Sicherung rotiert worden, muss
  * MESH_MASTER_KEY_PREVIOUS gesetzt sein.
@@ -25,6 +28,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import pg from 'pg';
+import { SERVER_APPLICATION_NAME } from '../../core/db.ts';
 import { listMigrations, MIGRATIONS_DIR } from '../../core/migrate.ts';
 import {
   BackupFileError,
@@ -69,6 +73,26 @@ export interface RestoreResult {
 }
 
 export { BackupFileError };
+
+/**
+ * Verbindungen eines laufenden Knotens zur Datenbank von ownerUrl (application_name des Server-Pools,
+ * core/db.ts). Die Wiederherstellung ersetzt die ganze Datenbank; ein laufender Knoten schriebe danach mit
+ * veraltetem Stand weiter (Sitzungen, Ausgangspostfach, BI) oder blockierte sie.
+ */
+export async function runningNodeConnections(ownerUrl: string): Promise<number> {
+  const client = new pg.Client({ connectionString: ownerUrl, application_name: 'osp-data-mesh-restore' });
+  await client.connect();
+  try {
+    const r = await client.query<{ n: number }>(
+      `select count(*)::int as n from pg_stat_activity
+        where datname = current_database() and application_name = $1 and pid <> pg_backend_pid()`,
+      [SERVER_APPLICATION_NAME],
+    );
+    return r.rows[0]?.n ?? 0;
+  } finally {
+    await client.end();
+  }
+}
 
 /**
  * Entfernt die abgeleiteten BI-Objekte (Views in "bi", Tabellen in "bi_data"). mesh_owner besitzt beide

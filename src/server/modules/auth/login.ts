@@ -9,6 +9,7 @@ import { sha256Hex } from '../../core/crypto.ts';
 import type { AppEnv, Deps } from '../../core/deps.ts';
 import { AppError, notFound } from '../../core/errors.ts';
 import type { Handlers } from '../../core/http.ts';
+import { writeTx } from '../../core/tx.ts';
 import { toApiToken, toSessionUser } from './map.ts';
 import {
   assertPasswordPolicy,
@@ -24,12 +25,13 @@ import {
   hashPassword,
   newApiToken,
   revokeAllApiTokens,
-  SESSION_COOKIE,
+  sessionCookieName,
   verifyPassword,
 } from './sessions.ts';
 
 const ANONYMOUS: Actor = { type: 'anonymous', id: null, label: null };
 
+/** Path=/ und ohne Domain (Voraussetzung für das Präfix __Host-, siehe sessionCookieName) */
 function cookieOptions(deps: Deps) {
   return {
     httpOnly: true,
@@ -40,7 +42,7 @@ function cookieOptions(deps: Deps) {
 }
 
 function setSessionCookie(c: Context<AppEnv>, deps: Deps, token: string, expiresAt: Date) {
-  setCookie(c, SESSION_COOKIE, token, {
+  setCookie(c, sessionCookieName(deps.config), token, {
     ...cookieOptions(deps),
     maxAge: Math.round(deps.config.MESH_SESSION_TTL_HOURS * 3600),
     expires: expiresAt,
@@ -116,8 +118,8 @@ export function authHandlers(deps: Deps): Handlers {
         throw new AppError('invalid_credentials');
       }
 
-      const previous = getCookie(c, SESSION_COOKIE);
-      const session = await deps.db.transaction().execute(async (trx) => {
+      const previous = getCookie(c, sessionCookieName(deps.config));
+      const session = await writeTx(deps, async (trx) => {
         await trx
           .updateTable('app_user')
           .set({ failed_logins: 0, locked_until: null, last_login_at: now })
@@ -159,7 +161,7 @@ export function authHandlers(deps: Deps): Handlers {
     },
 
     'auth.logout': async ({ user, actor, c, ip, requestId }) => {
-      await deps.db.transaction().execute(async (trx) => {
+      await writeTx(deps, async (trx) => {
         if (user.via === 'session' && user.sessionId) {
           await trx.deleteFrom('user_session').where('id', '=', user.sessionId).execute();
         }
@@ -176,7 +178,7 @@ export function authHandlers(deps: Deps): Handlers {
           trx,
         );
       });
-      deleteCookie(c, SESSION_COOKIE, cookieOptions(deps));
+      deleteCookie(c, sessionCookieName(deps.config), cookieOptions(deps));
       return { ok: true as const };
     },
 
@@ -212,7 +214,7 @@ export function authHandlers(deps: Deps): Handlers {
       }
       assertPasswordPolicy(body.newPassword, { email: row.email, current: body.currentPassword });
       const hash = await hashPassword(body.newPassword);
-      await deps.db.transaction().execute(async (trx) => {
+      await writeTx(deps, async (trx) => {
         await trx
           .updateTable('app_user')
           .set({ password_hash: hash, must_change_password: false, failed_logins: 0, locked_until: null })
@@ -272,7 +274,7 @@ export function authHandlers(deps: Deps): Handlers {
       }
       const now = deps.now();
       const t = newApiToken();
-      const row = await deps.db.transaction().execute(async (trx) => {
+      const row = await writeTx(deps, async (trx) => {
         const inserted = await trx
           .insertInto('api_token')
           .values({
@@ -303,7 +305,7 @@ export function authHandlers(deps: Deps): Handlers {
     },
 
     'tokens.revoke': async ({ params, user, actor, ip, requestId }) => {
-      await deps.db.transaction().execute(async (trx) => {
+      await writeTx(deps, async (trx) => {
         const row = await trx
           .selectFrom('api_token')
           .select(['id', 'revoked_at'])

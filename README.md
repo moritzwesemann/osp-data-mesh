@@ -19,7 +19,8 @@ Audit-Log. BI-Werkzeuge greifen über eine nur lesende Datenbankrolle oder die R
 
 ## Schnellstart (Entwicklungsrechner)
 
-Voraussetzungen: [Bun](https://bun.sh) 1.4 (getestet mit 1.4.3), PostgreSQL 18 (Programme `initdb`,
+Voraussetzungen: [Bun](https://bun.sh) **1.4.3** (getestete Version; genau diese installieren mit
+`curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.3"`), PostgreSQL 18 (Programme `initdb`,
 `pg_ctl`, `psql`, `pg_dump`). Gesucht werden sie unter `/opt/homebrew/opt/postgresql@18/bin`,
 `/opt/homebrew/bin`, `/usr/local/opt/postgresql@18/bin`, `/usr/lib/postgresql/18/bin`, `/usr/local/bin`
 und `/usr/bin`; liegen sie anderswo, das Verzeichnis mit `MESH_PG_BIN=…` angeben (die Demo bricht sonst
@@ -42,7 +43,8 @@ die Demo aus); beenden mit `bun run demo:stop`.
 
 ## Installation und Betrieb
 
-- Neuinstallation (nativ mit Bun + PostgreSQL + Caddy oder mit Docker Compose):
+- Neuinstallation (nativ auf Linux – Debian/Ubuntu – mit Bun + PostgreSQL + Caddy, oder mit Docker
+  Compose; macOS nur für Testinstallationen; **ein eigener PostgreSQL-Cluster je Knoten**):
   [docs/installation.md](docs/installation.md)
 - Betrieb, Sicherung/Wiederherstellung, Schlüsselrotation, Updates: [docs/betrieb.md](docs/betrieb.md)
 - Container-Dateien: [`deploy/`](deploy/) (`Dockerfile`, `docker-compose.yml`, `Caddyfile`,

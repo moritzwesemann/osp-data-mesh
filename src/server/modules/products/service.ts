@@ -13,6 +13,8 @@ import { type DbOrTx, isoReq, pgCode } from '../../core/db.ts';
 import type { Deps } from '../../core/deps.ts';
 import { AppError, conflict, notFound } from '../../core/errors.ts';
 import type { DomainEvents } from '../../core/events.ts';
+import { lockDeliveries } from '../../core/locks.ts';
+import { writeTx } from '../../core/tx.ts';
 import { conditionValueFits } from '../releases/engine.ts';
 import { statusOf } from '../releases/rules.ts';
 import {
@@ -166,7 +168,7 @@ export async function createProduct(deps: Deps, input: ProductInput, meta: Reque
   if (existing) throw conflict('slug_taken');
 
   try {
-    return await deps.db.transaction().execute(async (trx) => {
+    return await writeTx(deps, async (trx) => {
       const row = await trx
         .insertInto('data_product')
         .values({
@@ -219,7 +221,7 @@ export async function updateProduct(
   input: ProductUpdateInput,
   meta: RequestMeta,
 ): Promise<Product> {
-  const result = await deps.db.transaction().execute(async (trx) => {
+  const result = await writeTx(deps, async (trx) => {
     const row = await trx
       .selectFrom('data_product')
       .selectAll()
@@ -370,7 +372,10 @@ export function registerDatasetChangeHandler(deps: Deps): void {
 }
 
 export async function retireProduct(deps: Deps, id: string, meta: RequestMeta): Promise<Product> {
-  const result = await deps.db.transaction().execute(async (trx) => {
+  const result = await writeTx(deps, async (trx) => {
+    // Sperrreihenfolge (core/locks.ts): Liefersperre vor der Produktzeile; die Freigaben widerruft der
+    // Handler des Moduls releases in dieser Transaktion (wartet so auf laufende Lieferungen)
+    await lockDeliveries(trx, 'exclusive');
     const row = await trx
       .selectFrom('data_product')
       .selectAll()

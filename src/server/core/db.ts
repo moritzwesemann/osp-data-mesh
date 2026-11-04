@@ -12,12 +12,15 @@ export type Tx = Transaction<DB>;
 /** Funktionen, die sowohl mit der Verbindung als auch innerhalb einer Transaktion arbeiten */
 export type DbOrTx = Kysely<DB> | Transaction<DB>;
 
+/** application_name der Server-Verbindungen (die CLI erkennt daran einen laufenden Knoten, siehe restore) */
+export const SERVER_APPLICATION_NAME = 'osp-data-mesh';
+
 export function createDb(connectionString: string, max = 10): Db {
   const pool = new pg.Pool({
     connectionString,
     max,
     idleTimeoutMillis: 30_000,
-    application_name: 'osp-data-mesh',
+    application_name: SERVER_APPLICATION_NAME,
   });
   pool.on('error', (err) => {
     // Verbindungsabbrüche im Leerlauf nicht als unbehandelten Fehler eskalieren

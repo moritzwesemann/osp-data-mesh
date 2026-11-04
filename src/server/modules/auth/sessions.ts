@@ -1,18 +1,28 @@
 /**
  * Sitzungen und API-Tokens.
- *  - Sitzung: zufälliges Token im Cookie "osp_session" (HttpOnly, SameSite=Strict, Secure);
+ *  - Sitzung: zufälliges Token im Cookie "__Host-osp_session" (HttpOnly, SameSite=Strict, Secure, Path=/,
+ *    ohne Domain), mit MESH_COOKIE_SECURE=false (lokales http) "osp_session";
  *    in der Datenbank nur SHA-256(Token) als user_session.id.
  *  - API-Token: "osp_" + Zufall, Header "Authorization: Bearer …"; gespeichert als SHA-256 in api_token.token_hash.
  */
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Role } from '../../../shared/contract/common.ts';
+import type { Config } from '../../config.ts';
 import type { Actor } from '../../core/audit.ts';
 import { randomToken, sha256Hex } from '../../core/crypto.ts';
 import type { DbOrTx, Tx } from '../../core/db.ts';
 import type { AppEnv, Authenticator, AuthUser, Deps } from '../../core/deps.ts';
 
-export const SESSION_COOKIE = 'osp_session';
+/**
+ * Name des Sitzungs-Cookies. Mit MESH_COOKIE_SECURE=true (HTTPS) das Präfix "__Host-": der Browser nimmt das
+ * Cookie nur mit Secure, Path=/ und ohne Domain an. Ein anderer Host derselben Domain (z. B. ein
+ * kompromittiertes Superset unter bi.<domain>) kann es daher weder für diesen Host setzen noch mit einem
+ * Domain-Cookie gleichen Namens überdecken. Nur für lokales http (MESH_COOKIE_SECURE=false) "osp_session".
+ */
+export function sessionCookieName(config: Pick<Config, 'MESH_COOKIE_SECURE'>): string {
+  return config.MESH_COOKIE_SECURE ? '__Host-osp_session' : 'osp_session';
+}
 export const API_TOKEN_PREFIX = 'osp_';
 
 export function hashPassword(password: string): Promise<string> {
@@ -98,7 +108,7 @@ export async function revokeAllApiTokens(
 
 /** Ermittelt die Person aus Sitzungs-Cookie oder Bearer-Token. Inaktive Konten werden abgewiesen. */
 export class SessionAuthenticator implements Authenticator {
-  constructor(private readonly deps: Pick<Deps, 'db' | 'now'>) {}
+  constructor(private readonly deps: Pick<Deps, 'db' | 'now' | 'config'>) {}
 
   async authenticate(c: Context<AppEnv>): Promise<AuthUser | null> {
     const now = this.deps.now();
@@ -139,7 +149,7 @@ export class SessionAuthenticator implements Authenticator {
         via: 'token',
       };
     }
-    const cookie = getCookie(c, SESSION_COOKIE);
+    const cookie = getCookie(c, sessionCookieName(this.deps.config));
     if (!cookie || cookie.length > 200) return null;
     const sid = sha256Hex(cookie);
     const row = await this.deps.db

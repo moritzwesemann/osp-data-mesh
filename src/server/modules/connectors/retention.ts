@@ -18,6 +18,7 @@ import { SYSTEM_ACTOR } from '../../core/audit.ts';
 import { sha256Hex } from '../../core/crypto.ts';
 import type { DbOrTx, Tx } from '../../core/db.ts';
 import type { Deps } from '../../core/deps.ts';
+import { writeTx } from '../../core/tx.ts';
 import { type MappedRow, naturalKeyOf, type RowStatus } from './pipeline.ts';
 
 /** Nicht übernommene Vorschauen werden nach dieser Frist verworfen */
@@ -275,7 +276,7 @@ export async function eraseSubjectFromRuns(deps: Deps, trx: Tx, athleteId: strin
 async function expireBatch(deps: Deps): Promise<number> {
   const now = deps.now();
   const cutoff = new Date(now.getTime() - PREVIEW_RETENTION_DAYS * 86_400_000);
-  return deps.db.transaction().execute(async (trx) => {
+  return writeTx(deps, async (trx) => {
     const due = await trx
       .selectFrom('import_run')
       .select(['id', 'connector_id'])

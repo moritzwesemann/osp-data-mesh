@@ -93,11 +93,25 @@ export class NodeIdentity {
   }
 
   /**
-   * Freigabebezogenes Pseudonym einer Person: HMAC(secret, releaseId:athleteId), 22 Zeichen base64url.
-   * Unterschiedliche Freigaben → unterschiedliche Pseudonyme (Partner können Daten nicht verknüpfen).
+   * Freigabebezogenes Pseudonym einer Person: die ersten 16 Byte von HMAC-SHA256(secret, releaseId:athleteId)
+   * als 32 Hex-Zeichen (Kleinbuchstaben), deterministisch. Unterschiedliche Freigaben → unterschiedliche
+   * Pseudonyme (Partner können Daten nicht verknüpfen). Nur [0-9a-f]: der Schutz vor Formel-Injection in
+   * CSV-Exporten (core/formats.ts) verändert es nie (base64url konnte mit '-' beginnen).
    */
   pseudonym(releaseId: string, athleteId: string): string {
-    return hmacSha256(this.pseudonymSecret, `${releaseId}:${athleteId}`).toString('base64url').slice(0, 22);
+    return this.pseudonymMac(releaseId, athleteId).subarray(0, 16).toString('hex');
+  }
+
+  /**
+   * Frühere Form des Pseudonyms (22 Zeichen base64url). Nur noch, um Löschmitteilungen für Lieferungen
+   * zuzuordnen, die vor der Umstellung protokolliert wurden (federation/outbox.ts).
+   */
+  legacyPseudonym(releaseId: string, athleteId: string): string {
+    return this.pseudonymMac(releaseId, athleteId).toString('base64url').slice(0, 22);
+  }
+
+  private pseudonymMac(releaseId: string, athleteId: string): Buffer {
+    return hmacSha256(this.pseudonymSecret, `${releaseId}:${athleteId}`);
   }
 
   card(): NodeCard {

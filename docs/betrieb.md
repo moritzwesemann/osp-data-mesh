@@ -12,6 +12,11 @@ Abkürzung für native CLI-Aufrufe in diesem Dokument (als `osp-mesh` im Verzeic
 alias mesh-cli='bun --env-file=.env --env-file=.env.owner run cli'
 ```
 
+`mesh-cli <befehl>` entspricht damit dem Aufruf `bun --env-file=.env --env-file=.env.owner run cli <befehl>`,
+der Laufzeit-Konfiguration (`.env`) **und** Owner-Zugang (`.env.owner`) lädt. Er ist für alle Befehle
+nötig, die als `mesh_owner` arbeiten (`migrate`, `restore`); für die übrigen genügt `.env`. Der Alias gilt
+nur in der aktuellen Shell (bei Bedarf in `~/.bashrc` von `osp-mesh` eintragen).
+
 Docker-Entsprechung: `docker compose run --rm cli <befehl>` (der Dienst `cli` erhält Laufzeit- und
 Owner-Zugang, Schlüssel und das Sicherungs-Volume).
 
@@ -20,7 +25,7 @@ Owner-Zugang, Schlüssel und das Sicherungs-Volume).
 | Komponente | Aufgabe | Zustand |
 |---|---|---|
 | Server (`bun src/server/main.ts`) | Oberfläche, API, Föderation, Hilfe; Hintergrundaufgaben | zustandslos bis auf Datenbank und Sicherungsverzeichnis |
-| PostgreSQL 18, Datenbank `mesh` | alle Fachdaten, Audit-Log, Schlüssel (verschlüsselt) | Datenverzeichnis bzw. Volume `db_data` |
+| PostgreSQL 18, Datenbank `mesh` in einem **eigenen Cluster je Knoten** (die Rollen gelten clusterweit, siehe [Installation](installation.md#vorbereitung-beide-varianten)) | alle Fachdaten, Audit-Log, Schlüssel (verschlüsselt) | Datenverzeichnis bzw. Volume `db_data` |
 | Caddy | TLS, Weiterleitung an `127.0.0.1:4401` bzw. `node:4401` | Zertifikate im Caddy-Datenverzeichnis bzw. Volume `caddy_data` |
 | Sicherungsverzeichnis `MESH_BACKUP_DIR` | verschlüsselte Sicherungen `*.mbk` + Manifeste | Verzeichnis bzw. Volume `backups` |
 
@@ -118,14 +123,24 @@ Der Endpunkt `/federation/v1/*` ist von außen erreichbar und daher gegen Überf
   derselben Quelle nennt in `suppressed` die Zahl der dazwischen nur geloggten Ablehnungen. Ist das
   Budget erschöpft, steht einmal je Zeitfenster die Warnung `federation rejections: audit budget of this
   window exhausted` im Log.
-- **Voraussetzung `MESH_TRUST_PROXY=true` hinter Caddy:** Die Begrenzung je IP-Adresse (ebenso die
-  Anmeldebegrenzung, 30 Versuche je IP-Adresse in 5 Minuten) braucht die echte Client-Adresse. Hinter
-  Caddy sieht der Server sonst nur die Adresse des Proxys: Dann teilen sich **alle** Partner und Nutzenden
-  einen Zähler, und ein einzelner Störer sperrt alle aus. Caddy ersetzt `X-Forwarded-For` durch die
-  tatsächliche Client-Adresse; der Server wertet den Header nur mit `MESH_TRUST_PROXY=true` aus (Docker:
-  fest gesetzt; nativ: `.env`). Umgekehrt `MESH_TRUST_PROXY=true` **nur** setzen, wenn der Server nicht
-  direkt erreichbar ist (`MESH_HOST=127.0.0.1` bzw. nur im Docker-Netz) – sonst könnten Clients ihre
-  Adresse fälschen und die Begrenzung umgehen.
+- **Voraussetzung: echte Client-Adresse hinter Caddy** (`MESH_TRUST_PROXY=true` und
+  `MESH_TRUSTED_PROXIES`): Die Begrenzung je IP-Adresse (ebenso die Anmeldebegrenzung, 30 Versuche je
+  IP-Adresse in 5 Minuten) braucht die echte Client-Adresse. Hinter Caddy sieht der Server sonst nur die
+  Adresse des Proxys: Dann teilen sich **alle** Partner und Nutzenden einen Zähler, und ein einzelner
+  Störer sperrt alle aus. Caddy übergibt die Client-Adresse im Header `X-Forwarded-For`. Der Server
+  wertet ihn nur aus, wenn **beides** gilt: `MESH_TRUST_PROXY=true` **und** die Verbindung kommt von einer
+  Adresse aus `MESH_TRUSTED_PROXIES` (kommagetrennte IP-Adressen, Standard `127.0.0.1,::1`). Aus der
+  Kette im Header verwendet er die **rechteste Adresse, die nicht in `MESH_TRUSTED_PROXIES` steht** – also
+  die Adresse, von der sich der Client mit Caddy verbunden hat; Einträge weiter links kann ein Client
+  selbst setzen und werden ignoriert. Verbindungen von anderen Adressen werden mit ihrer eigenen Adresse
+  gezählt, ein mitgesendeter Header bleibt unbeachtet.
+  - **nativ** (Caddy auf demselben Server, verbindet sich von `127.0.0.1`): `MESH_TRUST_PROXY=true` in
+    `.env`, `MESH_TRUSTED_PROXIES` beim Standard lassen.
+  - **Docker Compose:** Caddy hat im Netz `frontend` (`172.31.252.0/24`) die feste Adresse
+    `172.31.252.10`; `docker-compose.yml` setzt `MESH_TRUST_PROXY=true` und
+    `MESH_TRUSTED_PROXIES=172.31.252.10`.
+  - **ohne Reverse Proxy** (nur [Testinstallation](installation.md#testinstallation-ohne-caddy-nur-http-nur-lokal)):
+    `MESH_TRUST_PROXY=false`.
 
 Hinweise im Betrieb: Viele `federation.request.rejected` mit `unknown_node` oder `bad_signature` von
 einer Adresse deuten auf Fehlkonfiguration eines Partners oder einen Angriff hin; Häufungen von
@@ -169,12 +184,24 @@ Die Wiederherstellung ersetzt die **gesamte** Datenbank durch den Stand der Sich
 `mesh_owner` in **einer Transaktion** (schlägt sie fehl, bleibt die Datenbank unverändert), stellt danach die
 Rechte (`migrations/grants.sql`) wieder her, beendet alle Sitzungen und prüft die Audit-Kette.
 
+**Der Knoten muss vorher gestoppt sein.** Liefe er weiter, griffen seine Anfragen und
+Hintergrundaufgaben (Ausgangspostfach, BI-Aktualisierung, Sicherungen) während der Wiederherstellung auf
+die Datenbank zu; sie könnten die Wiederherstellung blockieren oder den zurückgespielten Stand sofort
+wieder verändern. `restore` prüft das: Bestehen noch Datenbankverbindungen des laufenden Servers (in
+PostgreSQL am Anwendungsnamen `osp-data-mesh` erkennbar), bricht der Befehl ab, ohne etwas zu verändern. Dann den Knoten stoppen (Tabelle [Starten, Stoppen](#starten-stoppen-neustarten)) und
+`restore` wiederholen. Prüfen, welche Verbindungen bestehen (als Superuser bzw. `mesh_owner`):
+`select pid, usename, client_addr, backend_start from pg_stat_activity where application_name = 'osp-data-mesh';`
+Die Option `--force` übergeht die Prüfung; nur verwenden, wenn sicher ist, dass kein Server-Prozess
+dieses Knotens mehr läuft (z. B. weil die gemeldeten Verbindungen von einem gerade endenden
+Kommandozeilenbefehl wie `backup` stammen – besser dessen Ende abwarten).
+
 **Ablauf nativ:**
 
 ```sh
 sudo systemctl stop osp-data-mesh                     # Knoten MUSS gestoppt sein
 sudo -iu osp-mesh
 cd /opt/osp-data-mesh
+alias mesh-cli='bun --env-file=.env --env-file=.env.owner run cli'
 mesh-cli restore --file backups/osp-beispiel-20261104T020000.000Z.mbk --yes
 mesh-cli migrate                                      # falls die Sicherung ein älteres Schema hat
 exit
@@ -190,8 +217,9 @@ docker compose run --rm cli restore --file /var/lib/osp-mesh/backups/osp-beispie
 docker compose up -d                                   # migrate läuft automatisch, dann node
 ```
 
-Prüfungen der Kommandozeile: Manifest/SHA-256 (falls vorhanden), richtiger Schlüssel (Schlüssel-ID im
-Kopf), GCM-Authentisierung, Knotenkennung = `MESH_NODE_ID` (sonst Abbruch; `--allow-other-node` nur für
+Prüfungen der Kommandozeile: keine Verbindungen des laufenden Servers (sonst Abbruch; `--force` siehe
+oben), Manifest/SHA-256 (falls vorhanden), richtiger Schlüssel (Schlüssel-ID im Kopf),
+GCM-Authentisierung, Knotenkennung = `MESH_NODE_ID` (sonst Abbruch; `--allow-other-node` nur für
 Wiederherstellungstests oder einen bewussten Umzug), Schemaversion nicht neuer als der installierte Code.
 Exit-Code 0 nur, wenn die Audit-Kette danach intakt ist.
 
@@ -210,13 +238,22 @@ Exit-Code 0 nur, wenn die Audit-Kette danach intakt ist.
 
 ### Wiederherstellungstest (vierteljährlich empfohlen)
 
-Auf einem **getrennten Testsystem** ohne Verbindung zu Partnern:
+Auf einem **getrennten Testsystem** ohne Verbindung zu Partnern, mit einem **eigenen
+PostgreSQL-Cluster** – auf einem anderen Rechner, in einer eigenen VM oder einem eigenen Container,
+**nicht** als zweite Datenbank im Cluster des Produktivknotens: Die Rollen `mesh_owner`, `mesh_app` und
+`mesh_bi` gelten clusterweit; `db-bootstrap` für das Testsystem setzte sonst die Passwörter des
+Produktivknotens neu (er verlöre seine Datenbankverbindung), und die Rollen des Testsystems könnten die
+Produktivdatenbank lesen (siehe [Installation](installation.md#vorbereitung-beide-varianten)).
+`db-bootstrap` bricht in diesem Fall ab.
 
-1. Testsystem wie in der [Installation](installation.md) aufsetzen, aber mit `MESH_WORKERS=false` (keine
-   Zustellung von Mitteilungen, keine Sicherungen) und ohne Partner-Netzzugang. Gleiche `MESH_NODE_ID`
-   und denselben `MESH_MASTER_KEY` wie produktiv verwenden (sonst sind die Geheimnisse nicht lesbar),
-   alternativ `--allow-other-node`.
-2. Aktuelle Sicherung und Manifest kopieren, `restore --file … --yes` ausführen.
+1. Testsystem wie in der [Installation](installation.md) aufsetzen (eigener Cluster, eigene Passwörter
+   in `.env.owner`), aber mit `MESH_WORKERS=false` (keine Zustellung von Mitteilungen, keine Sicherungen)
+   und ohne Partner-Netzzugang. Gleiche `MESH_NODE_ID` und denselben `MESH_MASTER_KEY` wie produktiv
+   verwenden (sonst sind die Geheimnisse nicht lesbar), alternativ `--allow-other-node`. Für die
+   Wiederherstellung den `MESH_BACKUP_KEY` des Produktivknotens setzen.
+2. Aktuelle Sicherung und Manifest kopieren, Knoten des Testsystems stoppen (bzw. noch nicht starten) und
+   `bun --env-file=.env --env-file=.env.owner run cli restore --file <datei>.mbk --yes` ausführen,
+   danach `bun --env-file=.env --env-file=.env.owner run cli migrate` und den Knoten starten.
 3. Prüfen: `readyz` ok, `verify-audit` ok, Anmeldung möglich, Stichprobe von Athletinnen/Athleten,
    Datenprodukten und Freigaben; Anzahl Einträge mit dem Produktivsystem vergleichen.
 4. Ergebnis (Datum, Sicherungsdatei, Dauer, Abweichungen) dokumentieren; Testsystem danach löschen, da es
@@ -275,10 +312,27 @@ Wiederherstellung einer alten Sicherung den alten Wert für den `restore`-Aufruf
 
 ### Datenbankpasswörter ändern
 
-`bootstrap.sql` setzt bei jedem Aufruf die Passwörter neu: neue Werte in `.env.owner` bzw. `deploy/.env`
-eintragen, `db-bootstrap` erneut ausführen (Docker: `docker compose exec db psql -U postgres -v
+`bootstrap.sql` setzt bei jedem Aufruf die Passwörter neu. Nativ (als `osp-mesh` in
+`/opt/osp-data-mesh`):
+
+1. Neue Werte erzeugen (`openssl rand -hex 24`) und in `.env.owner` eintragen
+   (`MESH_DB_OWNER_PASSWORD`, `MESH_DB_APP_PASSWORD`, `MESH_DB_BI_PASSWORD` und das Passwort in
+   `MESH_DB_OWNER_URL`).
+2. `db-bootstrap` erneut ausführen, wie bei der [Installation (A4)](installation.md#a4-rollen-und-datenbank-anlegen-db-bootstrap):
+
+   ```sh
+   printf 'Passwort des PostgreSQL-Superusers postgres: '; read -rs SU_PW; echo
+   export MESH_DB_SUPERUSER_URL="postgres://postgres:$SU_PW@127.0.0.1:5432/postgres"   # anpassen: Adresse/Port des Clusters
+   bun --silent --env-file=.env.owner run cli db-bootstrap
+   unset MESH_DB_SUPERUSER_URL SU_PW
+   ```
+
+3. In `.env` das Passwort in `MESH_DB_URL` anpassen, Knoten neu starten
+   (`sudo systemctl restart osp-data-mesh`), BI-Werkzeuge auf das neue `mesh_bi`-Passwort umstellen.
+
+Docker: neue Werte in `deploy/.env` eintragen, dann `docker compose exec db psql -U postgres -v
 ON_ERROR_STOP=1 -v db_name=mesh -v owner_password=… -v app_password=… -v bi_password=… -f
-/opt/osp-data-mesh/bootstrap.sql`), danach `MESH_DB_URL` anpassen und den Knoten neu starten.
+/opt/osp-data-mesh/bootstrap.sql` und `docker compose up -d` (startet die Dienste mit den neuen Werten).
 
 ### Knotenschlüssel (Ed25519)
 
@@ -326,8 +380,11 @@ Danach in *System* die Version prüfen. Weitere Updates:
   bauen mit `docker compose build --pull`).
 - **PostgreSQL-Nebenversionen** (18.x) über die Paketverwaltung bzw. `docker compose pull db`.
   **Hauptversionswechsel** (z. B. 18 → 19) mit `pg_upgrade` oder Sicherung/Wiederherstellung planen.
-- **Bun:** Version in `deploy/Dockerfile` (`ARG BUN_VERSION`) bzw. auf dem Server anheben, danach Tests
-  (`bun test`) und SBOM (`bun run sbom`) neu erzeugen.
+- **Bun:** getestet ist die in der [Installation](installation.md#a1-pakete-installieren-administrationskonto)
+  genannte Version. Eine neue Version erst nach Tests (`bun test`) und neuer SBOM (`bun run sbom`)
+  übernehmen: in `deploy/Dockerfile` (`ARG BUN_VERSION`) bzw. auf dem Server mit
+  `curl -fsSL https://bun.sh/install | bash -s "bun-v<version>"` und
+  `sudo install -m 0755 "$HOME/.bun/bin/bun" /usr/local/bin/bun`.
 - **Abhängigkeiten:** siehe [Schwachstellenmanagement](sicherheit.md#schwachstellenmanagement).
 
 ## Aufbewahrung und Löschfristen

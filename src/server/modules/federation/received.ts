@@ -8,6 +8,7 @@ import type { Row } from '../../core/db-types.ts';
 import { AppError, notFound } from '../../core/errors.ts';
 import { fileResponse } from '../../core/formats.ts';
 import type { HandlerCtx, Handlers } from '../../core/http.ts';
+import { writeTx } from '../../core/tx.ts';
 import { DISCOVERY_TIMEOUT_MS, errorCodeOf, PeerCallError, type SignedReply, sendSigned } from './client.ts';
 import { type ReceivedWithPeer, toExchangeLogEntry, toReceived } from './mappers.ts';
 import { getPeer } from './peers.ts';
@@ -67,7 +68,7 @@ async function recordFailedPull(ctx: PullCtx, peer: Row<'peer'>, err: PeerCallEr
   const now = deps.now();
   const denied = err.code === 'peer_rejected';
   const reason = denied ? (err.reason ?? err.remoteCode ?? err.code) : err.code;
-  await deps.db.transaction().execute(async (trx) => {
+  await writeTx(deps, async (trx) => {
     await logExchange(trx, {
       direction: 'incoming',
       peer_id: peer.id,
@@ -159,7 +160,7 @@ async function storePull(ctx: PullCtx, peer: Row<'peer'>, reply: SignedReply<Pul
       trx,
     );
 
-  return deps.db.transaction().execute(async (trx) => {
+  return writeTx(deps, async (trx) => {
     await lockReceivedCopy(trx, peer.id, p.release.id);
     const notices = await trx
       .selectFrom('exchange_log')
@@ -448,7 +449,7 @@ export const receivedHandlers: Handlers = {
 
   'received.delete': async ({ deps, params, actor, ip, requestId }) => {
     const r = await getReceived(deps.db, params.id);
-    await deps.db.transaction().execute(async (trx) => {
+    await writeTx(deps, async (trx) => {
       const deleted = await clearReceivedCopies(trx, [r.id], 'deleted', null, deps.now());
       await deps.audit.record(
         {

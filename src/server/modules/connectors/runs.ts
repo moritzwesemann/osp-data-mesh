@@ -17,6 +17,7 @@ import { type DbOrTx, pgCode } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import type { Deps } from '../../core/deps.ts';
 import { AppError, conflict, invalid, notFound } from '../../core/errors.ts';
+import { writeTx } from '../../core/tx.ts';
 import {
   type AthleteLookup,
   type AthleteValues,
@@ -453,7 +454,7 @@ async function persistRun(
 ): Promise<ImportRunDetailOut> {
   const { deps } = rc;
   const now = deps.now();
-  const result = await deps.db.transaction().execute(async (trx) => {
+  const result = await writeTx(deps, async (trx) => {
     let staged = p.staged ?? { rows: [], subjects: [] };
     let previewRows = p.previewRows ?? [];
     let issues = p.issues;
@@ -581,72 +582,90 @@ const NATURAL_KEY_COLUMNS = new Set(['last_name', 'first_name', 'date_of_birth']
 
 export async function commitRun(rc: RequestContext, runId: string): Promise<ImportRun> {
   const { deps } = rc;
-  const result = await deps.db
-    .transaction()
-    .execute(async (trx) => {
-      const run = await trx
-        .selectFrom('import_run')
-        .selectAll()
-        .where('id', '=', runId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!run) throw notFound();
-      if (run.status !== 'previewed') throw conflict('run_not_previewed');
-      const connector = await trx
-        .selectFrom('connector')
-        .selectAll()
-        .where('id', '=', run.connector_id)
-        .executeTakeFirstOrThrow();
-      if (connector.version !== run.connector_version) throw conflict('connector_changed');
-      if (connector.on_error === 'abort' && run.error_rows > 0) throw conflict('import_has_errors');
-      const input: ConnectorInput = connectorInputOf(connector);
+  const result = await writeTx(deps, async (trx) => {
+    // Sperrreihenfolge (core/locks.ts): erst die berührten Personen, dann der Lauf – wie die Löschung einer
+    // Person (athlete → import_run, retention.ts). Dazu die vorgemerkten Zeilen vorab ohne Sperre lesen;
+    // bis zur Sperre des Laufs kann eine Löschung sie nur verkleinern (eraseSubjectFromRuns).
+    const planned = await trx
+      .selectFrom('import_run as r')
+      .innerJoin('connector as c', 'c.id', 'r.connector_id')
+      .select(['r.staged', 'c.target_type'])
+      .where('r.id', '=', runId)
+      .executeTakeFirst();
+    if (!planned) throw notFound();
+    const present = await lockAthletes(
+      trx,
+      planned.target_type === 'athletes' ? 'update' : 'share',
+      athletesOf(readStaged<StagedAthlete | StagedRecord>(planned.staged).rows),
+    );
+    const run = await trx
+      .selectFrom('import_run')
+      .selectAll()
+      .where('id', '=', runId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!run) throw notFound();
+    if (run.status !== 'previewed') throw conflict('run_not_previewed');
+    const connector = await trx
+      .selectFrom('connector')
+      .selectAll()
+      .where('id', '=', run.connector_id)
+      .executeTakeFirstOrThrow();
+    if (connector.version !== run.connector_version) throw conflict('connector_changed');
+    if (connector.on_error === 'abort' && run.error_rows > 0) throw conflict('import_has_errors');
+    const input: ConnectorInput = connectorInputOf(connector);
 
-      const counts =
-        input.targetType === 'athletes'
-          ? await commitAthletes(trx, rc, readStaged<StagedAthlete>(run.staged).rows)
-          : await commitRecords(trx, run, input.targetDatasetId!, readStaged<StagedRecord>(run.staged).rows);
+    const counts =
+      input.targetType === 'athletes'
+        ? await commitAthletes(trx, rc, readStaged<StagedAthlete>(run.staged).rows, present)
+        : await commitRecords(
+            trx,
+            run,
+            input.targetDatasetId!,
+            readStaged<StagedRecord>(run.staged).rows,
+            present,
+          );
 
-      await recordVanished(trx, run.id, counts.vanished, 'commit');
-      await clearRawValues(trx, [run.id]);
-      const updated = await trx
-        .updateTable('import_run')
-        .set({
-          status: 'committed',
-          staged: null,
-          preview: CLEARED_PREVIEW,
-          inserted_rows: counts.inserted,
-          updated_rows: counts.updated,
-          committed_by: rc.userId,
-          finished_at: deps.now(),
-        })
-        .where('id', '=', run.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      await deps.audit.record(
-        {
-          actor: rc.actor,
-          action: 'import.commit',
-          objectType: 'import_run',
-          objectId: run.id,
-          details: {
-            connectorId: connector.id,
-            datasetId: connector.target_dataset_id,
-            targetType: connector.target_type,
-            inserted: counts.inserted,
-            updated: counts.updated,
-            skipped: counts.vanished.length,
-          },
-          ip: rc.ip,
-          requestId: rc.requestId,
+    await recordVanished(trx, run.id, counts.vanished, 'commit');
+    await clearRawValues(trx, [run.id]);
+    const updated = await trx
+      .updateTable('import_run')
+      .set({
+        status: 'committed',
+        staged: null,
+        preview: CLEARED_PREVIEW,
+        inserted_rows: counts.inserted,
+        updated_rows: counts.updated,
+        committed_by: rc.userId,
+        finished_at: deps.now(),
+      })
+      .where('id', '=', run.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    await deps.audit.record(
+      {
+        actor: rc.actor,
+        action: 'import.commit',
+        objectType: 'import_run',
+        objectId: run.id,
+        details: {
+          connectorId: connector.id,
+          datasetId: connector.target_dataset_id,
+          targetType: connector.target_type,
+          inserted: counts.inserted,
+          updated: counts.updated,
+          skipped: counts.vanished.length,
         },
-        trx,
-      );
-      return { run: updated, connector };
-    })
-    .catch((err) => {
-      if (pgCode(err) === '23505') throw conflict('athlete_conflict');
-      throw err;
-    });
+        ip: rc.ip,
+        requestId: rc.requestId,
+      },
+      trx,
+    );
+    return { run: updated, connector };
+  }).catch((err) => {
+    if (pgCode(err) === '23505') throw conflict('athlete_conflict');
+    throw err;
+  });
   await deps.events.after('data.changed', { datasetId: result.connector.target_dataset_id });
   return toImportRun(result.run, result.connector.name);
 }
@@ -657,24 +676,83 @@ interface CommitCounts {
   vanished: number[];
 }
 
+interface CommitAthletes {
+  /** vorhandene Personen (zugeordnete Zeilen) */
+  ids: string[];
+  /** natürliche Schlüssel neuer Personen (Ziel Athletenkern): eine inzwischen angelegte Person wird aktualisiert */
+  naturalKeys: { last_name: string; first_name: string; date_of_birth: string }[];
+}
+
+function athletesOf(staged: readonly (StagedAthlete | StagedRecord)[]): CommitAthletes {
+  const ids = new Set<string>();
+  const naturalKeys = new Map<string, CommitAthletes['naturalKeys'][number]>();
+  for (const s of staged) {
+    if (s.athleteId) {
+      ids.add(s.athleteId);
+      continue;
+    }
+    const values = 'values' in s ? s.values : null;
+    if (values?.last_name && values.first_name && values.date_of_birth) {
+      const key = {
+        last_name: values.last_name,
+        first_name: values.first_name,
+        date_of_birth: values.date_of_birth,
+      };
+      naturalKeys.set(JSON.stringify(key), key);
+    }
+  }
+  return { ids: [...ids], naturalKeys: [...naturalKeys.values()] };
+}
+
+/**
+ * Sperrt alle Personen, die eine Übernahme berührt, bevor der Importlauf gesperrt wird (Sperrreihenfolge
+ * athlete → import_run, core/locks.ts), in fester Reihenfolge (nach id). share: Einträge eines Datensatzes
+ * (die Person darf nicht gelöscht werden); update: Athletenkern (Stammdaten werden geändert). Liefert die
+ * ids der vorhandenen Personen; eine inzwischen gelöschte Person fehlt darin und wird nicht übernommen.
+ */
+async function lockAthletes(
+  trx: DbOrTx,
+  mode: 'share' | 'update',
+  athletes: CommitAthletes,
+): Promise<Set<string>> {
+  const ids = new Set(athletes.ids);
+  for (const chunk of chunks(athletes.naturalKeys)) {
+    const found = await trx
+      .selectFrom('athlete')
+      .select('id')
+      .where((eb) =>
+        eb(
+          eb.refTuple('last_name', 'first_name', 'date_of_birth'),
+          'in',
+          chunk.map((k) => eb.tuple(k.last_name, k.first_name, k.date_of_birth)),
+        ),
+      )
+      .execute();
+    for (const f of found) ids.add(f.id);
+  }
+  const present = new Set<string>();
+  for (const chunk of chunks([...ids].sort())) {
+    const query = trx.selectFrom('athlete').select('id').where('id', 'in', chunk).orderBy('id');
+    const found = await (mode === 'update' ? query.forUpdate() : query.forShare()).execute();
+    for (const f of found) present.add(f.id);
+  }
+  return present;
+}
+
 function athleteColumns(values: StagedAthlete['values']) {
   const out: Record<string, string | null> = {};
   for (const [k, v] of Object.entries(values)) if (v !== undefined) out[k] = v;
   return out;
 }
 
+/** present: vorab gesperrte, vorhandene Personen (lockAthletes) */
 async function commitAthletes(
   trx: DbOrTx,
   rc: RequestContext,
   staged: StagedAthlete[],
+  present: ReadonlySet<string>,
 ): Promise<CommitCounts> {
   const counts: CommitCounts = { inserted: 0, updated: 0, vanished: [] };
-  const present = new Set<string>();
-  const ids = [...new Set(staged.map((s) => s.athleteId).filter((v): v is string => !!v))];
-  for (const chunk of chunks(ids)) {
-    const found = await trx.selectFrom('athlete').select('id').where('id', 'in', chunk).forUpdate().execute();
-    for (const f of found) present.add(f.id);
-  }
   for (const s of staged) {
     const values = athleteColumns(s.values);
     let athleteId: string;
@@ -725,20 +803,15 @@ async function commitAthletes(
   return counts;
 }
 
+/** present: vorab gesperrte, vorhandene Personen (lockAthletes; die Sperre verhindert eine Löschung) */
 async function commitRecords(
   trx: DbOrTx,
   run: Row<'import_run'>,
   datasetId: string,
   staged: StagedRecord[],
+  present: ReadonlySet<string>,
 ): Promise<CommitCounts> {
   const counts: CommitCounts = { inserted: 0, updated: 0, vanished: [] };
-  const present = new Set<string>();
-  const ids = [...new Set(staged.map((s) => s.athleteId))];
-  for (const chunk of chunks(ids)) {
-    // Sperre verhindert, dass eine Person während der Übernahme gelöscht wird
-    const found = await trx.selectFrom('athlete').select('id').where('id', 'in', chunk).forShare().execute();
-    for (const f of found) present.add(f.id);
-  }
   const live = staged.filter((s) => {
     if (present.has(s.athleteId)) return true;
     counts.vanished.push(s.rowNumber);
@@ -781,7 +854,7 @@ async function commitRecords(
 
 export async function discardRun(rc: RequestContext, runId: string): Promise<ImportRun> {
   const { deps } = rc;
-  const { run, connectorName } = await deps.db.transaction().execute(async (trx) => {
+  const { run, connectorName } = await writeTx(deps, async (trx) => {
     const existing = await trx
       .selectFrom('import_run')
       .selectAll()

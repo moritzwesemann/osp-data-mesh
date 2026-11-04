@@ -28,13 +28,27 @@ und wie mit der Weitergabe empfangener Daten umzugehen ist.
 | **Datenprodukt geändert** (Spalten/Filter) | bestehende Freigaben *veraltet* (`product_changed`), liefern nichts mehr | Views liefern keine Zeilen mehr | keine Mitteilung; die zuletzt gelieferte Kopie bleibt bis zu Ablauf/Widerruf bestehen (siehe Hinweis unten) |
 | **Datensatz neu eingestuft** (*Datensätze › Bearbeiten*: Kategorie, besondere Kategorie, Teilbarkeit; ebenso anderes Beobachtungsdatum oder entfernte bzw. in Typ/Einheit geänderte Felder, die ein Produkt nutzt) | jedes betroffene aktive Produkt erhält in derselben Transaktion eine **neue Version** (Audit `product.update`, `cause: dataset_changed`) → alle seine Freigaben *veraltet* (`product_changed`); wird der Datensatz intern, wird auch das Produkt intern. Wird der Datensatz **neu besondere Kategorie**, wechselt ein Datensatz besonderer Kategorie die **Kategorie** oder wird er **intern**, werden zusätzlich alle nicht widerrufenen **Partnerfreigaben** der betroffenen Produkte widerrufen (Grund `dataset_reclassified`) | Views liefern sofort keine Zeilen mehr (Versionsprüfung in SQL) | nur in den drei genannten Fällen: `release_revoked` (Grund `dataset_reclassified`) je Partnerfreigabe → Partner löscht **alle** Zeilen der Kopie, denn diese Daten hätten nach der neuen Einstufung so nicht übermittelt werden dürfen; sonst wie *Datenprodukt geändert* |
 | **Freigabe abgelaufen** (`validUntil` erreicht) | keine weitere Ausgabe (`expired`) | View prüft die Gültigkeit bei jeder Abfrage in SQL → sofort leer | Partner kennt das Ablaufdatum und **löscht die Kopie selbstständig** (minütliche Prüfung), auch ohne Verbindung |
-| **Einwilligung widerrufen** (*Person › Einwilligung › Widerruf erfassen*) | Person entfällt sofort bei Freigaben mit Einwilligungsprüfung, deren Zweck und Kategorie der Widerruf erfasst | Zeilen der Person werden in derselben Transaktion entfernt | Mitteilung `subjects_withdrawn` (Grund `consent_withdrawn`) mit den Pseudonymen der Person je betroffener Freigabe → Partner löscht diese Zeilen |
+| **Einwilligung widerrufen** (*Person › Einwilligung › Widerruf erfassen*) | Person entfällt sofort bei Freigaben mit Einwilligungsprüfung, deren Zweck und Kategorie der Widerruf erfasst | Zeilen der Person werden in derselben Transaktion entfernt | Mitteilung `subjects_withdrawn` (Grund `consent_withdrawn`) mit den Pseudonymen der Person je betroffener Freigabe → Partner löscht diese Zeilen. Betroffen sind die Lieferungen, die **auf einer Einwilligung beruhten** und deren **Zweck und Datenkategorie zum Zeitpunkt der Lieferung** vom Widerruf erfasst sind (siehe unten) |
 | **Person gelöscht** (Recht auf Löschung) | Person und alle zugehörigen Daten gelöscht | Zeilen entfernt | `subjects_withdrawn` (Grund `erasure`) an **alle** Partner, die Daten der Person erhalten haben |
 | **Partner gesperrt** | jede Anfrage des Partners abgewiesen (Abruf, Katalog, Verbindungstest, `untrusted`) – **außer seinen Mitteilungen** (`notice`): Ist der gesperrte Partner selbst Datenhalter, löschen seine Widerrufe und Löschmitteilungen weiterhin die von ihm stammenden Kopien (Signatur wird geprüft) | – | Partner erhält keine neuen Daten; bestehende Kopie: Freigaben zusätzlich widerrufen – die Widerrufsmitteilung wird auch einem gesperrten Partner zugestellt |
 
 Welche Partner Daten einer Person erhalten haben, ergibt sich aus dem **Austauschprotokoll**: Der
-Datenhalter speichert bei jeder Lieferung die übermittelten Pseudonyme. Daraus werden die Mitteilungen
-zielgenau erzeugt.
+Datenhalter speichert bei jeder Lieferung die übermittelten Pseudonyme, den Zweck, die **Datenkategorie
+bei Lieferung** und ob bei der Lieferung eine **Einwilligungspflicht** galt (Einwilligungspflicht der
+Freigabe oder besondere Kategorie; Spalten `data_category` und `consent_applied`, siehe
+[Datenmodell](datenmodell.md#föderation)). Daraus werden die Mitteilungen zielgenau erzeugt:
+
+- **Löschung einer Person:** Mitteilung für jede Freigabe, mit der Daten der Person geliefert wurden.
+- **Einwilligungswiderruf:** Mitteilung nur für Lieferungen, bei denen eine Einwilligungspflicht galt und
+  deren Zweck und Datenkategorie der Widerruf erfasst (`*` erfasst jeden Zweck bzw. jede Kategorie).
+  Maßgeblich ist, **was tatsächlich geliefert wurde** – nicht die heutige Einstufung: Wird ein Datensatz
+  nach einer Lieferung neu eingestuft (z. B. andere Kategorie), beruht die Kopie beim Partner weiterhin
+  auf der Einwilligung, unter der geliefert wurde, und ein Widerruf dieser Einwilligung erreicht sie.
+  Für Lieferungen vor Migration 0500 hat die Migration diese Angaben aus dem Stand zum Zeitpunkt der
+  Migration nachgetragen; fehlen sie dennoch, gilt die heutige Einstufung, und ist auch sie unbekannt, wird
+  im Zweifel eine Löschmitteilung gesendet.
+- Die Pseudonyme werden in der Form gesucht und mitgeteilt, in der sie geliefert wurden (aktuell 32
+  Hex-Zeichen, frühere Lieferungen 22 Zeichen, siehe [ADR 0009](adr/0009-freigabebezogene-pseudonyme.md)).
 
 **Hinweis zu Produktänderungen:** Eine Änderung macht Freigaben ungültig, damit nie unbemerkt *mehr* Daten
 fließen. Die vorher rechtmäßig gelieferte Kopie beim Partner wird dadurch nicht gelöscht. Soll sie

@@ -1,6 +1,7 @@
 /**
  * Startpunkt eines OSP-Data-Nodes: `bun run start` (bzw. `bun src/server/main.ts`).
- * Migrationen laufen NICHT hier, sondern vorab mit `bun run migrate` (Rolle mesh_owner).
+ * Migrationen laufen NICHT hier, sondern vorab mit
+ * `bun --env-file=.env --env-file=.env.owner run cli migrate` (Rolle mesh_owner).
  */
 
 import { buildDeps, createApp, startModules, stopModules } from './app.ts';

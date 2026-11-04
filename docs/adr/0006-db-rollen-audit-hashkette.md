@@ -33,3 +33,7 @@ laufenden Servers möglich sein (S3, S5).
 - Einträge werden serialisiert (Advisory-Lock); für das Mengengerüst ohne spürbare Kosten.
 - Das Audit-Log wächst unbegrenzt; Archivierung/Aufbewahrungsfrist muss organisatorisch festgelegt und
   ggf. später technisch umgesetzt werden.
+- Rollen gelten in PostgreSQL für den ganzen Cluster. Die Rollen haben feste Namen; die Trennung
+  funktioniert daher nur mit **einem PostgreSQL-Cluster je Knoten** (auch für Test- und
+  Wiederherstellungssysteme). `db-bootstrap` bricht ab, wenn der Cluster schon eine andere Datenbank von
+  `mesh_owner` enthält (`--force` nur für Fachleute).

@@ -70,7 +70,7 @@ Vertrauen zu einem zweiten Knoten her.
 | 3.2 | Installation bis „Prüfen“ | `/healthz` und `/readyz` ok über HTTPS | | |
 | 3.3 | Erste Anmeldung mit Initialpasswort | Passwortwechsel erzwungen, danach Zugang | | |
 | 3.4 | Hilfe unter `/hilfe/` | erreichbar, Navigation funktioniert | | |
-| 3.5 | Sicherung erstellen und auf einem zweiten System wiederherstellen ([Betrieb](betrieb.md#wiederherstellung)) | `restore` mit Exit 0, Audit-Kette ok | | |
+| 3.5 | Sicherung erstellen und auf einem zweiten System mit eigenem PostgreSQL-Cluster wiederherstellen ([Betrieb](betrieb.md#wiederherstellungstest-vierteljährlich-empfohlen)) | `restore` mit Exit 0, Audit-Kette ok | | |
 | 3.6 | Vertrauen mit Partnerknoten inkl. Fingerprint-Abgleich | beidseitig *vertrauenswürdig*, `ping` erfolgreich | | |
 | 3.7 | Dauer, Rückfragen, Abweichungen von der Dokumentation | protokolliert, Dokumentation ggf. korrigiert | | |
 

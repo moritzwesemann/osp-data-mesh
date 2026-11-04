@@ -44,6 +44,8 @@ export interface TestNode {
       form?: FormData;
       headers?: Record<string, string>;
       csrf?: boolean;
+      /** TCP-Gegenstelle (Standard 127.0.0.1, wie ein Reverse Proxy auf demselben Rechner); null = unbekannt */
+      peer?: string | null;
     },
   ): Promise<TestResponse<T>>;
   close(): Promise<void>;
@@ -56,6 +58,16 @@ export interface TestNodeOptions {
   now?: () => Date;
   /** Routing ausgehender HTTP-Aufrufe (Partner, API-Quellen) */
   fetch?: Deps['fetch'];
+}
+
+/**
+ * Umgebung für app.request/app.fetch mit einer TCP-Gegenstelle (wie Bun.serve: server.requestIP), damit
+ * getConnInfo eine Adresse liefert. null: keine Gegenstelle bekannt.
+ */
+export function connEnv(peer: string | null = '127.0.0.1') {
+  if (peer === null) return undefined;
+  const family = peer.includes(':') ? 'IPv6' : 'IPv4';
+  return { server: { requestIP: () => ({ address: peer, family, port: 50_000 }) } };
 }
 
 export async function createTestNode(opts: TestNodeOptions = {}): Promise<TestNode> {
@@ -120,7 +132,7 @@ export async function createTestNode(opts: TestNodeOptions = {}): Promise<TestNo
         headers['content-type'] = 'application/json';
         body = JSON.stringify(o.body);
       }
-      const res = await app.request(path, { method, headers, body });
+      const res = await app.request(path, { method, headers, body }, connEnv(o.peer));
       const text = await res.text();
       let json: unknown = null;
       try {

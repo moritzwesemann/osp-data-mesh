@@ -9,6 +9,7 @@ import {
   normalizeFingerprint,
   SecretBox,
 } from '../../src/server/core/crypto.ts';
+import { toCsv } from '../../src/server/core/formats.ts';
 import { NodeIdentity } from '../../src/server/core/node-identity.ts';
 import { createTestNode, type TestNode } from '../helpers/node.ts';
 
@@ -139,10 +140,28 @@ describe('NodeIdentity', () => {
     const r1 = crypto.randomUUID();
     const r2 = crypto.randomUUID();
     const p = id.pseudonym(r1, athlete);
-    expect(p).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(p).toMatch(/^[0-9a-f]{32}$/);
     expect(id.pseudonym(r1, athlete)).toBe(p);
     expect(id.pseudonym(r2, athlete)).not.toBe(p);
     expect(id.pseudonym(r1, crypto.randomUUID())).not.toBe(p);
+  });
+
+  test('Pseudonym: 32 Hex-Zeichen (erste 16 Byte des HMAC), vom CSV-Schutz vor Formeln nie verändert', () => {
+    const id = node.deps.identity;
+    const release = crypto.randomUUID();
+    const pseudonyms = Array.from({ length: 400 }, () => id.pseudonym(release, crypto.randomUUID()));
+    // die frühere Form (base64url) begann bei rund 1/64 der Personen mit '-' und wurde im Export zu "'-…"
+    const legacy = Array.from({ length: 2000 }, (_, i) => id.legacyPseudonym(release, `p${i}`));
+    expect(legacy.some((x) => x.startsWith('-'))).toBe(true);
+    for (const p of pseudonyms) {
+      expect(p).toMatch(/^[0-9a-f]{32}$/);
+      const csv = toCsv([{ key: 'subject', label: 'subject', type: 'string' }], [{ subject: p }]);
+      expect(csv.replace(/^\uFEFF/, '').split('\r\n')[1]).toBe(p);
+    }
+    // gleiche HMAC-Basis: die frühere Form bleibt für Löschmitteilungen zu alten Lieferungen ableitbar
+    const athlete = crypto.randomUUID();
+    expect(id.legacyPseudonym(release, athlete)).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(id.legacyPseudonym(release, athlete)).not.toBe(id.pseudonym(release, athlete));
   });
 
   test('Signaturen des Knotens sind mit dem Public Key der Knotenkarte prüfbar', () => {

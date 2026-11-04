@@ -51,6 +51,13 @@ function testCredentials(cluster: ClusterInfo, dbName: string): DbCredentials {
   return { ...saved, dbName };
 }
 
+/** Superuser-Zugang und Rollen-Passwörter des Testclusters (z. B. für Tests der CLI db-bootstrap) */
+export function testClusterAccess(): { superuserUrl: string; passwords: Omit<DbCredentials, 'dbName'> } {
+  const cluster = testCluster();
+  const { dbName: _unused, ...passwords } = testCredentials(cluster, 'x');
+  return { superuserUrl: cluster.superuserUrl, passwords };
+}
+
 export interface TestDb {
   dbName: string;
   urls: { owner: string; app: string; bi: string };
@@ -60,13 +67,14 @@ export interface TestDb {
   drop(): Promise<void>;
 }
 
-export async function createTestDb(prefix = 't'): Promise<TestDb> {
+/** migrationsDir: nur die Migrationen dieses Verzeichnisses anwenden (Test einer späteren Migration) */
+export async function createTestDb(prefix = 't', opts: { migrationsDir?: string } = {}): Promise<TestDb> {
   const cluster = testCluster();
   const dbName = `mesh_${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const creds = testCredentials(cluster, dbName);
   bootstrapDatabase(cluster, creds);
   const urls = dbUrls(cluster, creds);
-  await migrate(urls.owner);
+  await migrate(urls.owner, { dir: opts.migrationsDir });
   const db = createDb(urls.app, 5);
   return {
     dbName,

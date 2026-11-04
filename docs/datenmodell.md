@@ -2,7 +2,7 @@
 
 Jeder Knoten hat eine eigene PostgreSQL-Datenbank (Standardname `mesh`). Das Schema entsteht
 ausschließlich durch versionierte Migrationen in `migrations/` (aktuell `0001_core.sql`,
-`0300_bi_view_names.sql`); die Rechte setzt `migrations/grants.sql`. Diese Seite beschreibt Zweck und
+`0300_bi_view_names.sql`, `0500_exchange_delivery_basis.sql`); die Rechte setzt `migrations/grants.sql`. Diese Seite beschreibt Zweck und
 wichtige Spalten jeder Tabelle, die Beziehungen und die JSON-Strukturen, die in JSONB-Spalten gespeichert
 werden. Maßgeblich im Detail sind die SQL-Dateien und der HTTP-Vertrag (`src/shared/contract/`).
 
@@ -124,9 +124,9 @@ Rohwerte vorsorglich vollständig geleert.
 | `peer` | Partnerknoten | `node_id` (eindeutig), `display_name`, `base_url`, `public_key`, `fingerprint`, `status` (`pending`/`trusted`/`suspended`), `trusted_at`, `trusted_by`, `last_seen_at`, `last_error` |
 | `federation_nonce` | Replay-Schutz: gesehene Nachrichten-IDs je Absender (15 min) | `node_id`, `nonce`, `seen_at` |
 | `outbox_message` | Ausgangspostfach für signierte Mitteilungen | `peer_id`, `type`, `body` (JSONB, `NoticeBody`), `status` (`pending`/`delivered`/`failed`), `attempts`, `next_attempt_at`, `last_error`, `delivered_at` |
-| `exchange_log` | Austauschprotokoll (gesendet und empfangen) | `direction` (`outgoing`/`incoming`), `peer_id`, `peer_node_id`, `release_id` (eigene Freigabe) bzw. `remote_release_id`, `product_ref`, `purpose`, `outcome` (`delivered`/`denied`/`error`), `deny_reason`, `row_count`, `columns`, `subjects` (übermittelte Pseudonyme, nur ausgehend), `payload_sha256`, `request_id`, `at` |
+| `exchange_log` | Austauschprotokoll (gesendet und empfangen) | `direction` (`outgoing`/`incoming`), `peer_id`, `peer_node_id`, `release_id` (eigene Freigabe) bzw. `remote_release_id`, `product_ref`, `purpose`, `outcome` (`delivered`/`denied`/`error`), `deny_reason`, `row_count`, `columns`, `subjects` (übermittelte Pseudonyme, nur ausgehend), `data_category` (Datenkategorie bei Lieferung: Kategorie des Datensatzes bzw. `master` für den Athletenkern), `consent_applied` (Einwilligungspflicht bei Lieferung: `true`, wenn nur Personen mit gültiger Einwilligung für Zweck und Kategorie geliefert wurden – Einwilligungspflicht der Freigabe oder besondere Kategorie), `payload_sha256`, `request_id`, `at`. `data_category` und `consent_applied` sind nur bei gelieferten ausgehenden Datenabrufen gesetzt (Migration 0500; für ältere Lieferungen hat die Migration sie bestmöglich aus dem Stand zum Zeitpunkt der Migration nachgetragen, frühere Einstufungen sind nicht bekannt). Ein Einwilligungswiderruf wird gegen diese Angaben geprüft, nicht gegen die heutige Einstufung |
 | `received_product` | empfangene Kopie eines Partnerprodukts (je Partner, Freigabe und Zweck) | `peer_id`, `remote_release_id`, `remote_product_id`, `remote_product_slug`, `title`, `purpose`, `columns` (JSONB, `ColumnDef[]`), `product_version`, `special_category`, `release_valid_until`, `status` (`active`/`revoked`/`expired`/`deleted`), `row_count`, `payload_sha256` und `response_signature` (Herkunftsnachweis), `last_pulled_at`, `status_reason` |
-| `received_row` | Zeilen der empfangenen Kopie | `received_product_id`, `subject` (Pseudonym), `data` (JSONB) |
+| `received_row` | Zeilen der empfangenen Kopie | `received_product_id`, `subject` (Pseudonym; vom Datenhalter freigabebezogen erzeugt, aktuell 32 Hex-Zeichen, siehe [ADR 0009](adr/0009-freigabebezogene-pseudonyme.md)), `data` (JSONB) |
 
 ### Audit-Log
 
@@ -239,10 +239,12 @@ entfernen Einwilligungswiderruf und Löschung die Zeilen einer Person in der aus
 ## Migrationen
 
 - Dateien `NNNN_name.sql`, jede in einer eigenen Transaktion, ausgeführt als `mesh_owner` mit
-  `bun run cli migrate` (nie durch den Server).
+  `bun --env-file=.env --env-file=.env.owner run cli migrate` (nativ; Docker: Dienst `migrate`), nie
+  durch den Server.
 - **Nur vorwärts:** keine Rückwärtsmigrationen; Prüfsumme jeder angewandten Datei wird verglichen.
 - Nach jedem Lauf wird `grants.sql` (idempotent) ausgeführt.
 - Der Server meldet über `/readyz` (`schema: false`), wenn Migrationen fehlen.
 - Vorhandene Migrationen: `0001_core.sql` (Grundschema), `0300_bi_view_names.sql` (ersetzt die
   Eindeutigkeit von `bi_view.view_name` durch den partiellen Index `bi_view_view_name_live` über nicht
-  entfernte Views).
+  entfernte Views), `0500_exchange_delivery_basis.sql` (Spalten `data_category` und `consent_applied` im
+  Austauschprotokoll: Einstufung, unter der eine Lieferung an einen Partner erfolgte).

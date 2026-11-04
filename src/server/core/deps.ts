@@ -17,7 +17,7 @@ import type {
 } from '../modules/releases/engine.ts';
 import type { AuditWriter } from './audit.ts';
 import type { SecretBox } from './crypto.ts';
-import type { Db } from './db.ts';
+import type { Db, DbOrTx } from './db.ts';
 import type { EventBus } from './events.ts';
 import type { Logger } from './logger.ts';
 import type { NodeIdentity } from './node-identity.ts';
@@ -47,6 +47,14 @@ export interface ServeRequest {
   at?: Date;
   /** max. Anzahl ausgelieferter Zeilen (Vorschau) */
   limit?: number;
+  /**
+   * Transaktion des Aufrufers. Lieferungen (Partner-Pull, BI-Materialisierung) übergeben die Transaktion,
+   * in der sie die Liefersperre geteilt halten (core/locks.ts): der PEP liest dann auf derselben Verbindung,
+   * statt eine zweite aus dem Pool zu belegen, während die Sperre gehalten wird. Diese Transaktion muss
+   * READ COMMITTED sein (Standard), damit jede Abfrage den Stand nach Erhalt der Sperre sieht. Ohne Angabe
+   * liest der PEP in einer eigenen Transaktion (REPEATABLE READ, nur lesend).
+   */
+  db?: DbOrTx;
 }
 
 export interface ServedProduct extends ProductMeta {
@@ -64,6 +72,11 @@ export type ServeResult =
       columns: ColumnDef[];
       rows: ServedRow[];
       stats: RowStats;
+      /**
+       * Zeilen nur mit gültiger Einwilligung für Zweck und Datenkategorie (product.category) ausgeliefert
+       * (Einwilligungspflicht der Freigabe oder besondere Kategorie)
+       */
+      consentApplied: boolean;
     };
 
 /**

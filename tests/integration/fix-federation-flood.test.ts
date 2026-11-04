@@ -14,7 +14,7 @@ import {
 import { MAX_REQUEST_BYTES, signRequest } from '../../src/server/modules/federation/protocol.ts';
 import type { Peer } from '../../src/shared/contract/federation.ts';
 import { adminOf, auditEntries, onboard, rawSend, TestClock } from '../helpers/federation.ts';
-import { TestMesh, type TestNode } from '../helpers/node.ts';
+import { connEnv, TestMesh, type TestNode } from '../helpers/node.ts';
 
 const mesh = new TestMesh();
 // eine Uhr für beide Knoten: Zeitfenster vorstellen, ohne clock_skew auszulösen
@@ -46,7 +46,7 @@ async function post(o: {
   if (o.node !== null) headers['x-mesh-node'] = o.node ?? 'osp-ghost';
   if (o.ip) headers['x-forwarded-for'] = o.ip;
   const init = { method: 'POST', headers, body: o.body ?? '{}', duplex: 'half' } as RequestInit;
-  const res = await b.app.request(`/federation/v1/${o.type ?? 'ping'}`, init);
+  const res = await b.app.request(`/federation/v1/${o.type ?? 'ping'}`, init, connEnv());
   const text = await res.text();
   let json: Reply['json'] = null;
   try {

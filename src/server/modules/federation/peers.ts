@@ -5,6 +5,7 @@ import { type DbOrTx, pgCode } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import { AppError, conflict, invalid, notFound } from '../../core/errors.ts';
 import type { Handlers } from '../../core/http.ts';
+import { writeTx } from '../../core/tx.ts';
 import { errorCodeOf, PeerCallError, sendSigned } from './client.ts';
 import { toPeer } from './mappers.ts';
 import { normalizeBaseUrl } from './protocol.ts';
@@ -71,7 +72,7 @@ export const peerHandlers: Handlers = {
     if (existing.length > 0) throw conflict('public_key_in_use');
 
     try {
-      const row = await deps.db.transaction().execute(async (trx) => {
+      const row = await writeTx(deps, async (trx) => {
         const inserted = await trx
           .insertInto('peer')
           .values({
@@ -128,7 +129,7 @@ export const peerHandlers: Handlers = {
       throw invalid({ fingerprint: 'mismatch' });
     }
     const now = deps.now();
-    const row = await deps.db.transaction().execute(async (trx) => {
+    const row = await writeTx(deps, async (trx) => {
       const updated = await trx
         .updateTable('peer')
         .set({ status: 'trusted', trusted_at: now, trusted_by: user.id })
@@ -154,7 +155,7 @@ export const peerHandlers: Handlers = {
 
   'peers.suspend': async ({ deps, params, actor, ip, requestId }) => {
     const peer = await getPeer(deps.db, params.id);
-    const row = await deps.db.transaction().execute(async (trx) => {
+    const row = await writeTx(deps, async (trx) => {
       const updated = await trx
         .updateTable('peer')
         .set({ status: 'suspended' })
@@ -188,7 +189,7 @@ export const peerHandlers: Handlers = {
       set.base_url = base.url;
     }
     if (Object.keys(set).length === 0) return toPeer(peer);
-    const row = await deps.db.transaction().execute(async (trx) => {
+    const row = await writeTx(deps, async (trx) => {
       const updated = await trx
         .updateTable('peer')
         .set(set)

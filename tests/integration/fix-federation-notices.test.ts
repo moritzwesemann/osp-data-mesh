@@ -7,6 +7,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { lockDeliveries } from '../../src/server/core/locks.ts';
 import { PeerCallError, sendSigned } from '../../src/server/modules/federation/client.ts';
 import { enqueueNotice, flushOutbox, MAX_ATTEMPTS } from '../../src/server/modules/federation/outbox.ts';
 import type { Peer } from '../../src/shared/contract/federation.ts';
@@ -99,9 +100,10 @@ describe('Föderation: Mitteilungen eines gesperrten Datenhalters', () => {
     expect(suspended.json.status).toBe('suspended');
 
     // A löscht Person X → subjects_withdrawn (erasure) je belieferter Freigabe
-    await a.deps.db
-      .transaction()
-      .execute((trx) => a.deps.events.inTx(trx, 'athlete.deleted', { athleteId: athleteX }));
+    await a.deps.db.transaction().execute(async (trx) => {
+      await lockDeliveries(trx, 'exclusive');
+      await a.deps.events.inTx(trx, 'athlete.deleted', { athleteId: athleteX });
+    });
     expect(await flush(a)).toEqual({ delivered: 2, failed: 0 });
     const xSubject = a.deps.identity.pseudonym(r1, athleteX);
     const left = await receivedRows(r1);

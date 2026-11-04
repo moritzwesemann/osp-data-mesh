@@ -108,8 +108,11 @@ Speicher):
   werden (für ihn entscheidet die Signatur). Die 429-Antworten selbst werden ebenso zusammengefasst
   auditiert (Code `rate_limited`).
 
-Voraussetzung ist die richtige Client-Adresse: hinter Caddy `MESH_TRUST_PROXY=true`, sonst teilen sich alle
-Anfragen die Adresse des Proxys.
+Voraussetzung ist die richtige Client-Adresse: hinter Caddy `MESH_TRUST_PROXY=true` **und** die Adresse
+von Caddy in `MESH_TRUSTED_PROXIES` (nativ Standard `127.0.0.1,::1`, Docker `172.31.252.10`), sonst teilen
+sich alle Anfragen die Adresse des Proxys. `X-Forwarded-For` wird nur von diesen Adressen angenommen; es
+zählt die rechteste Adresse der Kette, die kein vertrauenswürdiger Proxy ist (siehe
+[Betrieb](betrieb.md#föderationsendpunkt-größen-ratenbegrenzung-protokollierung)).
 
 ## Discovery ohne zentrale Stelle
 

@@ -159,7 +159,8 @@ export function buildOpenApiDocument(opts: { serverUrl?: string } = {}): JsonSch
       title: 'OSP-Data-Mesh Node API',
       version: APP_VERSION,
       description: [
-        'REST-API eines OSP-Data-Nodes. Anmeldung per Sitzungs-Cookie (`osp_session`, Web-Oberfläche) oder',
+        'REST-API eines OSP-Data-Nodes. Anmeldung per Sitzungs-Cookie (`__Host-osp_session`, Web-Oberfläche;',
+        'bei einer lokalen HTTP-Testinstallation mit MESH_COOKIE_SECURE=false `osp_session`) oder',
         'API-Token (`Authorization: Bearer osp_…`, Werkzeuge wie Excel, Power BI, Python).',
         'Zustandsändernde Anfragen (alles außer GET) mit Sitzungs-Cookie sowie die Anmeldung selbst',
         'benötigen den Header `X-OSP-CSRF: 1`; Anfragen mit API-Token sind davon ausgenommen.',
@@ -179,8 +180,10 @@ export function buildOpenApiDocument(opts: { serverUrl?: string } = {}): JsonSch
         sessionCookie: {
           type: 'apiKey',
           in: 'cookie',
-          name: 'osp_session',
-          description: 'Sitzung nach POST /api/v1/auth/login (HttpOnly, SameSite=Strict)',
+          name: '__Host-osp_session',
+          description:
+            'Sitzung nach POST /api/v1/auth/login (HttpOnly, SameSite=Strict, Secure, Path=/, ohne Domain); ' +
+            'lokale HTTP-Testinstallation (MESH_COOKIE_SECURE=false): osp_session',
         },
         bearerToken: {
           type: 'http',

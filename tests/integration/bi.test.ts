@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'kysely';
+import { lockDeliveries } from '../../src/server/core/locks.ts';
 import type { Product } from '../../src/shared/contract/products.ts';
 import type { Release } from '../../src/shared/contract/releases.ts';
 import { queryAs } from '../helpers/db.ts';
@@ -170,6 +171,8 @@ describe('BI: Materialisierung', () => {
   test('Einwilligungswiderruf entfernt die Zeilen der Person sofort (in der auslösenden Transaktion)', async () => {
     expect((await biRows('gesundheit')).map((x) => x.last_name)).toContain('Berg');
     await node.deps.db.transaction().execute(async (trx) => {
+      // wie der Auslöser (athletes): Liefersperre als Erstes (core/locks.ts)
+      await lockDeliveries(trx, 'exclusive');
       const c = await trx
         .updateTable('consent_record')
         .set({ status: 'withdrawn', withdrawn_at: new Date() })
@@ -275,6 +278,7 @@ describe('BI: Materialisierung', () => {
   test('Löschung einer Person entfernt deren Zeilen sofort', async () => {
     expect((await biRows('gesundheit')).map((x) => x.last_name)).toEqual(['Adler']);
     await node.deps.db.transaction().execute(async (trx) => {
+      await lockDeliveries(trx, 'exclusive');
       await node.deps.events.inTx(trx, 'athlete.deleted', { athleteId: seed.athletes.anna });
     });
     expect(await biRows('gesundheit')).toHaveLength(0);

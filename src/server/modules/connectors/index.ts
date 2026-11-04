@@ -22,6 +22,7 @@ import { pgCode } from '../../core/db.ts';
 import type { Module } from '../../core/deps.ts';
 import { AppError, conflict, invalid, notFound } from '../../core/errors.ts';
 import { registerRoutes, zodFields } from '../../core/http.ts';
+import { writeTx } from '../../core/tx.ts';
 import { createDataset, datasetInputOf } from '../datasets/index.ts';
 import { validateConnectorInput } from './definition.ts';
 import { presentPatch } from './patch.ts';
@@ -103,31 +104,28 @@ export const connectorsModule: Module = {
             ? await loadDataset(deps.db, body.targetDatasetId)
             : null;
         const input = validateConnectorInput(body, dataset);
-        const id = await deps.db
-          .transaction()
-          .execute(async (trx) => {
-            const row = await insertConnector(trx, input, user.id);
-            await deps.audit.record(
-              {
-                actor,
-                action: 'connector.create',
-                objectType: 'connector',
-                objectId: row.id,
-                details: { slug: input.slug, kind: input.kind, targetType: input.targetType },
-                ip,
-                requestId,
-              },
-              trx,
-            );
-            return row.id;
-          })
-          .catch(slugConflict);
+        const id = await writeTx(deps, async (trx) => {
+          const row = await insertConnector(trx, input, user.id);
+          await deps.audit.record(
+            {
+              actor,
+              action: 'connector.create',
+              objectType: 'connector',
+              objectId: row.id,
+              details: { slug: input.slug, kind: input.kind, targetType: input.targetType },
+              ip,
+              requestId,
+            },
+            trx,
+          );
+          return row.id;
+        }).catch(slugConflict);
         return (await getConnector(id))!;
       },
 
       'connectors.update': async ({ params, body, c, actor, ip, requestId }) => {
         const patch = await presentPatch(c, body);
-        await deps.db.transaction().execute(async (trx) => {
+        await writeTx(deps, async (trx) => {
           const existing = await trx
             .selectFrom('connector')
             .selectAll()
@@ -200,7 +198,7 @@ export const connectorsModule: Module = {
       },
 
       'connectors.setSecret': async ({ params, body, actor, ip, requestId }) => {
-        await deps.db.transaction().execute(async (trx) => {
+        await writeTx(deps, async (trx) => {
           const existing = await trx
             .selectFrom('connector')
             .select(['id', 'kind'])
@@ -267,60 +265,53 @@ export const connectorsModule: Module = {
       'connectors.import': async ({ body, user, actor, ip, requestId }) => {
         const { definition } = body;
         const def = definition.connector;
-        const id = await deps.db
-          .transaction()
-          .execute(async (trx) => {
-            let datasetId: string | null = null;
-            let datasetCreated = false;
-            let dataset = null;
-            if (def.targetType === 'dataset') {
-              const slug = def.targetDatasetSlug ?? definition.dataset?.slug ?? null;
-              if (!slug) throw invalid({ 'body.definition.connector.targetDatasetSlug': 'required' });
-              if (definition.dataset && definition.dataset.slug !== slug) {
-                throw invalid({ 'body.definition.dataset.slug': 'mismatch' });
-              }
-              let row = await trx
-                .selectFrom('dataset')
-                .selectAll()
-                .where('slug', '=', slug)
-                .executeTakeFirst();
-              if (!row) {
-                if (!body.createDataset || !definition.dataset) {
-                  throw invalid({ 'body.definition.connector.targetDatasetSlug': 'not_found' });
-                }
-                row = await createDataset(
-                  trx,
-                  definition.dataset,
-                  { audit: deps.audit, actor, userId: user.id, ip, requestId },
-                  'body.definition.dataset',
-                );
-                datasetCreated = true;
-              }
-              datasetId = row.id;
-              dataset = toTargetDataset(row);
+        const id = await writeTx(deps, async (trx) => {
+          let datasetId: string | null = null;
+          let datasetCreated = false;
+          let dataset = null;
+          if (def.targetType === 'dataset') {
+            const slug = def.targetDatasetSlug ?? definition.dataset?.slug ?? null;
+            if (!slug) throw invalid({ 'body.definition.connector.targetDatasetSlug': 'required' });
+            if (definition.dataset && definition.dataset.slug !== slug) {
+              throw invalid({ 'body.definition.dataset.slug': 'mismatch' });
             }
-            const { targetDatasetSlug: _slug, ...rest } = def;
-            const input = validateConnectorInput(
-              { ...rest, targetDatasetId: datasetId },
-              dataset,
-              'body.definition.connector',
-            );
-            const row = await insertConnector(trx, input, user.id);
-            await deps.audit.record(
-              {
-                actor,
-                action: 'connector.import',
-                objectType: 'connector',
-                objectId: row.id,
-                details: { slug: input.slug, kind: input.kind, datasetId, datasetCreated },
-                ip,
-                requestId,
-              },
-              trx,
-            );
-            return row.id;
-          })
-          .catch(slugConflict);
+            let row = await trx.selectFrom('dataset').selectAll().where('slug', '=', slug).executeTakeFirst();
+            if (!row) {
+              if (!body.createDataset || !definition.dataset) {
+                throw invalid({ 'body.definition.connector.targetDatasetSlug': 'not_found' });
+              }
+              row = await createDataset(
+                trx,
+                definition.dataset,
+                { audit: deps.audit, actor, userId: user.id, ip, requestId },
+                'body.definition.dataset',
+              );
+              datasetCreated = true;
+            }
+            datasetId = row.id;
+            dataset = toTargetDataset(row);
+          }
+          const { targetDatasetSlug: _slug, ...rest } = def;
+          const input = validateConnectorInput(
+            { ...rest, targetDatasetId: datasetId },
+            dataset,
+            'body.definition.connector',
+          );
+          const row = await insertConnector(trx, input, user.id);
+          await deps.audit.record(
+            {
+              actor,
+              action: 'connector.import',
+              objectType: 'connector',
+              objectId: row.id,
+              details: { slug: input.slug, kind: input.kind, datasetId, datasetCreated },
+              ip,
+              requestId,
+            },
+            trx,
+          );
+          return row.id;
+        }).catch(slugConflict);
         return (await getConnector(id))!;
       },
 

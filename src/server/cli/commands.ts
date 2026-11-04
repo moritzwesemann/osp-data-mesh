@@ -4,6 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { sql } from 'kysely';
+import pg from 'pg';
 import { z } from 'zod';
 import { buildDeps } from '../app.ts';
 import { loadConfig } from '../config.ts';
@@ -18,13 +19,16 @@ import { hashPassword } from '../modules/auth/sessions.ts';
 import { BackupManager } from '../modules/system/backup.ts';
 import { BackupFileError } from '../modules/system/backup-file.ts';
 import { resolvePsql, sanitizeToolOutput, splitDbUrl, toolEnv } from '../modules/system/pg-tools.ts';
-import { restoreBackup } from '../modules/system/restore.ts';
+import { restoreBackup, runningNodeConnections } from '../modules/system/restore.ts';
 
 export class UsageError extends Error {}
 
 export type Command = (args: string[]) => Promise<number>;
 
 const CLI_ACTOR: Actor = { type: 'system', id: null, label: 'cli' };
+
+/** Dokumentierter Aufruf der Migrationen (Server- und Owner-Umgebung, docs/installation.md) */
+export const MIGRATE_COMMAND = 'bun --env-file=.env --env-file=.env.owner run cli migrate';
 const ROOT = resolve(import.meta.dir, '../../..');
 
 interface Parsed {
@@ -94,6 +98,25 @@ async function verifyAudit(db: Db) {
   return { ok: firstBrokenSeq === null, checked: Number(row?.checked ?? 0), firstBrokenSeq };
 }
 
+/**
+ * Datenbanken anderer Knoten im Cluster: Eigentümer mesh_owner, nicht die Zieldatenbank. Leer, wenn es
+ * die Rolle noch nicht gibt.
+ */
+export async function otherNodeDatabases(superuserUrl: string, dbName: string): Promise<string[]> {
+  const client = new pg.Client({ connectionString: superuserUrl, application_name: 'osp-data-mesh-cli' });
+  await client.connect();
+  try {
+    const r = await client.query<{ datname: string }>(
+      `select d.datname from pg_database d join pg_roles r on r.oid = d.datdba
+        where r.rolname = 'mesh_owner' and d.datname <> $1 order by d.datname`,
+      [dbName],
+    );
+    return r.rows.map((row) => row.datname);
+  } finally {
+    await client.end();
+  }
+}
+
 /** Wert für psql "\set name '…'" (einfache Anführungszeichen, Backslash-Escapes) */
 function psqlQuote(v: string): string {
   if (/[\r\n\0]/.test(v)) throw new Error('value must not contain line breaks');
@@ -110,8 +133,14 @@ export const commands: Record<string, Command> = {
   },
 
   async 'db-bootstrap'(args) {
-    const p = parseArgs(args);
-    const superuserUrl = flag(p, 'superuser-url', true);
+    const p = parseArgs(args, ['force']);
+    // Superuser-URL bevorzugt aus der Umgebung (Passwort nicht auf der Kommandozeile bzw. in der Ausgabe von bun run)
+    const superuserUrl = flag(p, 'superuser-url') ?? process.env.MESH_DB_SUPERUSER_URL;
+    if (!superuserUrl) {
+      throw new UsageError(
+        'MESH_DB_SUPERUSER_URL oder --superuser-url fehlt / MESH_DB_SUPERUSER_URL or --superuser-url is required',
+      );
+    }
     const dbName = flag(p, 'db') ?? 'mesh';
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(dbName))
       throw new UsageError('--db: nur a-z, 0-9, _ / only a-z, 0-9, _');
@@ -120,6 +149,18 @@ export const commands: Record<string, Command> = {
     );
     if (missing.length)
       throw new Error(`Umgebungsvariablen fehlen / missing environment: ${missing.join(', ')}`);
+    // Die Rollen gelten clusterweit: ein zweiter Knoten im selben Cluster überschriebe ihre Passwörter und
+    // teilte sie mit dem ersten. Erneuter Aufruf für dieselbe Datenbank bleibt möglich (idempotent).
+    const others = await otherNodeDatabases(superuserUrl, dbName);
+    if (others.length > 0 && p.flags.force !== true) {
+      throw new Error(
+        `Der Cluster enthält bereits Datenbanken von mesh_owner (${others.join(', ')}). Ein PostgreSQL-Cluster je Knoten: ` +
+          'die Rollen mesh_owner, mesh_app und mesh_bi gelten clusterweit, ihre Passwörter würden überschrieben. ' +
+          'Eigenen Cluster verwenden oder bewusst mit --force fortfahren / ' +
+          `the cluster already contains databases owned by mesh_owner (${others.join(', ')}): ` +
+          'one PostgreSQL cluster per node (roles are cluster-wide); use a separate cluster or --force',
+      );
+    }
     // Passwörter über stdin (nicht als Argumente, sonst in der Prozessliste sichtbar)
     const script = [
       `\\set db_name ${psqlQuote(dbName)}`,
@@ -142,7 +183,7 @@ export const commands: Record<string, Command> = {
     const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
     if (code !== 0) throw new Error(`psql failed (exit ${code}): ${sanitizeToolOutput(stderr)}`);
     out(`Datenbank "${dbName}" und Rollen mesh_owner, mesh_app, mesh_bi eingerichtet / bootstrapped.`);
-    out('Weiter / next: bun run migrate (MESH_DB_OWNER_URL)');
+    out(`Weiter / next: ${MIGRATE_COMMAND}`);
     return 0;
   },
 
@@ -222,7 +263,7 @@ export const commands: Record<string, Command> = {
   },
 
   async restore(args) {
-    const p = parseArgs(args, ['yes', 'allow-other-node']);
+    const p = parseArgs(args, ['yes', 'allow-other-node', 'force']);
     const file = flag(p, 'file', true);
     if (p.flags.yes !== true) {
       throw new UsageError(
@@ -232,6 +273,14 @@ export const commands: Record<string, Command> = {
     const ownerUrl = env('MESH_DB_OWNER_URL');
     const backupKey = env('MESH_BACKUP_KEY');
     const nodeId = env('MESH_NODE_ID');
+    const running = await runningNodeConnections(ownerUrl);
+    if (running > 0 && p.flags.force !== true) {
+      throw new Error(
+        `Der Knoten läuft noch (${running} Verbindung(en) des Servers zu dieser Datenbank). Knoten stoppen und ` +
+          'erneut aufrufen; --force übergeht diese Prüfung / ' +
+          `the node is still running (${running} server connection(s) to this database): stop it first, or use --force`,
+      );
+    }
     try {
       const r = await restoreBackup({
         file: resolve(file),
@@ -251,7 +300,7 @@ export const commands: Record<string, Command> = {
         `  Audit-Kette / audit chain: ${r.audit.ok ? 'ok' : `GEBROCHEN bei / BROKEN at seq ${r.audit.firstBrokenSeq}`} (${r.audit.checked} geprüft / checked)`,
       );
       out(
-        'Weiter / next: bun run migrate, Knoten starten / start node, BI-Views neu aufbauen / refresh BI views.',
+        `Weiter / next: ${MIGRATE_COMMAND}, Knoten starten / start node, BI-Views neu aufbauen / refresh BI views.`,
       );
       return r.audit.ok ? 0 : 1;
     } catch (err) {

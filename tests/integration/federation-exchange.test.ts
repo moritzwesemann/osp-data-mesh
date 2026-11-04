@@ -7,6 +7,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { lockDeliveries } from '../../src/server/core/locks.ts';
 import { sendSigned } from '../../src/server/modules/federation/client.ts';
 import { runRetention } from '../../src/server/modules/federation/outbox.ts';
 import type { ServedRow } from '../../src/server/modules/releases/engine.ts';
@@ -395,17 +396,20 @@ describe('Föderation: Abruf', () => {
 describe('Föderation: Mitteilungen über das Ausgangspostfach', () => {
   test('Einwilligungswiderruf → subjects_withdrawn → nur Zeilen dieser Person werden beim Empfänger gelöscht', async () => {
     // Widerruf für einen anderen Zweck: keine Mitteilung
-    await a.deps.db.transaction().execute((trx) =>
-      a.deps.events.inTx(trx, 'consent.withdrawn', {
+    // wie der Auslöser (athletes): Liefersperre als Erstes (core/locks.ts)
+    await a.deps.db.transaction().execute(async (trx) => {
+      await lockDeliveries(trx, 'exclusive');
+      await a.deps.events.inTx(trx, 'consent.withdrawn', {
         athleteId: fx.athlete1,
         consentId: randomUUID(),
         purpose: 'research',
         dataCategory: '*',
-      }),
-    );
+      });
+    });
     expect(await outbox(a)).toHaveLength(0);
 
     await a.deps.db.transaction().execute(async (trx) => {
+      await lockDeliveries(trx, 'exclusive');
       await trx
         .updateTable('consent_record')
         .set({ status: 'withdrawn', withdrawn_at: new Date() })
@@ -454,6 +458,7 @@ describe('Föderation: Mitteilungen über das Ausgangspostfach', () => {
 
   test('Löschung einer Person → erasure-Mitteilung für alle gelieferten Freigaben', async () => {
     await a.deps.db.transaction().execute(async (trx) => {
+      await lockDeliveries(trx, 'exclusive');
       await trx.deleteFrom('athlete').where('id', '=', fx.athlete2).execute();
       await a.deps.events.inTx(trx, 'athlete.deleted', { athleteId: fx.athlete2 });
     });
@@ -588,14 +593,15 @@ describe('Föderation: Mitteilungen über das Ausgangspostfach', () => {
       let committed = false;
       const withdrawing = a.deps.db
         .transaction()
-        .execute((trx) =>
-          a.deps.events.inTx(trx, 'consent.withdrawn', {
+        .execute(async (trx) => {
+          await lockDeliveries(trx, 'exclusive');
+          await a.deps.events.inTx(trx, 'consent.withdrawn', {
             athleteId: fx.athlete1,
             consentId: randomUUID(),
             purpose: PURPOSE,
             dataCategory: '*',
-          }),
-        )
+          });
+        })
         .then(() => {
           committed = true;
         });

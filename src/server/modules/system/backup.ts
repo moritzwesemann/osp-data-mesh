@@ -15,6 +15,7 @@ import { iso, isoReq } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import type { BackupService, Deps } from '../../core/deps.ts';
 import { AppError } from '../../core/errors.ts';
+import { writeTx } from '../../core/tx.ts';
 import { BACKUP_FORMAT, type BackupManifest, encryptStreamToFile, manifestPath } from './backup-file.ts';
 import { resolvePgDump, sanitizeToolOutput, splitDbUrl, toolEnv } from './pg-tools.ts';
 
@@ -162,7 +163,7 @@ export class BackupManager implements BackupService {
       writeFileSync(manifestPath(path), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 
       const removed = this.applyRetention(dir, nodeId, fileName);
-      const done = await db.transaction().execute(async (trx) => {
+      const done = await writeTx(this.deps, async (trx) => {
         const updated = await trx
           .updateTable('backup_run')
           .set({
@@ -202,7 +203,7 @@ export class BackupManager implements BackupService {
         rmSync(manifestPath(path), { force: true });
       }
       log.error('backup failed', { runId: run.id, code, error: (err as Error).message, trigger });
-      await db.transaction().execute(async (trx) => {
+      await writeTx(this.deps, async (trx) => {
         await trx
           .updateTable('backup_run')
           .set({ status: 'failed', finished_at: this.deps.now(), error_code: code })

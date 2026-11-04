@@ -12,6 +12,8 @@ import type { RowUpdate } from '../../core/db-types.ts';
 import type { Module } from '../../core/deps.ts';
 import { conflict, invalid, notFound } from '../../core/errors.ts';
 import { registerRoutes } from '../../core/http.ts';
+import { lockDeliveries } from '../../core/locks.ts';
+import { writeTx } from '../../core/tx.ts';
 import { likeEscape, toAthlete, toConsent } from './mappers.ts';
 
 const ATHLETE_COLUMNS = {
@@ -144,31 +146,28 @@ export const athletesModule: Module = {
       },
 
       'athletes.create': async ({ body, user, actor, ip, requestId }) => {
-        const row = await deps.db
-          .transaction()
-          .execute(async (trx) => {
-            const created = await trx
-              .insertInto('athlete')
-              .values({
-                last_name: body.lastName,
-                first_name: body.firstName,
-                date_of_birth: body.dateOfBirth,
-                sport: body.sport,
-                squad_status: body.squadStatus,
-                sex: body.sex ?? null,
-                club: body.club ?? null,
-                discipline: body.discipline ?? null,
-                created_by: user.id,
-              })
-              .returningAll()
-              .executeTakeFirstOrThrow();
-            await deps.audit.record(
-              { actor, action: 'athlete.create', objectType: 'athlete', objectId: created.id, ip, requestId },
-              trx,
-            );
-            return created;
-          })
-          .catch(uniqueViolation);
+        const row = await writeTx(deps, async (trx) => {
+          const created = await trx
+            .insertInto('athlete')
+            .values({
+              last_name: body.lastName,
+              first_name: body.firstName,
+              date_of_birth: body.dateOfBirth,
+              sport: body.sport,
+              squad_status: body.squadStatus,
+              sex: body.sex ?? null,
+              club: body.club ?? null,
+              discipline: body.discipline ?? null,
+              created_by: user.id,
+            })
+            .returningAll()
+            .executeTakeFirstOrThrow();
+          await deps.audit.record(
+            { actor, action: 'athlete.create', objectType: 'athlete', objectId: created.id, ip, requestId },
+            trx,
+          );
+          return created;
+        }).catch(uniqueViolation);
         await deps.events.after('data.changed', { datasetId: null });
         return toAthlete(row);
       },
@@ -185,41 +184,40 @@ export const athletesModule: Module = {
           (set as Record<string, unknown>)[column] = value;
           changed.push(key);
         }
-        const row = await deps.db
-          .transaction()
-          .execute(async (trx) => {
-            if (changed.length === 0) {
-              return trx.selectFrom('athlete').selectAll().where('id', '=', params.id).executeTakeFirst();
-            }
-            const updated = await trx
-              .updateTable('athlete')
-              .set(set)
-              .where('id', '=', params.id)
-              .returningAll()
-              .executeTakeFirst();
-            if (!updated) return undefined;
-            await deps.audit.record(
-              {
-                actor,
-                action: 'athlete.update',
-                objectType: 'athlete',
-                objectId: params.id,
-                details: { fields: changed },
-                ip,
-                requestId,
-              },
-              trx,
-            );
-            return updated;
-          })
-          .catch(uniqueViolation);
+        const row = await writeTx(deps, async (trx) => {
+          if (changed.length === 0) {
+            return trx.selectFrom('athlete').selectAll().where('id', '=', params.id).executeTakeFirst();
+          }
+          const updated = await trx
+            .updateTable('athlete')
+            .set(set)
+            .where('id', '=', params.id)
+            .returningAll()
+            .executeTakeFirst();
+          if (!updated) return undefined;
+          await deps.audit.record(
+            {
+              actor,
+              action: 'athlete.update',
+              objectType: 'athlete',
+              objectId: params.id,
+              details: { fields: changed },
+              ip,
+              requestId,
+            },
+            trx,
+          );
+          return updated;
+        }).catch(uniqueViolation);
         if (!row) throw notFound();
         if (changed.length > 0) await deps.events.after('data.changed', { datasetId: null });
         return toAthlete(row);
       },
 
       'athletes.delete': async ({ params, actor, ip, requestId }) => {
-        await deps.db.transaction().execute(async (trx) => {
+        await writeTx(deps, async (trx) => {
+          // Sperrreihenfolge (core/locks.ts): Liefersperre vor der Personenzeile und allen Folgen
+          await lockDeliveries(trx, 'exclusive');
           const existing = await trx
             .selectFrom('athlete')
             .select('id')
@@ -283,7 +281,7 @@ export const athletesModule: Module = {
         if (body.validUntil && body.validUntil < body.validFrom) {
           throw invalid({ 'body.validUntil': 'before_valid_from' });
         }
-        const row = await deps.db.transaction().execute(async (trx) => {
+        const row = await writeTx(deps, async (trx) => {
           const athlete = await trx
             .selectFrom('athlete')
             .select('id')
@@ -325,7 +323,9 @@ export const athletesModule: Module = {
       },
 
       'consents.withdraw': async ({ params, body, user, actor, ip, requestId }) => {
-        const row = await deps.db.transaction().execute(async (trx) => {
+        const row = await writeTx(deps, async (trx) => {
+          // Sperrreihenfolge (core/locks.ts): Liefersperre vor der Einwilligung und allen Folgen
+          await lockDeliveries(trx, 'exclusive');
           const existing = await trx
             .selectFrom('consent_record')
             .selectAll()

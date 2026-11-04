@@ -11,6 +11,8 @@ import type { Row, RowUpdate } from '../../core/db-types.ts';
 import type { Module } from '../../core/deps.ts';
 import { conflict, notFound } from '../../core/errors.ts';
 import { registerRoutes } from '../../core/http.ts';
+import { lockDeliveries } from '../../core/locks.ts';
+import { writeTx } from '../../core/tx.ts';
 import {
   createDataset,
   datasetInputOf,
@@ -23,6 +25,9 @@ import {
 import { presentPatch } from './patch.ts';
 
 export { createDataset, datasetInputOf, validateDatasetInput };
+
+/** Felder der Einstufung (bestimmen Einwilligungsprüfung und Teilbarkeit, siehe productImpact) */
+const CLASSIFICATION_KEYS = ['category', 'specialCategory', 'shareability'] as const;
 
 export const datasetsModule: Module = {
   name: 'datasets',
@@ -52,17 +57,18 @@ export const datasetsModule: Module = {
       },
 
       'datasets.create': async ({ body, user, actor, ip, requestId }) => {
-        const row = await deps.db
-          .transaction()
-          .execute((trx) =>
-            createDataset(trx, body, { audit: deps.audit, actor, userId: user.id, ip, requestId }),
-          );
+        const row = await writeTx(deps, (trx) =>
+          createDataset(trx, body, { audit: deps.audit, actor, userId: user.id, ip, requestId }),
+        );
         return toDataset(row, 0);
       },
 
       'datasets.update': async ({ params, body, c, actor, ip, requestId }) => {
         const patch = await presentPatch(c, body);
-        const result = await deps.db.transaction().execute(async (trx) => {
+        const result = await writeTx(deps, async (trx) => {
+          // Eine Neueinstufung kann Partnerfreigaben widerrufen (products/releases, dataset.changed):
+          // Liefersperre dann als Erstes, vor der Datensatzzeile (Sperrreihenfolge, core/locks.ts)
+          if (CLASSIFICATION_KEYS.some((k) => k in patch)) await lockDeliveries(trx, 'exclusive');
           const existing = await trx
             .selectFrom('dataset')
             .selectAll()

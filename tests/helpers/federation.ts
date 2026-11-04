@@ -140,6 +140,7 @@ export function allowedResult(rel: FakeRelease, req: ServeRequest): ServeResult 
       excludedByTime: 0,
       excludedByConsent: 0,
     },
+    consentApplied: release.requiresConsent || product.specialCategory,
   };
 }
 

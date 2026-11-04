@@ -15,7 +15,8 @@ import { type DbOrTx, iso, isoReq, type Tx } from '../../core/db.ts';
 import type { Deps } from '../../core/deps.ts';
 import { AppError, conflict, notFound } from '../../core/errors.ts';
 import type { DomainEvents } from '../../core/events.ts';
-import { lockDeliveries } from '../../core/locks.ts';
+import { assertDeliveryLock } from '../../core/locks.ts';
+import { writeTx } from '../../core/tx.ts';
 import { type LoadedProduct, loadProductRows, normalizeConditions, productMeta } from '../products/rows.ts';
 import {
   applyRelease,
@@ -256,7 +257,7 @@ export async function createRelease(deps: Deps, input: ReleaseInput, meta: Reque
   const knownPurposes = await activePurposes(deps.db);
   const now = deps.now();
   const draft = toDraft(input, now);
-  const row = await deps.db.transaction().execute(async (trx) => {
+  const row = await writeTx(deps, async (trx) => {
     // Produktzeile sperren: serialisiert mit Produktänderungen und weiteren BI-Freigaben
     const locked = await trx
       .selectFrom('data_product')
@@ -426,7 +427,7 @@ export async function revokeRelease(
   reason: string,
   meta: RequestMeta,
 ): Promise<Release> {
-  const payload = await deps.db.transaction().execute(async (trx) => {
+  const payload = await writeTx(deps, async (trx) => {
     const row = await trx
       .selectFrom('data_release')
       .selectAll()
@@ -457,9 +458,9 @@ export function registerRetirementHandler(deps: Deps): void {
   const pending = new Map<string, RevokedPayload[]>();
   deps.events.onTx('product.changed', async (p, trx) => {
     if (!p.retired && !p.revokePeerReleases) return;
-    // Liefersperre vor den Zeilensperren der Freigaben: dieselbe Reihenfolge wie Lieferungen (Partner-Pull,
-    // BI-Materialisierung: erst Liefersperre, dann Freigabe). Wartet auf laufende Lieferungen.
-    await lockDeliveries(trx, 'exclusive');
+    // Die auslösende Transaktion (Stilllegung, Neueinstufung) hat die Liefersperre als Erstes genommen
+    // (core/locks.ts): laufende Lieferungen sind abgeschlossen, spätere sehen den Widerruf.
+    assertDeliveryLock(trx, 'exclusive');
     let query = trx
       .selectFrom('data_release')
       .selectAll()

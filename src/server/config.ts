@@ -2,6 +2,7 @@
  * Konfiguration ausschließlich über Umgebungsvariablen (12-Factor). Siehe .env.example und docs/betrieb.md.
  */
 import { z } from 'zod';
+import { proxyListIssue } from './core/client-ip.ts';
 
 const bool = z
   .enum(['true', 'false', '1', '0', 'yes', 'no'])
@@ -58,6 +59,23 @@ const ConfigSchema = z.object({
   MESH_SOURCE_ALLOW_INSECURE_HTTP: bool.default(false),
   /** X-Forwarded-For auswerten (nur hinter vertrauenswürdigem Reverse Proxy, z. B. Caddy) */
   MESH_TRUST_PROXY: bool.default(false),
+  /**
+   * Adressen der vertrauenswürdigen Reverse Proxys (kommagetrennt; IPv4, IPv6 oder Netz in CIDR-Schreibweise).
+   * X-Forwarded-For gilt nur für Verbindungen von diesen Adressen (und nur mit MESH_TRUST_PROXY=true).
+   */
+  MESH_TRUSTED_PROXIES: z
+    .string()
+    .default('127.0.0.1,::1')
+    .transform((s) =>
+      s
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    )
+    .superRefine((list, ctx) => {
+      const issue = proxyListIssue(list);
+      if (issue) ctx.addIssue({ code: 'custom', message: issue });
+    }),
   MESH_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   /** Zeitzone für Datumsgrenzen (Einwilligungen) */
   MESH_TIMEZONE: z.string().default('Europe/Berlin'),

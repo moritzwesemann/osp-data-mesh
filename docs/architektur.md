@@ -6,7 +6,8 @@ den Modulen und die verbindlichen Konventionen für die Weiterentwicklung.
 ## Überblick
 
 Jeder Olympiastützpunkt (OSP) betreibt einen eigenen **Knoten** (Node). Ein Knoten ist ein **modularer
-Monolith**: ein einziger Server-Prozess (Bun + Hono) mit eigener PostgreSQL-Datenbank, der Web-Oberfläche
+Monolith**: ein einziger Server-Prozess (Bun + Hono) mit eigener PostgreSQL-Datenbank in einem eigenen
+PostgreSQL-Cluster (die Datenbankrollen gelten clusterweit), der Web-Oberfläche
 (React-SPA), REST-API, Föderationsprotokoll und deutscher HTML-Dokumentation ausliefert. Knoten tauschen
 ausschließlich **explizit freigegebene** Daten aus; es gibt keine zentrale Datenhaltung und keine
 Gesamtsynchronisation.
@@ -81,8 +82,10 @@ Nur das Föderationsmodul registriert zusätzlich rohe Routen unter `/federation
 
 **Datenbank.** Spaltennamen `snake_case`; API-Felder `camelCase`; Abbildung explizit im Modul.
 Zeitstempel als `Date` aus der DB, in der API ISO-Strings (`iso()`/`isoReq()` aus `core/db.ts`);
-`date`-Spalten sind Strings `YYYY-MM-DD`. Änderungen und ihr Audit-Eintrag in **einer** Transaktion:
-`await deps.db.transaction().execute(async (trx) => { …; await deps.audit.record({...}, trx); })`.
+`date`-Spalten sind Strings `YYYY-MM-DD`. Änderungen und ihr Audit-Eintrag in **einer** Transaktion,
+geöffnet mit `writeTx` (`core/tx.ts`): `await writeTx(deps, async (trx) => { …; await deps.audit.record({...}, trx); })`.
+`writeTx` sammelt die mit der Transaktion protokollierten Audit-Einträge und schreibt sie unmittelbar vor
+dem Commit (siehe Sperrreihenfolge unten).
 
 **Audit.** `deps.audit.record({ actor, action, outcome, objectType, objectId, details, ip, requestId }, trx?)`.
 `action` = `<bereich>.<vorgang>` (z. B. `release.create`, `release.revoke`, `access.data`,
@@ -104,9 +107,17 @@ serialisiert Datenlieferungen gegen Widerrufe und Löschungen. Jede Auslieferung
 (`federation`) und BI-Materialisierung (`bi`) – hält sie *geteilt* vom PEP-Aufruf bis zum Speichern bzw.
 Protokollieren; Einwilligungswiderruf, Löschung einer Person, Stilllegung und Neueinstufung (Widerruf der
 Freigaben) nehmen sie *exklusiv*. So sieht jede spätere Lieferung den Widerruf, und jede frühere ist
-abgeschlossen, bevor bereinigt wird. Reihenfolge: zuerst diese Sperre, danach Zeilensperren auf
-`data_release`; wer sie geteilt hält, schreibt in derselben Transaktion kein Audit. Weitere Schlüssel:
-Audit-Kette, Migrationen, empfangene Kopien.
+abgeschlossen, bevor bereinigt wird. Weitere Schlüssel: Audit-Kette, Migrationen, empfangene Kopien.
+
+**Globale Sperrreihenfolge.** Für alle schreibenden Transaktionen gilt eine verbindliche Reihenfolge, die
+im Kommentarblock am Anfang von `src/server/core/locks.ts` festgelegt ist (maßgeblich ist dieser Text):
+(1) **zuerst die Liefersperre** – sie wird von der auslösenden Route bzw. dem Dienst als erste Anweisung
+der Transaktion genommen, nie erst in einem Ereignis-Handler; Handler prüfen nur, dass sie gehalten wird;
+(2) **danach Zeilensperren** in einer festen Reihenfolge der Tabellen und innerhalb einer Tabelle in fester
+Ordnung; (3) **Audit-Einträge zuletzt**, unmittelbar vor dem Commit – die knotenweite Sperre der
+Audit-Kette ist damit immer die letzte Sperre einer Transaktion. Eine Transaktion kehrt nie zu einer
+früheren Stufe zurück; so entstehen keine Verklemmungen, und niemand wartet, während er eine knotenweite
+Sperre hält. Neue Schreibvorgänge müssen sich in diese Reihenfolge einfügen.
 
 **Geheimnisse.** Nie im Klartext speichern: `deps.box.seal(value, aad)` / `deps.box.open(sealed, aad)`
 mit festem AAD je Verwendungszweck (z. B. `connector.secret:<id>`).
@@ -137,7 +148,9 @@ Partnerknoten und API-Quellen über injiziertes `deps.fetch`.
 - Datenbankrollen: `mesh_owner` (Schema, Migrationen, Wiederherstellung; nur CLI), `mesh_app` (Server; Audit-Log nur
   `INSERT`/`SELECT`), `mesh_bi` (nur Views im Schema `bi`, read-only).
 - Audit-Log: Trigger sperren `UPDATE`/`DELETE`/`TRUNCATE`; Hash-Kette, prüfbar mit `audit_verify()`.
-- Passwörter: Argon2id; Sitzungstoken nur als SHA-256 gespeichert; Cookie HttpOnly/SameSite=Strict/Secure; CSRF-Header.
+- Passwörter: Argon2id; Sitzungstoken nur als SHA-256 gespeichert; Cookie `__Host-osp_session`
+  (HttpOnly/SameSite=Strict/Secure; nur bei lokaler HTTP-Testinstallation `osp_session` ohne Secure); CSRF-Header.
+- Client-Adresse aus `X-Forwarded-For` nur von vertrauenswürdigen Proxys (`MESH_TRUST_PROXY`, `MESH_TRUSTED_PROXIES`).
 - Geheimnisse (privater Knotenschlüssel, Pseudonym-Schlüssel, API-Zugangsdaten): AES-256-GCM mit Master-Key aus der Umgebung.
 - API-Quellen nur zu freigegebenen Hosts (`MESH_SOURCE_ALLOWED_HOSTS`, SSRF-Schutz); Zugangsgeheimnisse an
   das gespeicherte Ziel gebunden und nur über HTTPS (bzw. Loopback).

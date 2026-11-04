@@ -12,6 +12,7 @@
 #
 # Native Installation (ohne Docker): Upstream "node:4401" durch "127.0.0.1:4401" und "superset:8088"
 # durch die Superset-Adresse ersetzen bzw. den zweiten Block entfernen; MESH_BI_DOMAIN selbst setzen.
+# Caddy verbindet sich dann von 127.0.0.1 bzw. ::1 (Standard von MESH_TRUSTED_PROXIES).
 
 # Die Verwaltungs-API von Caddy lauscht nur innerhalb des Containers (localhost:2019) und wird nicht
 # veröffentlicht; Änderungen an dieser Datei: docker compose restart caddy
@@ -39,7 +40,8 @@
 
 	reverse_proxy node:4401 {
 		# Caddy überschreibt X-Forwarded-For mit der echten Client-Adresse (keine vertrauten Proxys
-		# vor Caddy konfiguriert); der Knoten wertet den Header nur mit MESH_TRUST_PROXY=true aus.
+		# vor Caddy konfiguriert); der Knoten wertet den Header nur mit MESH_TRUST_PROXY=true und nur für
+		# Verbindungen von MESH_TRUSTED_PROXIES aus (Docker: Caddys feste Adresse 172.31.252.10).
 		# X-Forwarded-Proto/-Host setzt Caddy standardmäßig.
 		transport http {
 			read_timeout 5m
@@ -50,7 +52,7 @@
 
 # Optional: Apache Superset (Profil "bi") unter einem EIGENEN Hostnamen, nie unter dem Namen des Knotens
 # mit anderem Port: Cookies sind nicht an Ports gebunden (RFC 6265, Abschnitt 8.5). Das Sitzungs-Cookie
-# des Knotens (osp_session, ohne Domain-Attribut, also nur für genau diesen Hostnamen) schickte der Browser
+# des Knotens (__Host-osp_session, ohne Domain-Attribut, also nur für genau diesen Hostnamen) schickte der Browser
 # sonst bei jeder Anfrage auch an Superset – Superset (oder wer es kompromittiert) erhielte die Sitzungen
 # aller angemeldeten Personen des Knotens. An einen anderen Hostnamen sendet der Browser es nicht.
 # Der Name braucht einen DNS-Eintrag (bei ACME öffentlich auflösbar); ohne laufenden Superset-Dienst

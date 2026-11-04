@@ -11,6 +11,7 @@ import type { RowUpdate } from '../../core/db-types.ts';
 import type { Deps } from '../../core/deps.ts';
 import { conflict, forbidden, notFound } from '../../core/errors.ts';
 import type { Handlers } from '../../core/http.ts';
+import { writeTx } from '../../core/tx.ts';
 import { toUser } from './map.ts';
 import { assertPasswordPolicy } from './policy.ts';
 import { hashPassword, revokeAllApiTokens } from './sessions.ts';
@@ -47,7 +48,7 @@ export function userHandlers(deps: Deps): Handlers {
       const hash = await hashPassword(body.password);
       const roles = uniqueRoles(body.roles);
       try {
-        const row = await deps.db.transaction().execute(async (trx) => {
+        const row = await writeTx(deps, async (trx) => {
           const inserted = await trx
             .insertInto('app_user')
             .values({
@@ -83,7 +84,7 @@ export function userHandlers(deps: Deps): Handlers {
     },
 
     'users.update': async ({ params, body, user, actor, ip, requestId }) => {
-      const row = await deps.db.transaction().execute(async (trx) => {
+      const row = await writeTx(deps, async (trx) => {
         // Rollen-/Statusänderungen: zuerst alle aktiven Admins sperren, dann die Zielperson
         const affectsAdmins = body.roles !== undefined || body.active !== undefined;
         const admins = affectsAdmins ? await lockActiveAdmins(trx) : null;
@@ -190,7 +191,7 @@ export function userHandlers(deps: Deps): Handlers {
       if (!target) throw notFound();
       assertPasswordPolicy(body.password, { email: target.email });
       const hash = await hashPassword(body.password);
-      await deps.db.transaction().execute(async (trx) => {
+      await writeTx(deps, async (trx) => {
         await trx
           .updateTable('app_user')
           .set({ password_hash: hash, must_change_password: true, failed_logins: 0, locked_until: null })

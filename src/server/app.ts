@@ -9,6 +9,7 @@ import { getConnInfo } from 'hono/bun';
 import { secureHeaders } from 'hono/secure-headers';
 import { type Config, loadConfig } from './config.ts';
 import { AuditWriter } from './core/audit.ts';
+import { clientIp, TrustedProxies } from './core/client-ip.ts';
 import { SecretBox } from './core/crypto.ts';
 import { createDb, type Db } from './core/db.ts';
 import { type AppEnv, type Deps, type Module, unregisteredServices } from './core/deps.ts';
@@ -59,24 +60,29 @@ export function createApp(deps: Deps, modules: Module[] = allModules): Hono<AppE
   const app = new Hono<AppEnv>();
 
   for (const m of modules) m.init?.(deps);
+  const trustedProxies = new TrustedProxies(deps.config.MESH_TRUSTED_PROXIES);
 
   app.use('*', async (c, next) => {
     const incoming = c.req.header('x-request-id');
     const requestId = incoming && REQUEST_ID_RE.test(incoming) ? incoming : crypto.randomUUID();
     c.set('requestId', requestId);
     c.set('user', null);
-    let ip: string | null = null;
-    if (deps.config.MESH_TRUST_PROXY) {
-      ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    let peer: string | null = null;
+    try {
+      peer = getConnInfo(c).remote.address ?? null;
+    } catch {
+      peer = null;
     }
-    if (!ip) {
-      try {
-        ip = getConnInfo(c).remote.address ?? null;
-      } catch {
-        ip = null;
-      }
-    }
-    c.set('ip', ip);
+    // X-Forwarded-For nur von vertrauenswürdigen Proxys (core/client-ip.ts)
+    c.set(
+      'ip',
+      clientIp({
+        trustProxy: deps.config.MESH_TRUST_PROXY,
+        trusted: trustedProxies,
+        peer,
+        forwardedFor: c.req.header('x-forwarded-for'),
+      }),
+    );
     await next();
     c.header('x-request-id', requestId);
   });

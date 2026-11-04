@@ -9,6 +9,9 @@
 # Netztrennung (interne und externe Dienste):
 #   frontend  normales Bridge-Netz: Caddy, Knoten, Superset. Nur Caddy veröffentlicht Ports.
 #             Der Knoten braucht ausgehenden Zugang (Partnerknoten, API-Quellen) und ist daher hier.
+#             Festes Subnetz 172.31.252.0/24, Caddy fest 172.31.252.10: nur von dieser Adresse übernimmt
+#             der Knoten die Client-Adresse aus X-Forwarded-For (MESH_TRUSTED_PROXIES). Andere Dienste im
+#             Netz (z. B. Superset) können so keine fremde Adresse vorgeben.
 #   backend   internes Netz (internal: true, kein Zugang nach außen): Datenbank, Knoten, Migration,
 #             CLI, Superset. Die Datenbank ist von außen nicht erreichbar.
 #
@@ -48,8 +51,10 @@ x-node-env: &node-env
   MESH_FEDERATION_ALLOW_HTTP: "false"
   MESH_SOURCE_ALLOWED_HOSTS: ${MESH_SOURCE_ALLOWED_HOSTS:-}
   MESH_SOURCE_ALLOW_INSECURE_HTTP: ${MESH_SOURCE_ALLOW_INSECURE_HTTP:-false}
-  # Caddy ersetzt X-Forwarded-For durch die echte Client-Adresse; nötig für die Ratenbegrenzung je IP
+  # Caddy ersetzt X-Forwarded-For durch die echte Client-Adresse; nötig für die Ratenbegrenzung je IP.
+  # Ausgewertet nur für Verbindungen von Caddy (feste Adresse im Netz frontend, siehe unten).
   MESH_TRUST_PROXY: "true"
+  MESH_TRUSTED_PROXIES: 172.31.252.10
   MESH_LOG_LEVEL: ${MESH_LOG_LEVEL:-info}
   MESH_TIMEZONE: ${MESH_TIMEZONE:-Europe/Berlin}
   MESH_UI_DIR: /app/dist/ui
@@ -151,7 +156,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [frontend]
+    networks:
+      frontend:
+        # feste Adresse = MESH_TRUSTED_PROXIES des Knotens (bei Änderung beide anpassen)
+        ipv4_address: 172.31.252.10
 
   # ---------------------------------------------------------------------------------------------
   # Betriebs-Kommandozeile (Profil "tools"): docker compose run --rm cli <kommando> [optionen]
@@ -239,6 +247,10 @@ volumes:
   superset_home:
 
 networks:
-  frontend: {}
+  # festes Subnetz: Caddy hat darin die feste Adresse 172.31.252.10 (MESH_TRUSTED_PROXIES)
+  frontend:
+    ipam:
+      config:
+        - subnet: 172.31.252.0/24
   backend:
     internal: true

@@ -293,6 +293,10 @@ export interface ExchangeLogTable {
   payload_sha256: string | null;
   request_id: string | null;
   at: Timestamp;
+  /** Datenkategorie bei der Lieferung (nur gelieferte ausgehende Datenabrufe; Migration 0500) */
+  data_category: string | null;
+  /** Einwilligung war Voraussetzung der Lieferung (nur gelieferte ausgehende Datenabrufe; Migration 0500) */
+  consent_applied: boolean | null;
 }
 
 export interface ReceivedProductTable {

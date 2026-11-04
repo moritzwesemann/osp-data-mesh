@@ -19,6 +19,16 @@ als bei der Freigabe geprüft wurde.
   Freigabe **veraltet** (`product_changed`) und liefert nichts mehr, bis sie neu erteilt wird.
 - Freigaben sind **unveränderlich**: Änderung = neue Freigabe erteilen, alte widerrufen.
 - Neue Produktspalten sind nie automatisch freigegeben (Spaltenliste der Freigabe).
+- Eine **Änderung des zugrunde liegenden Datensatzes** gilt als Produktänderung, wenn sie die Einstufung
+  (Kategorie, besondere Kategorie, Teilbarkeit), das Beobachtungsdatum oder ein vom Produkt genutztes Feld
+  (entfernt, anderer Typ, andere Einheit) betrifft: Jedes betroffene aktive Produkt erhält in derselben
+  Transaktion eine neue Version (Ereignis `dataset.changed`, Audit `product.update` mit
+  `cause: dataset_changed`); seine Freigaben sind damit veraltet. Wird der Datensatz intern, wird auch das
+  Produkt intern. Name, Beschreibung, Feldbezeichnungen, Prüfregeln und neue Felder ändern keine Version.
+- Wird ein Datensatz dabei **neu besondere Kategorie**, wechselt ein Datensatz besonderer Kategorie die
+  Kategorie (Einwilligungen gelten je Kategorie) oder wird er **intern**, werden zusätzlich alle nicht
+  widerrufenen Partnerfreigaben der betroffenen Produkte widerrufen (Grund `dataset_reclassified`); die
+  Partner erhalten `release_revoked` und löschen ihre Kopien.
 
 ## Konsequenzen
 
@@ -26,4 +36,7 @@ als bei der Freigabe geprüft wurde.
 - Datenverantwortliche müssen nach Produktänderungen Freigaben bewusst neu erteilen (Oberfläche zeigt
   veraltete Freigaben an).
 - Die zuletzt gelieferte Kopie beim Partner bleibt bestehen, bis die alte Freigabe widerrufen wird oder
-  abläuft (siehe [Widerruf und Weitergabe](../widerruf-und-weitergabe.md)).
+  abläuft (siehe [Widerruf und Weitergabe](../widerruf-und-weitergabe.md)) – außer nach einer
+  Hochstufung des Datensatzes (siehe oben), nach der sie hätte nicht übermittelt werden dürfen.
+- Eine Umstufung eines Datensatzes kann viele Freigaben auf einmal veralten lassen bzw. Partnerfreigaben
+  widerrufen; die Oberfläche und das Audit-Log zeigen die betroffenen Produkte und Freigaben.

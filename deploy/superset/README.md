@@ -113,7 +113,6 @@ Verwendete Superset-Diagrammtypen: `big_number_total`, `echarts_timeseries_bar`,
 
 - Eigener Hostname (`MESH_BI_DOMAIN`), nie der Name des Knotens mit anderem Port: sonst erhielte Superset
   das Sitzungs-Cookie des Knotens (siehe oben und `deploy/Caddyfile`).
-
 - Superset sieht nur, was `mesh_bi` sieht: Views im Schema `bi`, nur lesend, Abfragezeit ≤ 60 s.
 - Die Verbindungsdaten speichert Superset mit `SUPERSET_SECRET_KEY` verschlüsselt in seiner
   Metadaten-Datenbank (Volume `superset_home`); Schlüssel in der Passwortverwaltung ablegen.
@@ -121,4 +120,9 @@ Verwendete Superset-Diagrammtypen: `big_number_total`, `echarts_timeseries_bar`,
   selbst (Action Log), nicht das Audit-Log des Knotens. Auf der Datenbankseite sind sie als Abfragen der
   Rolle `mesh_bi` sichtbar.
 - Für größere Installationen eine eigene PostgreSQL-Datenbank für die Superset-Metadaten verwenden
-  (`SUPERSET_METADATA_DB_URI`), nicht die Knotendatenbank.
+  (`SUPERSET_METADATA_DB_URI`, gelesen von `superset_config.py`), nicht die Knotendatenbank. Die Variable
+  wird von `docker-compose.yml` nicht durchgereicht: dafür im `environment` des Dienstes `superset-init`
+  (Anker `&superset-env`, gilt damit auch für `superset` und `superset-bootstrap`) die Zeile
+  `SUPERSET_METADATA_DB_URI: postgresql+psycopg2://<benutzer>:<passwort>@<host>:5432/<datenbank>`
+  ergänzen. Nicht leer durchreichen (etwa als `${SUPERSET_METADATA_DB_URI:-}`): ein leerer Wert ersetzte
+  die SQLite-Vorgabe in `superset_config.py`.

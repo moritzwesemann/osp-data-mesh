@@ -256,6 +256,18 @@ code,
 .menu-icon::after {
   top: 5px;
 }
+/* geöffnet: × statt drei Striche */
+.nav-open .menu-icon {
+  background: transparent;
+}
+.nav-open .menu-icon::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+.nav-open .menu-icon::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
 
 .sidenav {
   grid-area: nav;
@@ -929,6 +941,15 @@ input[type="file"].input {
   position: sticky;
   top: 0;
 }
+/* Spaltenklasse "mono" gilt nur für die Werte, nicht für die Überschrift */
+.table th.mono {
+  font-family: inherit;
+}
+/* Kennungen (z. B. osp-mitte) nicht am Bindestrich umbrechen; lange Werte tragen die Klasse "break" */
+.table td.mono:not(.break),
+.table td .mono:not(.break) {
+  white-space: nowrap;
+}
 .table tbody tr:last-child td {
   border-bottom: 0;
 }
@@ -1202,6 +1223,10 @@ input[type="file"].input {
   right: 6px;
 }
 
+.fingerprint-line {
+  display: block;
+  white-space: nowrap;
+}
 .fingerprint {
   font-family: var(--mono);
   font-size: 1rem;

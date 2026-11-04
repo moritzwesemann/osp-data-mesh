@@ -108,6 +108,8 @@ export const connectors = {
     'Laden Sie eine Beispieldatei hoch, um die Spalten zu erkennen, und ordnen Sie jeder Spalte ein Zielfeld zu.',
   mappingIntroApi:
     'Rufen Sie ein Beispiel ab oder tragen Sie die Quellfelder als Punkt-Pfade ein, z. B. „athlete.name“.',
+  sampleUsesStored:
+    'Der Beispielabruf nutzt die gespeicherte Adresse und das gespeicherte Zugangsgeheimnis; eine geänderte Adresse gilt erst nach dem Speichern.',
   sampleFile: 'Beispieldatei (CSV)',
   analyze: 'Datei analysieren',
   fetchSample: 'Beispiel abrufen',
@@ -197,7 +199,7 @@ export const connectors = {
   failure: 'Fehlerursache',
   previewPending: 'Dies ist eine Vorschau; Daten werden erst mit „Übernehmen“ gespeichert.',
   statTotal: 'Zeilen gesamt',
-  statValid: 'Gültig',
+  statValid: 'Gültig (inkl. Warnung)',
   statWarnings: 'Mit Warnung',
   statErrors: 'Fehlerhaft',
   statInserted: 'Neu angelegt',

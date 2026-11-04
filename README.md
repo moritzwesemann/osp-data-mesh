@@ -19,8 +19,11 @@ Audit-Log. BI-Werkzeuge greifen über eine nur lesende Datenbankrolle oder die R
 
 ## Schnellstart (Entwicklungsrechner)
 
-Voraussetzungen: [Bun](https://bun.sh) 1.4, PostgreSQL 18 (Programme `initdb`, `pg_ctl`, `psql`,
-`pg_dump` im `PATH` oder per Homebrew unter `/opt/homebrew/opt/postgresql@18/bin`).
+Voraussetzungen: [Bun](https://bun.sh) 1.4 (getestet mit 1.4.3), PostgreSQL 18 (Programme `initdb`,
+`pg_ctl`, `psql`, `pg_dump`). Gesucht werden sie unter `/opt/homebrew/opt/postgresql@18/bin`,
+`/opt/homebrew/bin`, `/usr/local/opt/postgresql@18/bin`, `/usr/lib/postgresql/18/bin`, `/usr/local/bin`
+und `/usr/bin`; liegen sie anderswo, das Verzeichnis mit `MESH_PG_BIN=…` angeben (die Demo bricht sonst
+ab; `bun test` nutzt ersatzweise den `PATH`).
 
 ```sh
 bun install
@@ -31,8 +34,9 @@ bun test           # automatisierte Tests (eigener PostgreSQL-Testcluster auf Po
 
 Die Demo beginnt immer mit einem leeren Stand unter `.local/demo/`, legt je Knoten einen eigenen
 PostgreSQL-Cluster an (Ports 55431–55433), importiert Beispieldaten aus CSV-Dateien und einer API-Quelle,
-stellt das Vertrauen zwischen den Knoten her, erteilt Freigaben und prüft Austausch, Widerrufe, BI-Zugang,
-Audit und Sicherungen über die echten HTTP-Schnittstellen (Abbruch mit Exit-Code 1 bei jeder Abweichung).
+stellt das Vertrauen zwischen den Knoten her, erteilt Freigaben und prüft Austausch, Widerrufe, offene
+Schnittstellen (API-Token, JSON/CSV/XML), BI-Zugang (als Datenbankrolle `mesh_bi`), Audit und Sicherungen
+über die echten Schnittstellen (Abbruch mit Exit-Code 1 bei jeder Abweichung).
 Danach stoppt sie alles. Mit `bun run demo -- --keep-running` laufen die Knoten weiter (Zugangsdaten gibt
 die Demo aus); beenden mit `bun run demo:stop`.
 
@@ -55,6 +59,7 @@ ausgeliefert. Quellen in [`docs/`](docs/):
 | Thema | Datei |
 |---|---|
 | Überblick | [docs/index.md](docs/index.md) |
+| Oberfläche (Rundgang mit Bildschirmfotos) | [docs/oberflaeche.md](docs/oberflaeche.md) |
 | Architektur, Module, Konventionen | [docs/architektur.md](docs/architektur.md) |
 | Freigabe- und Einwilligungsregeln | [docs/freigaberegeln.md](docs/freigaberegeln.md) |
 | Föderationsprotokoll | [docs/protokoll.md](docs/protokoll.md) |

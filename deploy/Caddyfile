@@ -31,9 +31,10 @@
 {$CADDY_DOMAIN:localhost} {
 	import common
 
-	# Uploads bis 20 MB, Föderationsantworten bis 50 MB (der Knoten prüft zusätzlich selbst)
+	# Anfragen: CSV-Uploads bis 20 MiB, Föderationsanfragen bis 2 MiB, sonst 1 MiB; der Knoten prüft die
+	# genauen Grenzen selbst. Antworten (z. B. Datenabrufe von Partnern) begrenzt diese Angabe nicht.
 	request_body {
-		max_size 60MB
+		max_size 25MB
 	}
 
 	reverse_proxy node:4401 {

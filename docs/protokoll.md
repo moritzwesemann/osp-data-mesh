@@ -73,8 +73,10 @@ im Austauschprotokoll, um spätere Löschmitteilungen zielgenau senden zu könne
 
 **Notice** (vom Datenhalter an den Empfänger, über das Ausgangspostfach mit Wiederholungen):
 
-- `release_revoked {releaseId, reason}` – Freigabe widerrufen oder Produkt stillgelegt: Empfänger löscht
-  alle Zeilen der Kopie und markiert sie als widerrufen.
+- `release_revoked {releaseId, reason}` – Freigabe widerrufen (`reason` = Begründung), Produkt stillgelegt
+  (`product_retired`) oder Datensatz neu eingestuft (`dataset_reclassified`, siehe
+  [Freigaberegeln](freigaberegeln.md#erteilen-ändern-widerrufen)): Empfänger löscht alle Zeilen der Kopie
+  und markiert sie als widerrufen.
 - `subjects_withdrawn {releaseId, subjects[], reason: consent_withdrawn|erasure}` – Einwilligung
   widerrufen oder Person gelöscht: Empfänger löscht die Zeilen dieser Pseudonyme.
 
@@ -103,7 +105,8 @@ Speicher):
   (`rate_limited`, unsigniert, `Retry-After`), ohne die Datenbank zu fragen oder den Body zu lesen. Ebenso
   nach 60 Ablehnungen je behauptetem Absender (`X-Mesh-Node`) – aber nur, wenn dieser kein zugelassener
   Partner ist: die Kennung kann jeder fälschen, und ein echter Partner darf dadurch nicht ausgesperrt
-  werden (für ihn entscheidet die Signatur).
+  werden (für ihn entscheidet die Signatur). Die 429-Antworten selbst werden ebenso zusammengefasst
+  auditiert (Code `rate_limited`).
 
 Voraussetzung ist die richtige Client-Adresse: hinter Caddy `MESH_TRUST_PROXY=true`, sonst teilen sich alle
 Anfragen die Adresse des Proxys.

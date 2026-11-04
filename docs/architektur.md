@@ -40,19 +40,21 @@ Gesamtsynchronisation.
 
 ## Module und Verantwortlichkeiten
 
-| Modul | Routen (Vertrag) | Tabellen (schreibend) | Bietet an |
-|---|---|---|---|
-| `auth` | `auth.*`, `tokens.*`, `users.*` | app_user, user_session, api_token | `deps.authenticator` |
-| `audit` | `audit.*` | – (audit_log schreibt jedes Modul über `deps.audit`) | |
-| `system` | `health.*`, `system.*`, `/api/v1/openapi.json` | backup_run, app_error | `services.backup` |
-| `athletes` | `athletes.*`, `consents.*`, `purposes.list` | athlete, athlete_identifier, consent_record | Ereignisse `consent.withdrawn`, `athlete.deleted` |
-| `datasets` | `datasets.*` | dataset | |
-| `connectors` | `connectors.*`, `imports.*` | connector, import_run, import_error, dataset_record, athlete (Import) | Ereignis `data.changed` |
-| `products` | `products.*`, `access.*` | data_product | Laden von Produktzeilen |
-| `releases` | `releases.*` | data_release | `services.pep`, `services.offers`, Ereignisse `release.*` |
-| `bi` | `bi.*` | bi_view, Schemata `bi`/`bi_data` | `services.bi` |
-| `catalog` | `catalog.local` | – (liest Metadaten) | |
-| `federation` | `node.card`, `peers.*`, `discovery.search`, `received.*`, `exchange.log`, `outbox.*`, `/federation/v1/*` | peer, federation_nonce, outbox_message, exchange_log, received_product, received_row | `services.federation` |
+| Modul | Routen (Vertrag) | Tabellen (schreibend) | Bietet an / löst aus | Reagiert auf, Hintergrundaufgaben |
+|---|---|---|---|---|
+| `auth` | `auth.*`, `tokens.*`, `users.*` | app_user, user_session, api_token | `deps.authenticator` | – |
+| `audit` | `audit.*` | – (audit_log schreibt jedes Modul über `deps.audit`) | | – |
+| `system` | `health.*`, `system.*`, `/api/v1/openapi.json` | backup_run, app_error | `services.backup` | geplante Sicherungen |
+| `athletes` | `athletes.*`, `consents.*`, `purposes.list` | athlete, athlete_identifier, consent_record | Ereignisse `consent.withdrawn`, `athlete.deleted` (in der Transaktion), `data.changed` | – |
+| `datasets` | `datasets.*` | dataset | Ereignis `dataset.changed` (in der Transaktion der Änderung, wenn Einstufung, Beobachtungsdatum oder Felder sich produktrelevant ändern) | – |
+| `connectors` | `connectors.*`, `imports.*` | connector, import_run, import_error, dataset_record, athlete (Import), dataset (Import einer Definition) | Ereignis `data.changed` | `athlete.deleted` (Person aus offenen Importläufen entfernen); Ablauf nicht übernommener Vorschauen (beim Start und stündlich, `connectors/retention.ts`) |
+| `products` | `products.*`, `access.*` | data_product | Laden von Produktzeilen; Ereignis `product.changed` | `dataset.changed` (neue Produktversion, ggf. `revokePeerReleases`) |
+| `releases` | `releases.*` | data_release | `services.pep`, `services.offers`, Ereignisse `release.*` | `product.changed` (Stilllegung bzw. Neueinstufung: Freigaben widerrufen) |
+| `bi` | `bi.*` | bi_view, Schemata `bi`/`bi_data` | `services.bi` | `release.*`, `product.changed`, `consent.withdrawn`, `athlete.deleted`, `data.changed`; periodische Aktualisierung (10 min) |
+| `catalog` | `catalog.local` | – (liest Metadaten) | | – |
+| `federation` | `node.card`, `peers.*`, `discovery.search`, `received.*`, `exchange.log`, `outbox.*`, `/federation/v1/*` | peer, federation_nonce, outbox_message, exchange_log, received_product, received_row | `services.federation` | `release.revoked`, `product.changed`, `consent.withdrawn`, `athlete.deleted` (Mitteilungen ins Ausgangspostfach); Ausgangspostfach (5 s), Aufbewahrung (minütlich) |
+
+Hintergrundaufgaben laufen nur mit `MESH_WORKERS=true` (Standard).
 
 Module lesen fremde Tabellen nur, wo es für Anzeige oder Prüfung nötig ist (z. B. `releases` liest
 `consent_record` für die Einwilligungsprüfung). **Schreibend** greift jedes Modul nur auf eigene Tabellen zu.
@@ -93,7 +95,18 @@ In `details` keine personenbezogenen Rohdaten, nur IDs, Zähler, Codes. Abgelehn
 Unerwartete Fehler → 500 `internal_error`, Eintrag in `app_error` und Log (mit Request-ID).
 
 **Ereignisse** (`core/events.ts`): `inTx` in der Transaktion des Auslösers (muss gelingen),
-`after` nach dem Commit (Fehler werden geloggt). Auslöser rufen beides auf.
+`after` nach dem Commit (Fehler werden geloggt). Auslöser rufen beides auf. Ereignisse:
+`release.created`, `release.revoked`, `product.changed` (mit `retired` bzw. `revokePeerReleases:
+'dataset_reclassified'`), `dataset.changed`, `consent.withdrawn`, `athlete.deleted`, `data.changed`.
+
+**Sperren** (`core/locks.ts`, PostgreSQL-Advisory-Locks, transaktionsgebunden): Die **Liefersperre**
+serialisiert Datenlieferungen gegen Widerrufe und Löschungen. Jede Auslieferung – Partnerabruf
+(`federation`) und BI-Materialisierung (`bi`) – hält sie *geteilt* vom PEP-Aufruf bis zum Speichern bzw.
+Protokollieren; Einwilligungswiderruf, Löschung einer Person, Stilllegung und Neueinstufung (Widerruf der
+Freigaben) nehmen sie *exklusiv*. So sieht jede spätere Lieferung den Widerruf, und jede frühere ist
+abgeschlossen, bevor bereinigt wird. Reihenfolge: zuerst diese Sperre, danach Zeilensperren auf
+`data_release`; wer sie geteilt hält, schreibt in derselben Transaktion kein Audit. Weitere Schlüssel:
+Audit-Kette, Migrationen, empfangene Kopien.
 
 **Geheimnisse.** Nie im Klartext speichern: `deps.box.seal(value, aad)` / `deps.box.open(sealed, aad)`
 mit festem AAD je Verwendungszweck (z. B. `connector.secret:<id>`).
@@ -126,6 +139,9 @@ Partnerknoten und API-Quellen über injiziertes `deps.fetch`.
 - Audit-Log: Trigger sperren `UPDATE`/`DELETE`/`TRUNCATE`; Hash-Kette, prüfbar mit `audit_verify()`.
 - Passwörter: Argon2id; Sitzungstoken nur als SHA-256 gespeichert; Cookie HttpOnly/SameSite=Strict/Secure; CSRF-Header.
 - Geheimnisse (privater Knotenschlüssel, Pseudonym-Schlüssel, API-Zugangsdaten): AES-256-GCM mit Master-Key aus der Umgebung.
-- API-Quellen nur zu freigegebenen Hosts (`MESH_SOURCE_ALLOWED_HOSTS`, SSRF-Schutz).
+- API-Quellen nur zu freigegebenen Hosts (`MESH_SOURCE_ALLOWED_HOSTS`, SSRF-Schutz); Zugangsgeheimnisse an
+  das gespeicherte Ziel gebunden und nur über HTTPS (bzw. Loopback).
+- Föderationsendpunkt: Absender vor dem Lesen des Bodys geprüft, Anfragen ≤ 2 MB, Ratenbegrenzung und
+  zusammengefasstes Audit abgelehnter Anfragen (`federation/guard.ts`).
 
 Details: [Sicherheitskonzept](sicherheit.md), [Freigaberegeln](freigaberegeln.md), [Protokoll](protokoll.md).

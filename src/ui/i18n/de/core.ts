@@ -65,6 +65,7 @@ export const common = {
   rows: '{count} {count|Zeile|Zeilen}',
   supportRef: 'Support-Referenz: {id}',
   unknownCode: 'Unbekannter Code ({code})',
+  noAccessTitle: 'Kein Zugriff',
   noAccess: 'Für diese Seite fehlt Ihnen die Berechtigung.',
   notFoundTitle: 'Seite nicht gefunden',
   notFound: 'Diese Seite gibt es nicht.',
@@ -122,7 +123,6 @@ export const nav = {
 
 export const shell = {
   menu: 'Menü',
-  closeMenu: 'Menü schließen',
   signOut: 'Abmelden',
   signingOut: 'Abmeldung …',
   skipToContent: 'Zum Inhalt springen',
@@ -150,7 +150,7 @@ export const errors = {
   import_failed: 'Der Import ist fehlgeschlagen.',
   source_unreachable: 'Die Datenquelle ist nicht erreichbar.',
   source_not_allowed: 'Die Adresse der Datenquelle ist für Abrufe nicht freigegeben.',
-  release_invalid: 'Die Freigabe ist so nicht zulässig.',
+  release_invalid: 'Die Freigabe ist so nicht zulässig; bitte prüfen Sie die markierten Angaben.',
   access_denied: 'Der Zugriff wurde abgelehnt.',
   peer_unreachable: 'Der Partnerknoten ist nicht erreichbar.',
   peer_rejected: 'Der Partnerknoten hat die Anfrage abgelehnt.',
@@ -165,24 +165,84 @@ export const clientErrors = {
   unexpected_response: 'Der Server hat unerwartet geantwortet.',
 } satisfies Record<ClientErrorCode, string>;
 
-/** Detailgründe (error.reason), die nicht Ablehnungs- oder Prüfcodes sind. */
+/**
+ * Detailgründe (error.reason) und gespeicherte Fehlercodes (z. B. Sicherung, BI, Austausch), die keine
+ * Ablehnungs- oder Prüfcodes sind.
+ */
 export const reasons = {
+  // Anmeldung, Konto, Benutzer
   password_change_required: 'Bitte ändern Sie zuerst Ihr Passwort.',
-  fingerprint_mismatch: 'Der Fingerprint stimmt nicht mit der Knotenkarte überein.',
-  slug_taken: 'Diese Kennung ist bereits vergeben.',
-  email_taken: 'Diese E-Mail-Adresse ist bereits vergeben.',
-  node_exists: 'Dieser Knoten ist bereits als Partner eingetragen.',
-  own_node: 'Die eigene Knotenkarte kann nicht als Partner aufgenommen werden.',
-  invalid_state: 'Die Aktion ist im aktuellen Status nicht möglich.',
-  already_committed: 'Der Import wurde bereits übernommen.',
-  already_revoked: 'Die Freigabe ist bereits widerrufen.',
-  in_use: 'Der Eintrag wird noch verwendet.',
-  last_admin: 'Die letzte Administration kann nicht entfernt oder deaktiviert werden.',
+  session_required:
+    'API-Tokens lassen sich nur nach einer Anmeldung mit Passwort erzeugen, nicht mit einem anderen API-Token.',
+  too_short: 'Das Passwort muss mindestens 12 Zeichen lang sein.',
+  equals_email: 'Das Passwort darf nicht der E-Mail-Adresse entsprechen.',
+  equals_current: 'Das neue Passwort muss sich vom bisherigen unterscheiden.',
   wrong_password: 'Das aktuelle Passwort ist falsch.',
-  password_contains_identity: 'Das Passwort darf Name oder E-Mail-Adresse nicht enthalten.',
-  password_reused: 'Das neue Passwort muss sich vom bisherigen unterscheiden.',
-  no_secret: 'Für diese Quelle ist kein Zugangsgeheimnis hinterlegt.',
-  dataset_required: 'Bitte wählen Sie einen Ziel-Datensatz.',
+  email_exists: 'Diese E-Mail-Adresse ist bereits vergeben.',
+  last_admin: 'Die letzte Administration kann nicht entfernt oder deaktiviert werden.',
+  cannot_remove_own_admin_role: 'Die eigene Rolle „Administration“ können Sie sich nicht selbst entziehen.',
+  cannot_deactivate_self: 'Das eigene Konto können Sie nicht deaktivieren.',
+  // Athleten, Datensätze, Quellen, Importe
+  slug_exists: 'Diese Kennung ist bereits vergeben.',
+  slug_taken: 'Diese Kennung ist bereits vergeben.',
+  athlete_exists: 'Eine Person mit diesen Angaben ist bereits erfasst.',
+  already_withdrawn: 'Die Einwilligung ist bereits widerrufen.',
+  dataset_in_use:
+    'Der Datensatz enthält schon Daten; Schlüsselfelder, Beobachtungsdatum und Feldtypen lassen sich nicht mehr ändern.',
+  connector_inactive: 'Die Quelle ist inaktiv; aktivieren Sie sie, um Importe zu starten.',
+  connector_changed: 'Die Quelle wurde nach der Vorschau geändert; bitte starten Sie den Import neu.',
+  import_has_errors:
+    'Die Vorschau enthält fehlerhafte Zeilen und die Quelle bricht bei Fehlern ab; bitte Datei korrigieren oder Einstellung ändern.',
+  athlete_conflict:
+    'Beim Übernehmen kam es zu einer Überschneidung mit einer gleichzeitig angelegten Person; bitte Import neu starten.',
+  run_not_previewed: 'Der Importlauf wurde bereits übernommen oder verworfen.',
+  insecure_http:
+    'Ein Zugangsgeheimnis darf nicht über unverschlüsseltes HTTP gesendet werden; bitte eine HTTPS-Adresse verwenden.',
+  too_many_columns: 'Die Datei hat mehr Spalten als zulässig (höchstens 500).',
+  too_many_rows: 'Die Quelle liefert mehr Zeilen als zulässig (höchstens 100.000).',
+  network: 'Die Verbindung zur Datenquelle ist fehlgeschlagen.',
+  too_large: 'Die Antwort der Datenquelle ist zu groß.',
+  not_json: 'Die Datenquelle hat kein gültiges JSON geliefert.',
+  items_not_array: 'Unter dem angegebenen Pfad liefert die Datenquelle keine Liste von Einträgen.',
+  http_status: 'Die Datenquelle hat mit HTTP-Status {status} geantwortet.',
+  // Datenprodukte und Freigaben
+  product_retired: 'Das Datenprodukt ist stillgelegt.',
+  dataset_missing: 'Der zugrunde liegende Datensatz existiert nicht mehr.',
+  already_revoked: 'Die Freigabe ist bereits widerrufen.',
+  bi_release_exists:
+    'Für dieses Datenprodukt besteht bereits eine aktive oder geplante Freigabe an die BI-Schnittstelle; bitte widerrufen Sie diese zuerst.',
+  dataset_reclassified:
+    'Der Datensatz wurde als besondere Kategorie oder als nur intern eingestuft; Partnerfreigaben wurden deshalb widerrufen.',
+  refresh_failed: 'Die View konnte nicht aktualisiert werden.',
+  no_purpose: 'Die Freigabe hat keinen Zweck.',
+  // Partnerknoten und Austausch
+  node_exists: 'Dieser Knoten ist bereits als Partner eingetragen.',
+  public_key_in_use: 'Dieser öffentliche Schlüssel gehört bereits zu einem eingetragenen Partner.',
+  invalid_url: 'Die Adresse ist ungültig.',
+  https_required: 'Für Partnerknoten ist eine HTTPS-Adresse erforderlich.',
+  gateway_error: 'Ein Proxy oder Gateway vor dem Partnerknoten hat einen Fehler gemeldet.',
+  rate_limited: 'Der Partnerknoten hat wegen zu vieler Anfragen abgelehnt; bitte später erneut versuchen.',
+  response_too_large: 'Die Antwort des Partnerknotens ist zu groß.',
+  unsigned_response: 'Die Antwort des Partnerknotens ist nicht signiert.',
+  wrong_sender: 'Die Antwort stammt nicht vom erwarteten Partnerknoten.',
+  bad_envelope: 'Die Antwort des Partnerknotens ist nicht korrekt aufgebaut.',
+  wrong_address: 'Die Antwort war an einen anderen Knoten adressiert.',
+  wrong_reply: 'Die Antwort gehört zu einer anderen Anfrage.',
+  bad_body: 'Der Inhalt der Antwort entspricht nicht dem Protokoll.',
+  release_mismatch: 'Die gelieferten Daten gehören zu einer anderen Freigabe.',
+  purpose_mismatch: 'Die gelieferten Daten gehören zu einem anderen Zweck.',
+  invalid_columns: 'Die gelieferten Spalten sind ungültig.',
+  invalid_subject: 'Die gelieferten Zeilen enthalten ungültige Personenkennungen.',
+  unexpected_column: 'Die gelieferten Zeilen enthalten nicht freigegebene Spalten.',
+  audit_failed: 'Der Zugriff konnte nicht protokolliert werden und wurde deshalb nicht ausgeführt.',
+  // Sicherungen
+  backup_running: 'Es läuft bereits eine Sicherung.',
+  backup_key_missing: 'Für Sicherungen ist kein Schlüssel konfiguriert (MESH_BACKUP_KEY).',
+  backup_dir_unavailable: 'Das Sicherungsverzeichnis ist nicht verfügbar.',
+  pg_dump_unavailable: 'Das Programm pg_dump ist nicht verfügbar.',
+  pg_dump_failed: 'pg_dump ist mit einem Fehler beendet worden.',
+  backup_write_failed: 'Die Sicherungsdatei konnte nicht geschrieben werden.',
+  backup_failed: 'Die Sicherung ist fehlgeschlagen.',
 };
 
 /** Ablehnungsgründe der Freigabeprüfung (releases/engine.ts DENY_REASONS). */
@@ -218,7 +278,7 @@ export const releaseIssues = {
   invalid_data_window: 'Das Ende des Datenzeitraums muss nach dem Beginn liegen.',
 };
 
-/** Prüfcodes beim Import (IMPORT_ERROR_CODES). */
+/** Prüfcodes beim Import (IMPORT_ERROR_CODES) und Gründe fehlgeschlagener Läufe (IMPORT_FAILURE_CODES). */
 export const importErrors = {
   required: 'Pflichtwert fehlt.',
   invalid_number: 'Keine gültige Zahl.',
@@ -231,10 +291,55 @@ export const importErrors = {
   implausible_date: 'Das Datum ist nicht plausibel.',
   future_date: 'Das Datum liegt in der Zukunft.',
   athlete_not_found: 'Die Person konnte nicht zugeordnet werden.',
+  athlete_removed: 'Die Person wurde zwischenzeitlich gelöscht; die Zeile wird nicht übernommen.',
   athlete_ambiguous: 'Die Zuordnung zur Person ist nicht eindeutig.',
   duplicate_in_source: 'Die Zeile kommt in der Quelle mehrfach vor.',
-  missing_column: 'Die Spalte fehlt in der Quelldatei.',
+  missing_column: 'Eine zugeordnete Spalte fehlt in der Quelle.',
   invalid_row: 'Die Zeile konnte nicht gelesen werden.',
+  too_long: 'Der Text ist zu lang.',
+  will_update: 'Ein vorhandener Eintrag wird mit geänderten Werten aktualisiert.',
+  encoding_fallback: 'Die Datei ist kein gültiges UTF-8 und wurde als Windows-1252 gelesen.',
+  max_pages_reached:
+    'Der Abruf wurde nach der Höchstzahl an Seiten beendet; die Daten sind möglicherweise unvollständig.',
+  source_unreachable: 'Die Datenquelle ist nicht erreichbar.',
+  invalid_response: 'Die Antwort der Datenquelle ist ungültig.',
+  too_many_columns: 'Die Quelle hat mehr Spalten als zulässig.',
+  too_many_rows: 'Die Quelle hat mehr Zeilen als zulässig.',
+};
+
+/** Zusatzangaben im Fehlerprotokoll eines Imports (ImportError.params): Bezeichnungen und Werte. */
+export const importParams = {
+  column: 'Spalte',
+  format: 'Format',
+  allowed: 'Zulässig',
+  min: 'Mindestens',
+  max: 'Höchstens',
+  minAge: 'Mindestalter',
+  maxAge: 'Höchstalter',
+  expected: 'Erwartete Spalten',
+  actual: 'Gefundene Spalten',
+  count: 'Treffer',
+  fields: 'Felder',
+  reason: 'Grund',
+  system: 'Kennungssystem',
+  firstRow: 'Erstmals in Zeile',
+  encoding: 'Gelesen als',
+  pages: 'Seiten',
+  status: 'HTTP-Status',
+  phase: 'Bemerkt',
+  phases: {
+    preview: 'bei der Vorschau',
+    commit: 'bei der Übernahme',
+    erasure: 'durch Löschung der Person nach der Vorschau',
+  },
+  reasons: {
+    natural_key_conflict: 'Kennung und Name/Geburtsdatum gehören zu verschiedenen Personen',
+    timeout: 'Zeitüberschreitung',
+    network: 'Verbindungsfehler',
+    too_large: 'Antwort zu groß',
+    not_json: 'kein gültiges JSON',
+    items_not_array: 'keine Liste unter dem Pfad',
+  },
 };
 
 /** Fehlercodes des Föderationsprotokolls (z. B. letzter Kontaktfehler eines Partners). */
@@ -277,6 +382,18 @@ export const fieldErrors = {
   unknown_column: 'Unbekannte Spalte.',
   invalid_filter_value: 'Der Wert passt nicht zum Spaltentyp.',
   password_too_weak: 'Das Passwort ist zu schwach.',
+  kind_mismatch: 'Passt nicht zur Art der Quelle.',
+  not_supported: 'Für diese Art von Quelle nicht möglich.',
+  not_allowed: 'Dieser Wert ist hier nicht zulässig.',
+  duplicate_target: 'Dieses Zielfeld ist mehrfach zugeordnet.',
+  greater_than_max: 'Das Minimum ist größer als das Maximum.',
+  invalid_source: 'Die Quellspalte gibt es nicht.',
+  invalid_url: 'Die Adresse ist ungültig.',
+  https_required: 'Bitte eine HTTPS-Adresse angeben.',
+  own_key: 'Das ist der Schlüssel dieses Knotens.',
+  own_node: 'Das ist dieser Knoten selbst.',
+  before_valid_from: 'Das Ende muss nach dem Beginn liegen.',
+  unknown_purpose: 'Unbekannter Zweck.',
 };
 
 export const conditions = {

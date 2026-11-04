@@ -191,11 +191,12 @@ export const enums: typeof DeEnums = {
     locked: 'Locked',
   },
   receivedReasons: {
-    release_revoked: 'The release was revoked by the data holder.',
+    revoked: 'The release was revoked by the data holder.',
     product_retired: 'The data product was retired by the data holder.',
-    consent_withdrawn: 'Consents were withdrawn; affected rows were deleted.',
-    erasure: 'Persons were erased; affected rows were removed.',
+    dataset_reclassified:
+      'The data holder reclassified the underlying dataset (special category or internal only); the release was therefore revoked.',
+    product_inactive: 'The data product has been retired by the data holder.',
+    release_expired: 'The release has expired; the data were deleted.',
     expired: 'The release has expired.',
-    deleted_locally: 'The local copy was deleted.',
   },
 };

@@ -47,6 +47,8 @@ x-node-env: &node-env
   MESH_SESSION_TTL_HOURS: ${MESH_SESSION_TTL_HOURS:-12}
   MESH_FEDERATION_ALLOW_HTTP: "false"
   MESH_SOURCE_ALLOWED_HOSTS: ${MESH_SOURCE_ALLOWED_HOSTS:-}
+  MESH_SOURCE_ALLOW_INSECURE_HTTP: ${MESH_SOURCE_ALLOW_INSECURE_HTTP:-false}
+  # Caddy ersetzt X-Forwarded-For durch die echte Client-Adresse; nötig für die Ratenbegrenzung je IP
   MESH_TRUST_PROXY: "true"
   MESH_LOG_LEVEL: ${MESH_LOG_LEVEL:-info}
   MESH_TIMEZONE: ${MESH_TIMEZONE:-Europe/Berlin}
@@ -140,7 +142,7 @@ services:
       CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN in .env setzen}
       CADDY_TLS: ${CADDY_TLS:-internal}
       MESH_BI_DOMAIN: ${MESH_BI_DOMAIN:-bi.${CADDY_DOMAIN}}
-    # CADDY_BIND: Adresse der Netzwerkschnittstelle (Standard alle); z. B. nur die LAN-Adresse
+    # CADDY_BIND: Adresse der Netzwerkschnittstelle für 80/443 (Standard alle); z. B. nur die LAN-Adresse
     ports:
       - "${CADDY_BIND:-0.0.0.0}:80:80"
       - "${CADDY_BIND:-0.0.0.0}:443:443"

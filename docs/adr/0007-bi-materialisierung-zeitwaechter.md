@@ -22,7 +22,11 @@ würde sie umgehen.
   widerrufen und das Produkt aktiv und unverändert ist – auch wenn die nächste Aktualisierung noch
   aussteht.
 - Widerruf entfernt die View in derselben Transaktion; Einwilligungswiderruf und Löschung entfernen Zeilen
-  der Person sofort (verborgene Spalte `_subject`).
+  der Person sofort (verborgene Spalte `_subject`, nie in der View).
+- Materialisierung und Bereinigung sind über die **Liefersperre** (`core/locks.ts`, dieselbe wie beim
+  Partnerabruf) serialisiert: Die Materialisierung hält sie geteilt vom PEP-Aufruf bis zum Commit, die
+  Bereinigung nimmt sie exklusiv. So kann keine laufende Materialisierung eine eben entfernte Person aus
+  einem älteren Datenstand zurückbringen.
 - Aktualisierung nach Datenänderungen (entprellt), periodisch und auf Anforderung.
 
 ## Konsequenzen

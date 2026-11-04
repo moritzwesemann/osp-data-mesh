@@ -25,6 +25,10 @@ export const datasets: Messages['datasets'] = {
   shareability: 'Shareability',
   shareabilityHint:
     '“Internal only” prevents any release to partner nodes; “Shareable on request” allows releases case by case.',
+  reclassifyWarning:
+    'A changed classification counts as a change of the data products built on this dataset: they get a new version when you save; existing releases become outdated and must be granted again.',
+  reclassifyPeerWarning:
+    'This stricter classification also immediately revokes all releases of these data products to partner nodes; the partners are notified and delete their copies.',
   ownerContact: 'Contact person',
   ownerContactHint: 'Name or team mailbox of the responsible unit.',
   fieldsCount: 'Fields',

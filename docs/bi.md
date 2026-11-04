@@ -16,12 +16,21 @@ den alle [Freigaberegeln](freigaberegeln.md) gelten.
    `reporting`; Spalten-, Zeilen- und Zeitbeschränkungen wie bei jeder Freigabe).
 2. Der Server holt die freigegebenen Zeilen über den Policy Enforcement Point, schreibt sie in eine
    interne Tabelle (`bi_data.r_…`) und legt die View **`bi.<produktkürzel>`** mit den freigegebenen
-   Spalten und passenden Datentypen an.
-3. Aktualisierung: kurz nach jeder Datenänderung, alle 10 Minuten und auf Knopfdruck (*BI › Neu
-   aufbauen*). Übersicht der Views mit Zeilenzahl und Status unter *BI* (Rollen `admin`, `data_steward`).
-4. **Widerruf** entfernt die View sofort; **Ablauf** der Freigabe wirkt sofort, weil jede View bei jeder
-   Abfrage in SQL prüft, ob die Freigabe noch gilt; **Einwilligungswiderruf und Löschung** entfernen die
-   Zeilen der Person in derselben Transaktion.
+   Spalten und passenden Datentypen an. Je Produkt gibt es höchstens eine gültige oder geplante
+   BI-Freigabe (sonst `conflict`, Grund `bi_release_exists`); nach Widerruf oder Ablauf kann eine neue
+   BI-Freigabe denselben View-Namen wieder belegen.
+3. Aktualisierung: kurz nach jeder Datenänderung, alle 10 Minuten und auf Knopfdruck (*System ›
+   BI-Schnittstelle › Views aktualisieren*). Übersicht der Views mit Zeilenzahl und Status unter *System ›
+   BI-Schnittstelle* (Oberfläche: Rolle `admin`; über die REST-API `bi.views`/`bi.refresh` auch
+   `data_steward`).
+4. **Widerruf** und **Stilllegung** des Produkts entfernen die View sofort; **Ablauf** der Freigabe sowie
+   eine **Produkt- oder Datensatzänderung** (neue Produktversion, auch nach Neueinstufung des Datensatzes)
+   wirken sofort, weil jede View bei jeder Abfrage in SQL prüft, ob die Freigabe noch gilt und das Produkt
+   aktiv und unverändert ist; die nächste Aktualisierung entfernt die View dann. **Einwilligungswiderruf
+   und Löschung** entfernen die Zeilen der Person in derselben Transaktion (über die verborgene
+   Personenspalte `_subject` der internen Tabelle, die `mesh_bi` nicht sieht). Eine Liefersperre sorgt
+   dafür, dass eine gleichzeitig laufende Aktualisierung die Person nicht aus einem älteren Stand
+   zurückbringt.
 
 `mesh_bi` kann weder die internen Tabellen (`bi_data`) noch Fachtabellen (`public`) lesen; jede Sitzung
 ist nur lesend, Abfragen werden nach 60 Sekunden abgebrochen.
@@ -30,7 +39,7 @@ ist nur lesend, Abfragen werden nach 60 Sekunden abgebrochen.
 
 | Angabe | Wert |
 |---|---|
-| Server | Hostname/IP der Datenbank (siehe *BI* in der Oberfläche, falls `MESH_BI_DB_HOST` gesetzt) |
+| Server | Hostname/IP der Datenbank (siehe *System › BI-Schnittstelle › Verbindungsdaten* in der Oberfläche, falls `MESH_BI_DB_HOST` gesetzt) |
 | Port | `5432` |
 | Datenbank | `mesh` |
 | Benutzer | `mesh_bi` |
@@ -71,6 +80,13 @@ docker compose -f docker-compose.yml -f docker-compose.bi-db.yml up -d
 
 Die Zusatzdatei veröffentlicht den Port nur auf dieser Adresse und setzt eine `pg_hba.conf`, die von
 außen ausschließlich `mesh_bi` mit TLS zulässt (`deploy/postgres/pg_hba.bi.conf`).
+
+**Netztrennung:** Die Zusatzdatei legt feste Subnetze an (`backend` 172.31.251.0/24, `bi_access`
+172.31.250.0/24). `pg_hba.bi.conf` erlaubt alle Rollen nur aus `backend`; aus `bi_access` – dort können
+Verbindungen über den veröffentlichten Port mit der Gateway-Adresse ankommen – und von überall sonst nur
+`mesh_bi` mit TLS, jede andere Rolle wird ausdrücklich abgelehnt (`reject`). Wer die Subnetze ändert, muss
+beide Dateien gleich ändern. Nicht lokal verifiziert (kein Docker); zusätzlich die veröffentlichte Adresse
+per Firewall auf das Netz der BI-Arbeitsplätze beschränken.
 
 Alternativ ohne Freischaltung: SSH-Tunnel oder VPN zum Server, oder die REST-API.
 

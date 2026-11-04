@@ -24,6 +24,10 @@ export const datasets = {
   shareability: 'Teilbarkeit',
   shareabilityHint:
     '„Nur intern“ verhindert jede Freigabe an Partnerknoten; „Teilbar auf Anfrage“ erlaubt Freigaben im Einzelfall.',
+  reclassifyWarning:
+    'Eine geänderte Einstufung gilt als Änderung der Datenprodukte aus diesem Datensatz: Sie erhalten beim Speichern eine neue Version; bestehende Freigaben veralten und müssen neu erteilt werden.',
+  reclassifyPeerWarning:
+    'Diese strengere Einstufung widerruft außerdem sofort alle Freigaben an Partnerknoten für diese Datenprodukte; die Partner werden benachrichtigt und löschen ihre Kopien.',
   ownerContact: 'Ansprechperson',
   ownerContactHint: 'Name oder Funktionspostfach der fachlich verantwortlichen Stelle.',
   fieldsCount: 'Felder',

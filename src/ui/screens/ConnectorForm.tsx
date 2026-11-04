@@ -128,6 +128,19 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
   });
   const mutation = connector ? update : create;
   const error = clientError ?? mutation.error;
+
+  // Beispielabruf mit Zugangsgeheimnis: vorhandene Quelle → gespeichertes Geheimnis (connectorId),
+  // neue Quelle → das gerade eingegebene Geheimnis (wird dabei nicht gespeichert)
+  const inspectAccess =
+    kind !== 'http_api' || apiState.authType === 'none'
+      ? undefined
+      : connector
+        ? connector.hasSecret
+          ? { connectorId: connector.id }
+          : undefined
+        : secret
+          ? { secret }
+          : undefined;
   const fe = useFieldErrors(clientError, mutation.error);
 
   const datasetItems = datasets.data?.items ?? [];
@@ -333,6 +346,7 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
             rowError={rowError}
             invalidValueMaps={invalidValueMaps}
             error={fe('mapping')}
+            inspectAccess={inspectAccess}
           />
         </Section>
 

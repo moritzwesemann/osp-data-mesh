@@ -18,7 +18,7 @@ import { type Column, Table } from '../components/Table.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import type { ApiOutput } from '../lib/api.ts';
-import { codeText } from '../lib/errors.ts';
+import { codeText, revocationReasonText } from '../lib/errors.ts';
 import { usePurposeLabel } from '../lib/purposes.ts';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
 import { useSession } from '../lib/session.tsx';
@@ -175,7 +175,7 @@ function ReleaseView({ release: r }: { release: ReleaseWithHistory }) {
       {r.status === 'revoked' && (
         <div className="alert alert-info">
           <p className="alert-title">{t('releases.revokedTitle')}</p>
-          {r.revocationReason && <p>{r.revocationReason}</p>}
+          {r.revocationReason && <p>{revocationReasonText(i, r.revocationReason)}</p>}
         </div>
       )}
 
@@ -225,7 +225,10 @@ function ReleaseView({ release: r }: { release: ReleaseWithHistory }) {
             ...(r.revokedAt
               ? ([
                   [t('releases.revokedAt'), <DateTime key="v" value={r.revokedAt} />],
-                  [t('releases.revocationReason'), r.revocationReason ?? t('common.empty')],
+                  [
+                    t('releases.revocationReason'),
+                    r.revocationReason ? revocationReasonText(i, r.revocationReason) : t('common.empty'),
+                  ],
                 ] as [string, ReactNode][])
               : []),
           ]}

@@ -13,6 +13,7 @@ Zweck. Es gibt keine zentrale Datenhaltung und keine Gesamtsynchronisation.
 
 | Sie sind … | Lesen Sie zuerst |
 |---|---|
+| Anwenderinnen und Anwender (Datenverantwortliche, Trainerteam, Analyse, Revision) | [Oberfläche](oberflaeche.md) (Rundgang mit Bildschirmfotos), [Rollen und Rechte](rollen.md) |
 | IT-Betrieb eines OSP (Installation, Betrieb, Updates) | [Installation](installation.md), [Betrieb](betrieb.md), [Sicherheitskonzept](sicherheit.md) |
 | Datenschutzbeauftragte, Revision | [Datenschutzkonzept](datenschutz.md), [Widerruf und Weitergabe](widerruf-und-weitergabe.md), [Rollen und Rechte](rollen.md), [Freigaberegeln](freigaberegeln.md) |
 | Datenverantwortliche (Data Stewards) | [Freigaberegeln](freigaberegeln.md), [Datenmodell](datenmodell.md), [Rollen und Rechte](rollen.md) |
@@ -47,6 +48,7 @@ Zweck. Es gibt keine zentrale Datenhaltung und keine Gesamtsynchronisation.
 
 ## Schnellzugriff
 
+- Rundgang durch die Oberfläche: [Oberfläche](oberflaeche.md)
 - Neuinstallation: [Installation](installation.md)
 - Sicherung und Wiederherstellung: [Betrieb › Sicherungen](betrieb.md#sicherungen)
 - Sicherheitsvorfall: [Incident Response](incident-response.md)

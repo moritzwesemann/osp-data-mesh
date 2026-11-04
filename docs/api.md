@@ -34,6 +34,15 @@ In der Oberfläche unter *Konto › API-Tokens* (Name und Gültigkeit angeben). 
 angezeigt** und ist wie ein Passwort zu behandeln; gespeichert wird nur ein Hash. Widerruf jederzeit an
 derselben Stelle.
 
+- Tokens lassen sich **nur mit einer Sitzung** (Anmeldung mit Passwort) erzeugen. Ein Aufruf von
+  `POST /api/v1/auth/tokens` mit einem Token wird mit 403 `forbidden`, Grund `session_required`,
+  abgewiesen (und protokolliert): Ein Token kann keine weiteren Tokens erzeugen.
+- **Alle Tokens einer Person werden widerrufen**, wenn sie ihr Passwort ändert, die Administration es
+  zurücksetzt oder das Konto deaktiviert (je Token Audit-Eintrag `token.revoke` mit Grund
+  `password_change`, `password_reset` bzw. `user_deactivated`). Danach liefert das Token 401
+  `unauthenticated`; Werkzeuge brauchen ein neues Token. Auch nach einer Reaktivierung des Kontos
+  bleiben widerrufene Tokens ungültig.
+
 Alternativ per API mit einer Sitzung:
 
 ```sh
@@ -97,12 +106,15 @@ Einwilligungen). JSON-Antwort:
                { "key": "jump_height_cm", "label": "Sprunghöhe", "type": "number", "unit": "cm" },
                { "key": "measured_at", "label": "Messdatum", "type": "date" } ],
   "rows": [ { "sport": "Leichtathletik", "jump_height_cm": 41.5, "measured_at": "2026-09-14" } ],
-  "stats": { "total": 120, "returned": 96, "excludedByFilter": 20, "excludedByTime": 4, "excludedByConsent": 0 }
+  "stats": { "returned": 1 }
 }
 ```
 
-`stats` zeigt, wie viele Zeilen das Produkt hat und wie viele durch Zeilenbeschränkung, Zeitraum oder
-fehlende Einwilligung ausgeschlossen wurden. XML-Aufbau:
+`stats.returned` ist die Zahl der gelieferten Zeilen. Empfänger erfahren bewusst **nichts** über Zeilen
+außerhalb der Freigabe (Gesamtzahl, Ausschlüsse durch Zeilenbeschränkung, Zeitraum oder fehlende
+Einwilligung) – daraus ließe sich etwa ablesen, für wie viele Personen keine Einwilligung vorliegt. Diese
+Zahlen sehen nur Datenverantwortliche in den Vorschauen (`products.preview`, `releases.preview`; siehe
+[Freigaberegeln](freigaberegeln.md#zeilenregeln)). XML-Aufbau:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -117,9 +129,11 @@ fehlende Einwilligung ausgeschlossen wurden. XML-Aufbau:
 ```
 
 Leere Werte: CSV leeres Feld, JSON `null`, XML `<spalte nil="true"/>`. Textwerte, die mit `=`, `+`, `-`,
-`@` beginnen, werden in CSV mit `'` geschützt (keine Formelausführung in Tabellenkalkulationen).
+`@`, Tabulator oder Wagenrücklauf beginnen, werden in CSV mit `'` geschützt (keine Formelausführung in
+Tabellenkalkulationen).
 
-Jeder Abruf wird im Audit-Log protokolliert (`access.data`, mit Zweck und Zeilenzahl).
+Jeder Abruf wird im Audit-Log protokolliert (`access.data`, mit Zweck, Format, Spalten und Zeilenzahl;
+abgelehnte Abrufe mit `outcome = denied` und Ablehnungsgrund).
 
 ## Beispiel Python (requests, pandas)
 
@@ -195,17 +209,21 @@ Server-Log und im Antwort-Header `X-Request-Id`:
 
 | HTTP | Codes | Bedeutung |
 |---|---|---|
-| 400 | `validation_failed`, `password_too_weak`, `source_not_allowed` | Eingabe ungültig (`fields` nennt die Felder) |
-| 401 | `unauthenticated`, `invalid_credentials` | nicht angemeldet, Token ungültig/abgelaufen, Anmeldedaten falsch |
-| 403 | `forbidden`, `csrf_failed`, `access_denied` | Rolle fehlt (`reason: password_change_required` bei Initialpasswort), CSRF-Header fehlt, Freigabe verweigert (`reason` = Ablehnungsgrund, z. B. `purpose_not_allowed`, `expired`, `revoked`) |
+| 400 | `validation_failed`, `password_too_weak`, `source_not_allowed` | Eingabe ungültig (`fields` nennt die Felder); Passwort zu schwach (`reason`: `too_short`, `equals_email`, `equals_current`); API-Quelle nicht in `MESH_SOURCE_ALLOWED_HOSTS` bzw. Zugangsgeheimnis über unverschlüsseltes `http://` (`reason: insecure_http`, siehe [Sicherheit](sicherheit.md#schutz-vor-server-side-request-forgery-ssrf)) |
+| 401 | `unauthenticated`, `invalid_credentials` | nicht angemeldet, Sitzung abgelaufen, Token ungültig/abgelaufen/widerrufen; Anmeldung fehlgeschlagen – **einheitlich** für unbekannte E-Mail, falsches Passwort, inaktives und vorübergehend gesperrtes Konto (5 Fehlversuche in Folge → 15 Minuten); der tatsächliche Grund steht nur im Audit-Log |
+| 403 | `forbidden`, `csrf_failed`, `access_denied` | Rolle fehlt; `reason: password_change_required` (Initialpasswort noch nicht geändert); `reason: session_required` (Token erzeugen mit einem Token); CSRF-Header fehlt; Freigabe verweigert (`reason` = Ablehnungsgrund, z. B. `purpose_not_allowed`, `expired`, `revoked`) |
 | 404 | `not_found` | Objekt oder Route unbekannt |
-| 409 | `conflict`, `peer_untrusted` | Zustandskonflikt (z. B. doppelter Name), Partner nicht vertrauenswürdig |
-| 413 / 415 | `payload_too_large`, `unsupported_format` | Anfrage zu groß bzw. falscher Inhaltstyp |
-| 422 | `import_failed`, `release_invalid` | Import bzw. Freigabe fachlich ungültig |
-| 423 | `account_locked` | Konto vorübergehend gesperrt (5 Fehlversuche → 15 min) |
-| 429 | `rate_limited` | zu viele Anmeldeversuche |
-| 500 | `internal_error`, `backup_failed` | unerwarteter Fehler (Details nur im Server-Log, Request-ID angeben) |
+| 409 | `conflict`, `peer_untrusted` | Zustandskonflikt (`reason` z. B. `email_exists`, `slug_exists`, `last_admin`, `backup_running`), Partner nicht vertrauenswürdig |
+| 413 / 415 | `payload_too_large`, `unsupported_format` | Anfrage zu groß (API 1 MB, Uploads 20 MB; bei *Beispiel abrufen* auch `reason: too_many_columns`, mehr als 500 Spalten) bzw. falscher Inhaltstyp |
+| 422 | `import_failed`, `release_invalid` | Antwort einer API-Quelle unbrauchbar (*Beispiel abrufen*, `reason` z. B. `invalid_response`, `too_many_rows`) bzw. Freigabe fachlich ungültig (`fields`) |
+| 429 | `rate_limited` | zu viele Anmeldeversuche (30 je IP-Adresse in 5 Minuten) bzw. Passwortwechsel (30 je Person in 5 Minuten) |
+| 500 | `internal_error`, `backup_failed` | unerwarteter Fehler (Details nur im Server-Log, Request-ID angeben) bzw. Sicherung fehlgeschlagen |
 | 502 | `source_unreachable`, `peer_unreachable`, `peer_rejected`, `signature_invalid` | Quelle oder Partner nicht erreichbar bzw. Antwort ungültig |
+
+Der Code `account_locked` (423) steht aus Kompatibilitätsgründen noch in der festen Liste `ERROR_CODES`,
+wird aber **nicht mehr geliefert**: Ein gesperrtes Konto erhält bei der Anmeldung dieselbe Antwort 401
+`invalid_credentials` wie ein falsches Passwort, damit Außenstehende weder Existenz noch Sperre eines
+Kontos erkennen. Gesperrte Konten sieht die Administration unter *Benutzer* (`lockedUntil`).
 
 Die Ablehnungsgründe einer Freigabeprüfung (`reason`) sind in den
 [Freigaberegeln](freigaberegeln.md#prüfreihenfolge-ablehnungsgründe) erklärt.

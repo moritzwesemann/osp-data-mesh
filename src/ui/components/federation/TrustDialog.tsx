@@ -7,6 +7,7 @@ import { Dialog } from '../Dialog.tsx';
 import { ErrorMessage } from '../ErrorMessage.tsx';
 import { Checkbox, FormField } from '../FormField.tsx';
 import { useToast } from '../Toast.tsx';
+import { FingerprintBox } from './FingerprintBox.tsx';
 import { normalizeFingerprint } from './fingerprint.ts';
 
 /**
@@ -65,7 +66,7 @@ export function TrustDialog({ peer, onClose }: { peer: Peer | null; onClose: () 
           <p>{t('partners.trustIntro')}</p>
           <div className="stack-sm">
             <span className="field-label">{t('partners.storedFingerprint')}</span>
-            <p className="fingerprint">{peer.fingerprint}</p>
+            <FingerprintBox value={peer.fingerprint} />
             <p className="small muted">
               {peer.displayName} · <span className="mono">{peer.nodeId}</span> ·{' '}
               <span className="break">{peer.baseUrl}</span>

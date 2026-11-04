@@ -176,7 +176,8 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
     },
   });
   const preview = useApiMutation('releases.preview');
-  const fe = useFieldErrors(clientError, create.error);
+  // Feldfehler aus Formularprüfung, Erteilen und Vorschau (Vorschau: Pfade "body.release.…")
+  const fe = useFieldErrors(clientError, create.error, previewError, preview.error);
 
   const productData = product.data && product.data.id === form.productId ? product.data : null;
   const filterColumns = filterColumnsOf(productData);
@@ -196,6 +197,9 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
   const update = (patch: Partial<FormState>) => {
     setForm((f) => ({ ...f, ...patch }));
     setClientError(null);
+    // Fehler einer früheren Prüfung gelten nach einer Änderung nicht mehr
+    setPreviewError(null);
+    if (preview.isError) preview.reset();
   };
 
   const draft = {
@@ -465,7 +469,11 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
                   <Checkbox
                     key={c.key}
                     label={c.unit ? `${c.label} (${c.unit})` : c.label}
-                    hint={t('releases.columnMeta', { key: c.key, type: t(`fieldTypes.${c.type}`) })}
+                    hint={
+                      <>
+                        <span className="mono">{c.key}</span> · {t(`fieldTypes.${c.type}`)}
+                      </>
+                    }
                     checked={form.columns.includes(c.key)}
                     onChange={(on) => toggleColumn(c.key, on)}
                   />
@@ -631,8 +639,8 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
               </button>
             </div>
           )}
-          {previewError && <ErrorMessage error={previewError} />}
-          {preview.error && !previewError && <ErrorMessage error={preview.error} />}
+          {previewError && <ErrorMessage error={previewError} showFields={false} />}
+          {preview.error && !previewError && <ErrorMessage error={preview.error} showFields={false} />}
           {preview.data && !preview.isPending && !preview.error && (
             <ReleasePreviewResult result={preview.data} stale={previewStale} />
           )}
@@ -643,8 +651,9 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
             <p>{t('releases.invalidConditions')}</p>
           </div>
         )}
-        {clientError && <ErrorMessage error={clientError} />}
-        {create.error && <ErrorMessage error={create.error} />}
+        {/* Feldfehler stehen an den Feldern; hier nur die Gesamtmeldung */}
+        {clientError && <ErrorMessage error={clientError} showFields={false} />}
+        {create.error && <ErrorMessage error={create.error} showFields={false} />}
         <FormActions>
           <button type="submit" className="btn btn-primary" disabled={create.isPending}>
             {create.isPending ? t('releases.submitting') : t('releases.submit')}

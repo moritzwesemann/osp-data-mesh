@@ -12,7 +12,7 @@ werden. Maßgeblich im Detail sind die SQL-Dateien und der HTTP-Vertrag (`src/sh
 |---|---|---|
 | `public` | alle Fachtabellen, Audit-Log, Migrationshistorie `schema_migration` | `mesh_owner` (Eigentümer), `mesh_app` |
 | `bi` | je BI-Freigabe eine typisierte View (Name = Kürzel des Datenprodukts) | `mesh_app` legt an, `mesh_bi` liest |
-| `bi_data` | materialisierte Tabellen `r_<freigabe>` hinter den Views (mit verborgener Spalte `_subject`) | nur `mesh_app` |
+| `bi_data` | materialisierte Tabellen `r_<12 Hex-Zeichen der Freigabe-ID>` hinter den Views, mit verborgener Personenspalte `_subject` (nie in der View) | nur `mesh_app` |
 
 ## Konventionen
 
@@ -61,7 +61,7 @@ werden. Maßgeblich im Detail sind die SQL-Dateien und der HTTP-Vertrag (`src/sh
 |---|---|---|
 | `node_identity` | Identität des Knotens, genau eine Zeile (`id = 1`) | `node_id` (unveränderlich), `display_name`, `base_url`, `public_key` (Ed25519, base64), `private_key_enc` und `pseudonym_secret_enc` (mit Master-Key verschlüsselt), `previous_public_key` (für künftige Schlüsselrotation), `key_created_at` |
 | `setting` | Schlüssel-Wert-Einstellungen | `key`, `value` (JSONB) |
-| `app_error` | Protokoll unerwarteter Fehler (für *System › Fehler*) | `at`, `request_id`, `method`, `path`, `status`, `code`, `message`, `user_id` |
+| `app_error` | Protokoll unerwarteter Fehler (für *System › Letzte Fehler*) | `at`, `request_id`, `method`, `path`, `status`, `code`, `message`, `user_id` |
 | `backup_run` | Sicherungsläufe | `started_at`, `finished_at`, `status` (`running`/`ok`/`failed`), `file_name`, `size_bytes`, `sha256`, `trigger` (`manual`/`schedule`/`cli`), `error_code` |
 | `schema_migration` | angewandte Migrationen | `version`, `name`, `sha256` (Prüfsumme; Änderung einer angewandten Datei wird erkannt), `applied_at` |
 
@@ -83,7 +83,10 @@ werden. Maßgeblich im Detail sind die SQL-Dateien und der HTTP-Vertrag (`src/sh
 | `purpose` | Zweck-Vokabular der Zweckbindung (6 vorbelegte Zwecke) | `code`, `label_de`, `label_en`, `description`, `active` |
 
 Löschen einer Person entfernt per `on delete cascade` Kennungen, Einwilligungen und alle
-`dataset_record`-Einträge.
+`dataset_record`-Einträge. In derselben Transaktion (Ereignis `athlete.deleted`) entfernt der Knoten die
+Person außerdem aus offenen Importläufen (vorgemerkte Zeilen, Vorschauzeilen, Rohwerte im
+Fehlerprotokoll; Audit `import.erase`) und aus den BI-Tabellen (Spalte `_subject`); Partner, die Daten
+der Person erhalten haben, erhalten eine Löschmitteilung über das Ausgangspostfach.
 
 ### Datensätze, Quellen, Importe
 
@@ -92,8 +95,19 @@ Löschen einer Person entfernt per `on delete cascade` Kennungen, Einwilligungen
 | `dataset` | Struktur einer Datenart (z. B. Sprungkraft) | `slug`, `name`, `category` (`master`, `performance`, `training`, `health`, `competition`, `other`), `special_category` (Art. 9; bei `health` erzwungen), `shareability` (`internal`/`on_request`), `version`, `fields` (JSONB, `FieldDef[]`), `key_fields` (fachlicher Schlüssel), `observed_at_field` (Messdatum), `owner_contact` |
 | `dataset_record` | ein Eintrag (Messung) einer Person | `dataset_id`, `athlete_id`, `record_key` (aus `key_fields`), `observed_at`, `data` (JSONB: Feldname → Wert), `import_run_id`; eindeutig je (Datensatz, Person, Schlüssel) → erneuter Import aktualisiert statt zu duplizieren |
 | `connector` | wiederverwendbare Quelle mit Zuordnung | `slug`, `kind` (`csv_upload`/`http_api`), `target_type` (`athletes`/`dataset`), `target_dataset_id`, `config` (JSONB, CSV- bzw. API-Einstellungen ohne Geheimnisse), `mapping` (JSONB, `FieldMapping[]`), `athlete_match` (Zuordnung über Name+Geburtsdatum oder Kennung), `secret_enc` (verschlüsseltes API-Geheimnis), `on_error` (`skip_row`/`abort`), `version`, `active` |
-| `import_run` | ein Importlauf (Vorschau → Übernahme oder Verwerfen) | `connector_id`, `connector_version`, `status` (`previewed`, `committed`, `discarded`, `failed`), `source_name`, `source_sha256`, `source_size`, `staged` (geprüfte Zeilen bis zur Übernahme), `preview`, Zähler (`total_rows`, `valid_rows`, `error_rows`, `warning_rows`, `inserted_rows`, `updated_rows`), `failure_code` |
-| `import_error` | Fehlerprotokoll je Zeile und Feld | `run_id`, `row_number` (1-basiert ohne Kopfzeile), `field`, `code` (übersetzbarer Fehlercode), `severity` (`error`/`warning`), `raw_value`, `params` |
+| `import_run` | ein Importlauf (Vorschau → Übernahme oder Verwerfen) | `connector_id`, `connector_version`, `status` (`previewed`, `committed`, `discarded`, `failed`), `source_name`, `source_sha256`, `source_size`, `staged` (JSONB `{ rows, subjects }`: vorgemerkte, geprüfte Zeilen und je Zeile der Personenbezug, siehe unten; nur im Status `previewed`, danach `null`), `preview` (JSONB `{ sourceColumns, rows }`, höchstens 50 Zeilen; `rows` wird bei Übernahme, Verwerfen und Ablauf geleert), Zähler (`total_rows`, `valid_rows`, `error_rows`, `warning_rows`, `inserted_rows`, `updated_rows`), `failure_code` |
+| `import_error` | Fehlerprotokoll je Zeile und Feld | `run_id`, `row_number` (1-basiert ohne Kopfzeile), `field`, `code` (übersetzbarer Fehlercode), `severity` (`error`/`warning`), `raw_value` (Rohwert, höchstens 500 Zeichen; nur solange der Lauf im Status `previewed` ist, danach `null`; bei Zuordnungsfehlern nie Name, Geburtsdatum oder Kennung), `params` |
+
+**Personenbezogene Daten in Importläufen** gibt es nur, solange ein Lauf im Status `previewed` ist:
+`staged`, `preview.rows` und `import_error.raw_value`. Übernahme, Verwerfen und der Ablauf nach 7 Tagen
+(Hintergrundaufgabe, stündlich, Audit `import.expire`) leeren sie; danach bleiben Zähler, Prüfsumme,
+Spaltennamen und das Fehlerprotokoll aus Zeile, Feld und Code. Damit die Löschung einer Person ihre Zeilen
+auch in offenen Vorschauen findet, enthält `staged.subjects` je Quellzeile den **Personenbezug**
+`{ r, a?, k?, e? }`: `r` = Zeilennummer, `a` = ID der zugeordneten Person, sonst `k` = gekürzter SHA-256
+(32 Hex-Zeichen) des natürlichen Schlüssels (Nachname, Vorname, Geburtsdatum) und `e` = gekürzter
+SHA-256 von Quellsystem und Kennung – keine Klartexte. Läufe aus älteren Versionen speichern in `staged`
+nur das Array der Zeilen; sie werden weiterhin gelesen, bei einer Löschung werden ihre Vorschau und alle
+Rohwerte vorsorglich vollständig geleert.
 
 ### Datenprodukte und Freigaben
 
@@ -101,7 +115,7 @@ Löschen einer Person entfernt per `on delete cascade` Kennungen, Einwilligungen
 |---|---|---|
 | `data_product` | definierte Sicht auf einen Datensatz oder den Athletenkern | `slug` (zugleich Name der BI-View), `name`, `source_type` (`athletes`/`dataset`), `dataset_id`, `columns` (JSONB, `ProductColumn[]`), `filters` (JSONB, `Condition[]`, Basisfilter), `shareability`, `version` (steigt bei Änderung von Spalten/Filtern), `status` (`active`/`retired`) |
 | `data_release` | Freigabe eines Produkts für genau einen Empfänger; unveränderlich (Änderung = neue Freigabe) | `product_id`, `product_version` (Version bei Erteilung), `recipient_type` (`role`/`peer`), `recipient_role` (`analyst`, `coach`, `data_steward`, `auditor`, `bi`), `recipient_peer_id`, `purposes` (Text-Array), `columns` (Text-Array), `row_filter` (JSONB, `Condition[]`), `data_from`/`data_until` (Datenzeitraum), `valid_from`/`valid_until` (Gültigkeit), `requires_consent`, `legal_basis`, `note`, `revoked_at`, `revoked_by`, `revocation_reason` |
-| `bi_view` | Zustand der BI-Materialisierung je BI-Freigabe | `release_id`, `view_name` (eindeutig unter nicht entfernten Views), `table_name`, `status` (`ok`/`error`/`dropped`), `row_count`, `error_code`, `refreshed_at` |
+| `bi_view` | Zustand der BI-Materialisierung je BI-Freigabe | `release_id` (Primärschlüssel), `view_name` (= Produktkürzel; eindeutig nur unter nicht entfernten Views: partieller eindeutiger Index `bi_view_view_name_live … where status <> 'dropped'`, Migration 0300 – nach Widerruf oder Ablauf kann eine neue BI-Freigabe desselben Produkts den Namen wieder belegen, die Zeile der entfernten View bleibt als Historie), `table_name` (eindeutig), `status` (`ok`/`error`/`dropped`), `row_count`, `error_code`, `refreshed_at` |
 
 ### Föderation
 
@@ -213,8 +227,11 @@ Vergleiche nur zwischen gleichen Typen (Zahl/Zahl, Text/Text inkl. ISO-Datum, Bo
 
 ## BI-Views
 
-Für jede gültige Freigabe an die Rolle `bi` legt der Server eine Tabelle `bi_data.r_<id>` mit den
-freigegebenen Zeilen und eine View `bi.<produktkürzel>` mit den freigegebenen Spalten an. Spaltentypen:
+Für jede gültige Freigabe an die Rolle `bi` legt der Server eine Tabelle `bi_data.r_<id>` (`r_` und die
+ersten 12 Hex-Zeichen der Freigabe-ID) mit den freigegebenen Zeilen und eine View `bi.<produktkürzel>`
+mit den freigegebenen Spalten an. Die Tabelle enthält zusätzlich die **verborgene Spalte `_subject`**
+(`uuid`, ID der Person; leer bei Zeilen ohne Personenbezug), die nie in der View erscheint: Über sie
+entfernen Einwilligungswiderruf und Löschung die Zeilen einer Person in der auslösenden Transaktion. Spaltentypen:
 `string`/`enum` → `text`, `integer` → `bigint`, `number` → `double precision`, `date` → `date`, `datetime`
 → `timestamptz`, `boolean` → `boolean`. Jede View prüft bei jeder Abfrage, ob die Freigabe noch gilt
 (SQL-Zeitwächter, [ADR 0007](adr/0007-bi-materialisierung-zeitwaechter.md)). Siehe [BI-Anbindung](bi.md).
@@ -226,3 +243,6 @@ freigegebenen Zeilen und eine View `bi.<produktkürzel>` mit den freigegebenen S
 - **Nur vorwärts:** keine Rückwärtsmigrationen; Prüfsumme jeder angewandten Datei wird verglichen.
 - Nach jedem Lauf wird `grants.sql` (idempotent) ausgeführt.
 - Der Server meldet über `/readyz` (`schema: false`), wenn Migrationen fehlen.
+- Vorhandene Migrationen: `0001_core.sql` (Grundschema), `0300_bi_view_names.sql` (ersetzt die
+  Eindeutigkeit von `bi_view.view_name` durch den partiellen Index `bi_view_view_name_live` über nicht
+  entfernte Views).

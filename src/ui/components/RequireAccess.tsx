@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import type { RouteId } from '../../shared/contract/index.ts';
 import { useI18n } from '../i18n/index.tsx';
 import { useSession } from '../lib/session.tsx';
@@ -11,9 +12,12 @@ export function RequireAccess({ routes, children }: { routes: readonly RouteId[]
   if (routes.length > 0 && !session.canAny(routes)) {
     return (
       <div className="page">
-        <PageHeader title={t('common.noAccess')} />
+        <PageHeader title={t('common.noAccessTitle')} />
         <div className="alert alert-info">
           <p>{t('common.noAccess')}</p>
+          <p>
+            <Link to="/">{t('common.toOverview')}</Link>
+          </p>
         </div>
       </div>
     );

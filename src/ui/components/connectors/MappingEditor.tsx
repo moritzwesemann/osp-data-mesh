@@ -107,6 +107,11 @@ interface Props {
   invalidValueMaps: readonly string[];
   /** allgemeiner Fehler der Zuordnung (z. B. leer) */
   error?: string;
+  /**
+   * Zugang beim Beispielabruf einer HTTP-API: gespeichertes Geheimnis einer vorhandenen Quelle
+   * (connectorId; der Server nutzt dann deren gespeicherte Adresse) oder einmalig eingegebenes Geheimnis.
+   */
+  inspectAccess?: { connectorId: string } | { secret: string };
 }
 
 export function MappingEditor({
@@ -119,6 +124,7 @@ export function MappingEditor({
   rowError,
   invalidValueMaps,
   error,
+  inspectAccess,
 }: Props) {
   const i = useI18n();
   const { t } = i;
@@ -135,6 +141,10 @@ export function MappingEditor({
       fd.append('file', file);
     }
     fd.append('config', JSON.stringify(config));
+    if (kind === 'http_api' && inspectAccess) {
+      if ('connectorId' in inspectAccess) fd.append('connectorId', inspectAccess.connectorId);
+      else fd.append('secret', inspectAccess.secret);
+    }
     inspect.mutate(
       { body: fd },
       {
@@ -185,6 +195,9 @@ export function MappingEditor({
       <p className="field-hint">
         {kind === 'csv_upload' ? t('connectors.mappingIntroCsv') : t('connectors.mappingIntroApi')}
       </p>
+      {kind === 'http_api' && inspectAccess && 'connectorId' in inspectAccess && (
+        <p className="field-hint">{t('connectors.sampleUsesStored')}</p>
+      )}
 
       <div className="toolbar">
         {kind === 'csv_upload' && (

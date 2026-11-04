@@ -48,9 +48,20 @@ export interface Formatters {
   dateTime: (iso: string | null | undefined) => string;
   /** YYYY-MM-DD oder ISO-Zeitstempel → Datum */
   date: (value: string | null | undefined) => string;
-  number: (n: number | null | undefined, maxFractionDigits?: number) => string;
+  /** grouping=false für Werte wie Jahreszahlen (2001 statt 2.001) */
+  number: (n: number | null | undefined, maxFractionDigits?: number, grouping?: boolean) => string;
   bytes: (n: number | null | undefined) => string;
   duration: (seconds: number) => string;
+}
+
+/** Übersetzungsfunktionen einer Sprache (ohne React; fehlende Schlüssel fallen auf Deutsch zurück). */
+export function createTranslator(lang: Lang): Pick<I18n, 't' | 'tx' | 'fmt'> {
+  const dict = DICTS[lang];
+  const tx = (key: string, params?: Params) => {
+    const s = lookup(dict, key) ?? lookup(de, key);
+    return s === undefined ? undefined : interpolate(s, params, lang);
+  };
+  return { t: (key, params) => tx(key, params) ?? key, tx, fmt: makeFormatters(lang) };
 }
 
 export interface I18n {
@@ -107,10 +118,13 @@ function makeFormatters(lang: Lang): Formatters {
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? value : d.format(date);
     },
-    number: (n, maxFractionDigits = 3) =>
+    number: (n, maxFractionDigits = 3, grouping = true) =>
       n === null || n === undefined
         ? EMPTY
-        : new Intl.NumberFormat(locale, { maximumFractionDigits: maxFractionDigits }).format(n),
+        : new Intl.NumberFormat(locale, {
+            maximumFractionDigits: maxFractionDigits,
+            useGrouping: grouping,
+          }).format(n),
     bytes: (n) => {
       if (n === null || n === undefined) return EMPTY;
       const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -155,22 +169,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const value = useMemo<I18n>(() => {
-    const dict = DICTS[lang];
-    const tx = (key: string, params?: Params) => {
-      const s = lookup(dict, key) ?? lookup(de, key);
-      return s === undefined ? undefined : interpolate(s, params, lang);
-    };
-    return {
+  const value = useMemo<I18n>(
+    () => ({
       lang,
       locale: lang === 'de' ? 'de-DE' : 'en-GB',
       setLang,
       applyUserLocale,
-      t: (key, params) => tx(key, params) ?? key,
-      tx,
-      fmt: makeFormatters(lang),
-    };
-  }, [lang, setLang, applyUserLocale]);
+      ...createTranslator(lang),
+    }),
+    [lang, setLang, applyUserLocale],
+  );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

@@ -27,7 +27,7 @@ Beweise sichern, gesetzliche Meldefristen einhalten, Wiederholung verhindern.
 | Audit-Log: gehäufte `auth.login` mit `outcome = denied`, `rate_limited`, Kontosperren | Passwort-Angriffe |
 | Audit-Log: `access.forbidden`, `exchange.pull.denied`, ungewöhnliche `access.data`-Mengen oder Zeiten | Rechteausweitung, Datenabfluss, kompromittiertes Konto oder API-Token |
 | Austauschprotokoll: Abrufe eines Partners außerhalb üblicher Zeiten oder Zwecke | kompromittierter Partnerknoten |
-| Föderations-Ablehnungen `bad_signature`, `replay`, `unknown_node` im Audit-Log | gefälschte Anfragen, Angriff auf das Protokoll |
+| Föderations-Ablehnungen `federation.request.rejected` (`bad_signature`, `replay`, `unknown_node`, `rate_limited`) im Audit-Log – zusammengefasst: erste je Quelle und Code in 5 Minuten, `suppressed` = seither nur im Betriebslog; vollständig im Betriebslog (`federation request rejected`) | gefälschte Anfragen, Angriff auf das Protokoll, Überflutung |
 | `system.status`: `errors24h` steigt, `outbox.failed > 0`, fehlgeschlagene Sicherungen | Störung, Angriff auf Verfügbarkeit, ausbleibende Löschmitteilungen |
 | Betriebslog (JSON), Caddy-Zugriffslog, Firewall, Virenschutz/EDR | Angriffe von außen |
 | Meldungen von Nutzenden, Partnern, Betroffenen, Schwachstellenmeldungen (SBOM/`bun audit`) | alle Arten |
@@ -57,10 +57,10 @@ Gesundheitsdaten (Art. 9) erhöhen das Risiko für Betroffene; im Zweifel höher
 
 | Maßnahme | Vorgehen |
 |---|---|
-| Konto sperren | *Benutzer* → Konto deaktivieren; Passwort zurücksetzen beendet alle Sitzungen |
-| API-Token sperren | Person widerruft unter *Konto › API-Tokens*; bei fremden Konten: Konto deaktivieren (Tokens werden abgewiesen) |
-| Partner sperren | *Partner › Sperren* (Rolle `admin`): jeder Austausch mit dem Partner endet sofort |
-| Freigaben widerrufen | *Freigaben › Widerrufen* (Rolle `data_steward`); Partner erhalten Löschmitteilungen |
+| Konto sperren | *Benutzer* → Konto deaktivieren: beendet alle Sitzungen und **widerruft alle API-Tokens** der Person (Audit `token.revoke` je Token, auch nach einer Reaktivierung bleiben sie ungültig). Passwort zurücksetzen beendet ebenfalls alle Sitzungen und widerruft alle API-Tokens |
+| API-Token sperren | Person widerruft unter *Konto › API-Tokens*; bei fremden Konten: Konto deaktivieren oder Passwort zurücksetzen (beides widerruft alle Tokens der Person). Mit einem Token lassen sich keine weiteren Tokens erzeugen |
+| Partner sperren | *Partner › Sperren* (Rolle `admin`): Abrufe, Katalog und Verbindungstest des Partners werden sofort abgewiesen. **Mitteilungen** (`notice`) des gesperrten Partners werden weiter angenommen: Sie können nur Kopien löschen, die von ihm selbst stammen (Widerruf, Löschung), und eine Sperre soll Löschungen nicht verhindern. Eigene Widerrufsmitteilungen werden auch an gesperrte Partner zugestellt |
+| Freigaben widerrufen | *Freigaben › (Freigabe öffnen) › Freigabe widerrufen* (Rolle `data_steward`); Partner erhalten Löschmitteilungen |
 | Datenprodukt stilllegen | *Datenprodukte › Stilllegen*: alle Freigaben des Produkts enden |
 | Knoten vom Netz | Caddy stoppen (`systemctl stop caddy` bzw. `docker compose stop caddy`) – Oberfläche, API und Föderation sind dann nicht mehr erreichbar; der Knoten selbst kann für Analysen weiterlaufen |
 | Knoten stoppen | `systemctl stop osp-data-mesh` bzw. `docker compose stop node` |
@@ -72,8 +72,8 @@ Gesundheitsdaten (Art. 9) erhöhen das Risiko für Betroffene; im Zweifel höher
 
 | Kompromittiert | Maßnahmen |
 |---|---|
-| Benutzerpasswort / Sitzung | Passwort zurücksetzen (beendet Sitzungen), Tokens der Person widerrufen, Audit-Log der Person prüfen |
-| API-Token | Token widerrufen; Zugriffe mit dem Token im Audit-Log (`actorId`) prüfen |
+| Benutzerpasswort / Sitzung | Passwort zurücksetzen (beendet alle Sitzungen und widerruft alle API-Tokens der Person, auch solche, die mit einer gestohlenen Sitzung erzeugt wurden), Audit-Log der Person prüfen (`token.create`, `access.data`) |
+| API-Token | Token widerrufen (oder Passwort zurücksetzen, widerruft alle Tokens der Person); Zugriffe im Audit-Log prüfen: Akteur ist die Person, Datenabrufe tragen `details.via = token`; welches Token zuletzt benutzt wurde, zeigt `lastUsedAt` unter *Konto › API-Tokens* |
 | Datenbankpasswort | neue Passwörter, `bootstrap.sql` erneut ausführen, `MESH_DB_URL` anpassen, Neustart ([Betrieb](betrieb.md#datenbankpasswörter-ändern)) |
 | `MESH_MASTER_KEY` | Master-Key rotieren ([Betrieb](betrieb.md#master-key-rotieren)); da der private Knotenschlüssel und die Zugangsdaten der API-Quellen mit dem alten Schlüssel entschlüsselbar waren: Zugangsdaten der Quellen beim Quellsystem erneuern und neu setzen; Knotenschlüssel wie in der nächsten Zeile behandeln |
 | Ed25519-Knotenschlüssel | Partner sperren den Knoten sofort. Ein Schlüsselwechsel ist im Prototyp nicht als Kommando umgesetzt: neue Knotenidentität einrichten (Neuinstallation mit neuer `MESH_NODE_ID` und Datenübernahme per Sicherung mit `--allow-other-node` nach Abstimmung, oder Entwicklungsunterstützung anfordern), danach neue Knotenkarte und Fingerprint-Abgleich mit allen Partnern |

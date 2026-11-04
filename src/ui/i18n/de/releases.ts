@@ -48,7 +48,7 @@ export const releases = {
   rangeFrom: 'ab {from}',
   rangeUntil: 'bis {until}',
   rangeBoth: '{from} bis {until}',
-  validUntilExclusive: '{from} bis vor {until}',
+  validUntilExclusive: '{from} bis {until} (ausschließlich)',
   consent: 'Einwilligungspflicht',
   consentOn: 'Ja – nur Personen mit gültiger Einwilligung für Zweck und Kategorie',
   consentOff: 'Nein',
@@ -116,7 +116,6 @@ export const releases = {
   selectAll: 'Alle auswählen',
   selectNone: 'Keine',
   columnsSelected: '{count} von {total} ausgewählt',
-  columnMeta: '{key} · {type}',
   sectionRows: 'Zeilenbeschränkung',
   rowsHint:
     'Nur Zeilen, die alle Bedingungen erfüllen, werden geliefert. Bedingungen dürfen auch nicht freigegebene Spalten verwenden.',

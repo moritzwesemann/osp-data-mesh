@@ -14,9 +14,11 @@ export interface ErrorDescription {
   fields: { path: string; text: string }[];
 }
 
-/** Detailgrund (reason) übersetzen; Format "code" oder "code:argument". */
+/** Detailgrund (reason) übersetzen; Format "code", "code:argument" oder "http_<status>". */
 export function reasonText(i: Tr, reason: string | undefined | null): string | undefined {
   if (!reason) return undefined;
+  const http = /^http_(\d{3})$/.exec(reason);
+  if (http) return i.tx('reasons.http_status', { status: http[1] });
   const [code = reason, arg = '…'] = reason.split(':');
   const params = { column: arg, purpose: arg };
   return (
@@ -40,6 +42,28 @@ export function codeText(i: Tr, code: string | null | undefined): string {
     i.tx(`receivedReasons.${code}`) ??
     i.t('common.unknownCode', { code })
   );
+}
+
+/** true, wenn der Text wie ein maschinenlesbarer Code aussieht (snake_case, ohne Leerzeichen). */
+export function looksLikeCode(text: string): boolean {
+  return /^[a-z][a-z0-9_]*$/.test(text);
+}
+
+/**
+ * Grund für den Status einer empfangenen Kopie: Code (Widerruf durch das System, Ablauf, Neueinstufung)
+ * oder die Begründung, die die Datenverantwortung beim Datenhalter beim Widerruf eingegeben hat.
+ */
+export function receivedReasonText(i: Tr, reason: string): string {
+  const known = i.tx(`receivedReasons.${reason}`);
+  if (known) return known;
+  if (looksLikeCode(reason)) return codeText(i, reason);
+  return i.t('received.holderReason', { text: reason });
+}
+
+/** Widerrufsgrund einer Freigabe: Systemcode (Stilllegung, Neueinstufung) oder eingegebener Text. */
+export function revocationReasonText(i: Tr, reason: string): string {
+  if (!looksLikeCode(reason)) return reason;
+  return i.tx(`reasons.${reason}`) ?? reason;
 }
 
 export function fieldCodeText(i: Tr, code: string): string {
@@ -67,10 +91,25 @@ export function describeError(i: Tr, error: unknown): ErrorDescription {
   };
 }
 
-/** Feldfehler zu einem Pfad (mit oder ohne Präfix "body.") */
+const FIELD_PREFIXES = ['body.', '', 'query.', 'body.release.'] as const;
+
+/**
+ * Feldfehler zu einem Pfad (mit oder ohne Präfix "body.", bei der Freigabevorschau "body.release.").
+ * Fehler an Unterpfaden zählen mit: "columns" findet auch "body.columns.3".
+ */
 export function rawFieldError(error: unknown, path: string): string | undefined {
   if (!(error instanceof ApiError) || !error.fields) return undefined;
-  return error.fields[`body.${path}`] ?? error.fields[path] ?? error.fields[`query.${path}`];
+  const fields = error.fields;
+  for (const prefix of FIELD_PREFIXES) {
+    const exact = fields[`${prefix}${path}`];
+    if (exact) return exact;
+  }
+  for (const prefix of FIELD_PREFIXES) {
+    const below = `${prefix}${path}.`;
+    const key = Object.keys(fields).find((k) => k.startsWith(below));
+    if (key) return fields[key];
+  }
+  return undefined;
 }
 
 /** Liefert eine Funktion Pfad → übersetzter Feldfehler (oder undefined). */

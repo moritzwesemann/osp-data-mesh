@@ -200,12 +200,14 @@ export const enums = {
     inactive: 'Inaktiv',
     locked: 'Gesperrt',
   },
+  /** Gründe für den Status einer empfangenen Kopie (ReceivedProduct.statusReason) */
   receivedReasons: {
-    release_revoked: 'Die Freigabe wurde vom Datenhalter widerrufen.',
+    revoked: 'Die Freigabe wurde vom Datenhalter widerrufen.',
     product_retired: 'Das Datenprodukt wurde vom Datenhalter stillgelegt.',
-    consent_withdrawn: 'Einwilligungen wurden widerrufen; betroffene Zeilen wurden gelöscht.',
-    erasure: 'Personen wurden gelöscht; betroffene Zeilen wurden entfernt.',
+    dataset_reclassified:
+      'Der Datenhalter hat den zugrunde liegenden Datensatz neu eingestuft (besondere Kategorie oder nur intern); die Freigabe wurde deshalb widerrufen.',
+    product_inactive: 'Das Datenprodukt ist beim Datenhalter stillgelegt.',
+    release_expired: 'Die Freigabe ist abgelaufen; die Daten wurden gelöscht.',
     expired: 'Die Freigabe ist abgelaufen.',
-    deleted_locally: 'Die lokale Kopie wurde gelöscht.',
   },
 };

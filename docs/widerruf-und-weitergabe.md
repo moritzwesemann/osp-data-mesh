@@ -7,7 +7,9 @@ und wie mit der Weitergabe empfangener Daten umzugehen ist.
 ## Grundprinzipien
 
 1. **Der Datenhalter entscheidet.** Nur der Knoten, der eine Freigabe erteilt hat, kann sie widerrufen und
-   Löschmitteilungen dazu senden; Mitteilungen anderer Absender werden abgewiesen.
+   Löschmitteilungen dazu senden. Eine Mitteilung wirkt beim Empfänger ausschließlich auf Kopien, die von
+   ihrem (per Signatur geprüften) Absender stammen; Mitteilungen eines anderen Knotens zu derselben
+   Freigabe löschen nichts. Mitteilungen unbekannter oder noch nicht vertrauter Absender werden abgewiesen.
 2. **Widerruf wirkt sofort für künftige Zugriffe**: Der Policy Enforcement Point prüft bei jeder Ausgabe
    (lokal, BI, Partner) den aktuellen Stand.
 3. **Bereits übermittelte Kopien** werden über **signierte Mitteilungen** zur Löschung angewiesen; der
@@ -21,13 +23,14 @@ und wie mit der Weitergabe empfangener Daten umzugehen ist.
 
 | Auslöser | Wirkung beim Datenhalter | Wirkung in der BI-Schnittstelle | Wirkung beim Partner |
 |---|---|---|---|
-| **Freigabe widerrufen** (*Freigaben › Widerrufen*, mit Begründung) | keine weitere Ausgabe (`revoked`) | View wird in derselben Transaktion entfernt | Mitteilung `release_revoked` → Partner löscht **alle** Zeilen der Kopie, Status *widerrufen* |
-| **Datenprodukt stillgelegt** | alle Freigaben des Produkts enden (`product_inactive`) | Views entfallen | `release_revoked` (Grund `product_retired`) für jede bereits belieferte Partnerfreigabe |
+| **Freigabe widerrufen** (*Freigaben › Freigabe widerrufen*, mit Begründung) | keine weitere Ausgabe (`revoked`) | View wird in derselben Transaktion entfernt | Mitteilung `release_revoked` → Partner löscht **alle** Zeilen der Kopie, Status *widerrufen* |
+| **Datenprodukt stillgelegt** | alle Freigaben des Produkts enden (`product_inactive`) | Views entfallen | `release_revoked` (Grund `product_retired`) für jede nicht widerrufene Partnerfreigabe des Produkts |
 | **Datenprodukt geändert** (Spalten/Filter) | bestehende Freigaben *veraltet* (`product_changed`), liefern nichts mehr | Views liefern keine Zeilen mehr | keine Mitteilung; die zuletzt gelieferte Kopie bleibt bis zu Ablauf/Widerruf bestehen (siehe Hinweis unten) |
+| **Datensatz neu eingestuft** (*Datensätze › Bearbeiten*: Kategorie, besondere Kategorie, Teilbarkeit; ebenso anderes Beobachtungsdatum oder entfernte bzw. in Typ/Einheit geänderte Felder, die ein Produkt nutzt) | jedes betroffene aktive Produkt erhält in derselben Transaktion eine **neue Version** (Audit `product.update`, `cause: dataset_changed`) → alle seine Freigaben *veraltet* (`product_changed`); wird der Datensatz intern, wird auch das Produkt intern. Wird der Datensatz **neu besondere Kategorie**, wechselt ein Datensatz besonderer Kategorie die **Kategorie** oder wird er **intern**, werden zusätzlich alle nicht widerrufenen **Partnerfreigaben** der betroffenen Produkte widerrufen (Grund `dataset_reclassified`) | Views liefern sofort keine Zeilen mehr (Versionsprüfung in SQL) | nur in den drei genannten Fällen: `release_revoked` (Grund `dataset_reclassified`) je Partnerfreigabe → Partner löscht **alle** Zeilen der Kopie, denn diese Daten hätten nach der neuen Einstufung so nicht übermittelt werden dürfen; sonst wie *Datenprodukt geändert* |
 | **Freigabe abgelaufen** (`validUntil` erreicht) | keine weitere Ausgabe (`expired`) | View prüft die Gültigkeit bei jeder Abfrage in SQL → sofort leer | Partner kennt das Ablaufdatum und **löscht die Kopie selbstständig** (minütliche Prüfung), auch ohne Verbindung |
 | **Einwilligung widerrufen** (*Person › Einwilligung › Widerruf erfassen*) | Person entfällt sofort bei Freigaben mit Einwilligungsprüfung, deren Zweck und Kategorie der Widerruf erfasst | Zeilen der Person werden in derselben Transaktion entfernt | Mitteilung `subjects_withdrawn` (Grund `consent_withdrawn`) mit den Pseudonymen der Person je betroffener Freigabe → Partner löscht diese Zeilen |
 | **Person gelöscht** (Recht auf Löschung) | Person und alle zugehörigen Daten gelöscht | Zeilen entfernt | `subjects_withdrawn` (Grund `erasure`) an **alle** Partner, die Daten der Person erhalten haben |
-| **Partner gesperrt** | jede Anfrage des Partners abgewiesen | – | Partner erhält keine neuen Daten; bestehende Kopie: Freigaben zusätzlich widerrufen |
+| **Partner gesperrt** | jede Anfrage des Partners abgewiesen (Abruf, Katalog, Verbindungstest, `untrusted`) – **außer seinen Mitteilungen** (`notice`): Ist der gesperrte Partner selbst Datenhalter, löschen seine Widerrufe und Löschmitteilungen weiterhin die von ihm stammenden Kopien (Signatur wird geprüft) | – | Partner erhält keine neuen Daten; bestehende Kopie: Freigaben zusätzlich widerrufen – die Widerrufsmitteilung wird auch einem gesperrten Partner zugestellt |
 
 Welche Partner Daten einer Person erhalten haben, ergibt sich aus dem **Austauschprotokoll**: Der
 Datenhalter speichert bei jeder Lieferung die übermittelten Pseudonyme. Daraus werden die Mitteilungen
@@ -60,9 +63,16 @@ Status "zugestellt", Audit: exchange.notice.sent
 **Partner nicht erreichbar:** Die Mitteilung bleibt im Ausgangspostfach und wird mit wachsendem Abstand
 wiederholt (10 s, 20 s, 40 s … höchstens 1 h). Nach **20 Fehlversuchen** (rund 11–12 Stunden) erhält sie
 den Status *fehlgeschlagen* (Audit `exchange.notice.failed`) und erscheint unter *Partner ›
-Ausgangspostfach*; `system.status` zählt sie unter `outbox.failed`. *Jetzt zustellen* stößt ausstehende
-Mitteilungen sofort an. Endgültig fehlgeschlagene Mitteilungen werden im Prototyp **nicht automatisch
-erneut** versucht (offener Punkt); dann gilt das Vorgehen „Partner reagiert nicht“.
+Ausgangspostfach*; `system.status` zählt sie unter `outbox.failed`. Der Hintergrundlauf versucht
+fehlgeschlagene Mitteilungen **nicht automatisch** erneut.
+
+*Jetzt zustellen* (*Partner › Ausgangspostfach*, Rolle `admin`; per REST-API `POST /api/v1/outbox/flush`
+auch `data_steward`) setzt alle fehlgeschlagenen
+Mitteilungen wieder auf *ausstehend* (Audit `outbox.requeue` mit der Anzahl) und stellt sie zusammen mit
+den übrigen fälligen Mitteilungen sofort zu – z. B. nachdem die Verbindung zum Partner wiederhergestellt
+ist. Die **Zahl der Versuche bleibt erhalten**: Scheitert auch dieser Versuch, ist die Mitteilung sofort
+wieder *fehlgeschlagen* (keine neue Wiederholungsreihe). Bleibt die Zustellung erfolglos, gilt das
+Vorgehen „Partner reagiert nicht“.
 
 Unabhängig davon kann der Partner nach einem Widerruf keine neuen Daten mehr abrufen. Versucht er es, wird
 die Anfrage abgelehnt (`revoked`, `expired` oder `product_inactive`), und der Partnerknoten löscht seine
@@ -91,7 +101,8 @@ Datenhalter steuerbar, und der Dritte erhält eigene, nicht verknüpfbare Pseudo
 Technisch kann ein Knoten Daten in einem fremden Knoten nicht löschen. Vorgehen:
 
 1. **Feststellen:** Mitteilung im Ausgangspostfach *fehlgeschlagen* oder ohne Bestätigung; der letzte
-   Kontakt (`lastSeenAt`, `lastError`) steht beim Partner.
+   Kontakt (`lastSeenAt`, `lastError`) steht beim Partner. Nach Klärung der Verbindung *Jetzt zustellen*
+   erneut auslösen.
 2. **Kontakt** mit der Partner-Administration (Telefon/E-Mail aus der Austauschvereinbarung), Löschung
    anfordern und **schriftlich bestätigen lassen** (Löschprotokoll des Partners: Audit-Eintrag
    `exchange.notice.received` bzw. `received.delete`).

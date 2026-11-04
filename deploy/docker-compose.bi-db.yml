@@ -30,5 +30,13 @@ services:
     # Das Netz "backend" ist intern (ohne veröffentlichte Ports); für den BI-Zugang ein eigenes Netz
     networks: [backend, bi_access]
 
+# Feste Subnetze, auf die sich deploy/postgres/pg_hba.bi.conf bezieht (bei Änderung dort anpassen)
 networks:
-  bi_access: {}
+  backend:
+    ipam:
+      config:
+        - subnet: 172.31.251.0/24
+  bi_access:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24

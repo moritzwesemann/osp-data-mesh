@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import type { RouteId } from '../../shared/contract/index.ts';
+import { FingerprintBox } from '../components/federation/FingerprintBox.tsx';
 import { DescriptionList } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView, Skeleton } from '../components/QueryState.tsx';
@@ -56,7 +57,7 @@ export function Overview() {
           />
           <div className="stack-sm">
             <span className="field-label">{t('common.fingerprint')}</span>
-            <div className="fingerprint">{s.node.fingerprint}</div>
+            <FingerprintBox value={s.node.fingerprint} />
             <p className="field-hint">{t('overview.fingerprintHint')}</p>
           </div>
         </Section>

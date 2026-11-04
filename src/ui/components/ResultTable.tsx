@@ -10,7 +10,11 @@ export function formatScalar(
 ): string {
   if (value === null || value === undefined || value === '') return i.t('common.empty');
   if (typeof value === 'boolean') return value ? i.t('common.yes') : i.t('common.no');
-  if (typeof value === 'number') return i.fmt.number(value, 6);
+  // Ganzzahlige Datenwerte (Jahrgang, Kennzahlen) ohne Tausenderpunkt: 2001, nicht 2.001
+  if (typeof value === 'number') {
+    const integer = type ? type === 'integer' : Number.isInteger(value);
+    return i.fmt.number(value, 6, !integer);
+  }
   if (type === 'date') return i.fmt.date(value);
   if (type === 'datetime') return i.fmt.dateTime(value);
   return value;

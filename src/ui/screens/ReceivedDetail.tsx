@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import type { ExportFormat } from '../../shared/contract/index.ts';
+import type { ColumnDef, ExportFormat, Scalar } from '../../shared/contract/index.ts';
 import { ConfirmDialog } from '../components/Dialog.tsx';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { shortHash } from '../components/federation/fingerprint.ts';
@@ -12,8 +12,8 @@ import { SpecialCategoryBadge, StatusBadge } from '../components/StatusBadge.tsx
 import { type Column, Pagination, Table } from '../components/Table.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
-import { type ApiOutput, downloadFile } from '../lib/api.ts';
-import { codeText, describeError } from '../lib/errors.ts';
+import { type ApiOutput, api, downloadFile, saveJson } from '../lib/api.ts';
+import { codeText, describeError, receivedReasonText } from '../lib/errors.ts';
 import { usePurposeLabel } from '../lib/purposes.ts';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
 import { useSession } from '../lib/session.tsx';
@@ -22,6 +22,8 @@ type Detail = ApiOutput<'received.get'>;
 type HistoryEntry = Detail['history'][number];
 
 const PAGE_SIZE = 50;
+/** Seitengröße beim JSON-Export (Höchstwert der API) */
+const EXPORT_PAGE_SIZE = 500;
 const FORMATS: readonly ExportFormat[] = ['csv', 'json', 'xml'];
 
 /** /empfangen/:id – empfangenes Produkt mit Herkunftsnachweis, Zeilen, Export, erneutem Abruf. */
@@ -38,7 +40,7 @@ export function ReceivedDetail() {
 
 function ReceivedView({ detail: d }: { detail: Detail }) {
   const i = useI18n();
-  const { t, tx } = i;
+  const { t } = i;
   const session = useSession();
   const toast = useToast();
   const navigate = useNavigate();
@@ -57,9 +59,7 @@ function ReceivedView({ detail: d }: { detail: Detail }) {
     },
   });
 
-  const reason = d.statusReason
-    ? (tx(`receivedReasons.${d.statusReason}`) ?? codeText(i, d.statusReason))
-    : null;
+  const reason = d.statusReason ? receivedReasonText(i, d.statusReason) : null;
   const p = d.provenance;
 
   return (
@@ -213,12 +213,36 @@ function RowsSection({ detail: d }: { detail: Detail }) {
 
   const exportAs = async (format: ExportFormat) => {
     setExporting(format);
+    const baseName = `${d.remoteProductSlug}_${d.peer.nodeId}`;
     try {
-      await downloadFile(
-        'received.rows',
-        { params: { id: d.id }, query: { format } },
-        `${d.remoteProductSlug}.${format}`,
-      );
+      if (format === 'json') {
+        // format=json liefert seitenweise (API für Werkzeuge); für die Datei alle Seiten einsammeln.
+        // Gleicher Aufbau wie die CSV/XML-Dateien des Servers: { meta, columns, rows }.
+        const all: Record<string, Scalar>[] = [];
+        let columns: ColumnDef[] = [];
+        for (let p = 1; ; p++) {
+          const res = await api('received.rows', {
+            params: { id: d.id },
+            query: { page: p, pageSize: EXPORT_PAGE_SIZE },
+          });
+          columns = res.columns;
+          all.push(...res.rows);
+          if (res.rows.length < EXPORT_PAGE_SIZE || all.length >= res.total) break;
+        }
+        const meta = {
+          name: d.title,
+          generatedAt: new Date().toISOString(),
+          source: d.peer.nodeId,
+          purpose: d.purpose,
+        };
+        saveJson({ meta, columns, rows: all }, `${baseName}.json`);
+      } else {
+        await downloadFile(
+          'received.rows',
+          { params: { id: d.id }, query: { format } },
+          `${baseName}.${format}`,
+        );
+      }
     } catch (e) {
       toast.error(describeError(i, e).message);
     } finally {

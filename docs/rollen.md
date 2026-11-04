@@ -25,6 +25,11 @@ liefert aber nur Daten, wenn eine gültige Freigabe für eine ihrer Rollen beste
 Bei erzwungenem Passwortwechsel (Initialpasswort) sind bis zur Änderung nur Anmelden, Abmelden, „Wer bin
 ich“ und der Passwortwechsel erlaubt.
 
+**API-Tokens** haben dieselben Rechte wie die Person (ihre aktuellen Rollen), mit einer Ausnahme: Neue
+Tokens lassen sich nur mit einer Sitzung (Anmeldung mit Passwort) erzeugen, nicht mit einem Token (403
+`forbidden`, Grund `session_required`). Passwortwechsel, Zurücksetzen und Deaktivierung widerrufen alle
+Tokens der Person ([REST-API](api.md#api-token-erzeugen)).
+
 ## Übersicht nach Bereichen
 
 ✓ = alle Vorgänge des Bereichs, ◐ = einzelne Vorgänge (siehe Detailtabellen), – = keine.

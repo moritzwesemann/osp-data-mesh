@@ -104,6 +104,8 @@ export const connectors: Messages['connectors'] = {
   sectionMapping: 'Field mapping',
   mappingIntroCsv: 'Upload a sample file to detect the columns, then assign a target field to each column.',
   mappingIntroApi: 'Fetch a sample or enter the source fields as dot paths, e.g. “athlete.name”.',
+  sampleUsesStored:
+    'The sample fetch uses the stored address and the stored access secret; a changed address applies only after saving.',
   sampleFile: 'Sample file (CSV)',
   analyze: 'Analyse file',
   fetchSample: 'Fetch sample',
@@ -192,7 +194,7 @@ export const connectors: Messages['connectors'] = {
   failure: 'Cause of failure',
   previewPending: 'This is a preview; data is stored only when you choose “Commit”.',
   statTotal: 'Total rows',
-  statValid: 'Valid',
+  statValid: 'Valid (incl. warnings)',
   statWarnings: 'With warning',
   statErrors: 'Invalid',
   statInserted: 'Newly created',

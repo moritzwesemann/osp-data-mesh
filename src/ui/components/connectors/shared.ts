@@ -108,8 +108,38 @@ export const ENCODING_LABELS: Record<CsvConfig['encoding'], string> = {
 };
 
 /** Prüfcode eines Imports übersetzen (Importcodes zuerst, dann allgemeine Codes). */
-export function importCodeText(i: Tr, code: string): string {
+export function importCodeText(i: Tr, code: string, params?: Record<string, string | number>): string {
+  // Person zwischen Vorschau und Übernahme gelöscht (Hinweis mit params.phase)
+  if (code === 'athlete_not_found' && params?.phase !== undefined) return i.t('importErrors.athlete_removed');
   return i.tx(`importErrors.${code}`) ?? codeText(i, code);
+}
+
+type Fmt = Pick<I18n, 'fmt'>['fmt'];
+
+/** Zusatzangaben eines Prüfeintrags lesbar machen, z. B. "Spalte: Geburtsdatum", "Felder: Nachname, Vorname". */
+export function importParamTexts(i: Tr & { fmt: Fmt }, params: Record<string, string | number>): string[] {
+  const value = (key: string, v: string | number): string => {
+    if (typeof v === 'number') return i.fmt.number(v);
+    switch (key) {
+      case 'phase':
+        return i.tx(`importParams.phases.${v}`) ?? v;
+      case 'reason':
+        return i.tx(`importParams.reasons.${v}`) ?? v;
+      case 'fields':
+        return v
+          .split(',')
+          .map((f) => targetLabel(i, f.trim(), null))
+          .join(', ');
+      case 'format':
+        return v === 'ISO_DATETIME' ? i.t('connectors.dateFormatIso') : v;
+      default:
+        return /^\d{4}-\d{2}-\d{2}$/.test(v) ? i.fmt.date(v) : v;
+    }
+  };
+  return Object.entries(params).map(([key, v]) => {
+    const label = i.tx(`importParams.${key}`) ?? key;
+    return `${label}: ${value(key, v)}`;
+  });
 }
 
 /** Connector-Definition exportieren und als JSON-Datei speichern. */

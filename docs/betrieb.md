@@ -28,12 +28,17 @@ Hintergrundaufgaben des Servers (abschaltbar mit `MESH_WORKERS=false`, z. B. auf
 
 - **Ausgangspostfach**: stellt signierte Mitteilungen (Widerrufe, Löschungen) an Partner zu; alle 5 s,
   Wiederholung mit wachsender Wartezeit (10 s, 20 s, 40 s … höchstens 1 h), nach 20 Fehlversuchen Status
-  *failed* (sichtbar unter *Partner › Ausgangspostfach*, erneut anstoßbar mit *Jetzt zustellen*).
+  *fehlgeschlagen* (sichtbar unter *Partner › Ausgangspostfach*). Der Hintergrundlauf versucht
+  fehlgeschlagene Mitteilungen nicht erneut; *Jetzt zustellen* (Oberfläche: Rolle `admin`; per REST-API
+  `outbox.flush` auch `data_steward`) setzt sie wieder auf *ausstehend* (Audit `outbox.requeue`) und
+  stellt sofort zu. Die Zahl der Versuche bleibt dabei erhalten: Scheitert auch dieser Versuch, ist die
+  Mitteilung sofort wieder *fehlgeschlagen*. Siehe [Widerruf und Weitergabe](widerruf-und-weitergabe.md#ablauf-einer-mitteilung).
 - **Aufbewahrung** (minütlich): empfangene Daten abgelaufener Freigaben löschen, Replay-Schutz-Einträge
   (Nonces) nach 15 Minuten entfernen.
 - **Ablauf von Importvorschauen** (beim Start und stündlich): nicht übernommene Vorschauen, die älter als
   7 Tage sind, werden verworfen (Status *verworfen*, vorgemerkte Zeilen, Vorschauzeilen und Rohwerte des
-  Fehlerprotokolls gelöscht; Audit-Eintrag `import.expire`).
+  Fehlerprotokolls gelöscht; Audit-Eintrag `import.expire`). Personenbezogene Rohwerte gibt es nur,
+  solange ein Lauf im Status *Vorschau* ist; Übernahme und Verwerfen löschen sie sofort.
 - **BI-Aktualisierung**: BI-Views nach Datenänderungen (entprellt) und periodisch (10 min) neu aufbauen.
 - **Sicherungen** nach `MESH_BACKUP_INTERVAL_HOURS` (Standard 24 h), Aufbewahrung der neuesten
   `MESH_BACKUP_RETENTION` (Standard 14) Sicherungen.
@@ -66,7 +71,7 @@ Der Server schreibt **JSON-Zeilen** nach stdout (`debug`, `info`) und stderr (`w
 - Felder: `time` (UTC), `level`, `msg`, `node`, je nach Ereignis `requestId`, `path`, `status`, `code`.
 - **Keine personenbezogenen Daten** in Logs (Konvention im Code); Fachvorgänge stehen im Audit-Log.
 - Jede Antwort trägt den Header `X-Request-Id`; Fehlermeldungen der Oberfläche zeigen dieselbe ID. Damit
-  lassen sich Meldungen von Nutzenden dem Log und der Tabelle `app_error` (*System › Fehler*) zuordnen.
+  lassen sich Meldungen von Nutzenden dem Log und der Tabelle `app_error` (*System › Letzte Fehler*) zuordnen.
 - Protokollstufe: `MESH_LOG_LEVEL` (`info` empfohlen; `debug` nur zur Fehlersuche).
 
 Anzeigen:
@@ -96,6 +101,37 @@ Empfohlene Alarme: `readyz` ≠ 200 länger als 2 min; keine erfolgreiche Sicher
 `outbox.failed > 0` (ein Partner hat Widerrufe/Löschungen nicht erhalten); `errors24h` stark steigend;
 `verify-audit` ≠ 0. Beispiel für einen externen Monitor: `curl -fsS https://<domain>/readyz`.
 
+### Föderationsendpunkt: Größen, Ratenbegrenzung, Protokollierung
+
+Der Endpunkt `/federation/v1/*` ist von außen erreichbar und daher gegen Überflutung geschützt
+(`src/server/modules/federation/guard.ts`, Einzelheiten im [Protokoll](protokoll.md#schutz-vor-überflutung)):
+
+- **Größen:** Anfragen von Partnern höchstens **2 MB** (angekündigte Länge sofort geprüft, der Body wird
+  erst nach der Absenderprüfung gelesen); Antworten von Partnern beim eigenen Abruf höchstens **50 MB**.
+- **Ratenbegrenzung:** Nach **60 abgelehnten Anfragen je IP-Adresse** in 5 Minuten (bzw. 60 je
+  behauptetem, nicht zugelassenem Absender) antwortet der Knoten mit **429** (`Retry-After: 300`), ohne
+  den Body zu lesen. Zugelassene Partner mit gültiger Signatur sperrt eine gefälschte Absenderkennung nicht
+  aus. Die Zähler liegen im Speicher des Prozesses und beginnen nach einem Neustart neu.
+- **Protokollierung:** Jede Ablehnung steht im Betriebslog (`federation request rejected`, mit `code`,
+  `ip`, `node`). Ins Audit-Log (`federation.request.rejected`, `outcome = denied`) kommt nur die **erste je
+  Quelle und Code in 5 Minuten**, insgesamt höchstens **20 je 5 Minuten**; der nächste auditierte Eintrag
+  derselben Quelle nennt in `suppressed` die Zahl der dazwischen nur geloggten Ablehnungen. Ist das
+  Budget erschöpft, steht einmal je Zeitfenster die Warnung `federation rejections: audit budget of this
+  window exhausted` im Log.
+- **Voraussetzung `MESH_TRUST_PROXY=true` hinter Caddy:** Die Begrenzung je IP-Adresse (ebenso die
+  Anmeldebegrenzung, 30 Versuche je IP-Adresse in 5 Minuten) braucht die echte Client-Adresse. Hinter
+  Caddy sieht der Server sonst nur die Adresse des Proxys: Dann teilen sich **alle** Partner und Nutzenden
+  einen Zähler, und ein einzelner Störer sperrt alle aus. Caddy ersetzt `X-Forwarded-For` durch die
+  tatsächliche Client-Adresse; der Server wertet den Header nur mit `MESH_TRUST_PROXY=true` aus (Docker:
+  fest gesetzt; nativ: `.env`). Umgekehrt `MESH_TRUST_PROXY=true` **nur** setzen, wenn der Server nicht
+  direkt erreichbar ist (`MESH_HOST=127.0.0.1` bzw. nur im Docker-Netz) – sonst könnten Clients ihre
+  Adresse fälschen und die Begrenzung umgehen.
+
+Hinweise im Betrieb: Viele `federation.request.rejected` mit `unknown_node` oder `bad_signature` von
+einer Adresse deuten auf Fehlkonfiguration eines Partners oder einen Angriff hin; Häufungen von
+`clock_skew` auf eine falsche Uhr (NTP prüfen). Ein echter Partner, der 429 erhält, wertet das als
+`peer_unreachable` und versucht es später erneut.
+
 ## Sicherungen
 
 **Inhalt:** vollständige Datenbank `mesh` (pg_dump im Custom-Format, ohne Eigentümer/Rechte), **ohne** die
@@ -111,7 +147,7 @@ sind Sicherungen deaktiviert.
 **Erstellen:**
 
 - automatisch alle `MESH_BACKUP_INTERVAL_HOURS` Stunden (0 = aus),
-- manuell in der Oberfläche *System › Sicherung jetzt erstellen* (Rolle `admin`),
+- manuell in der Oberfläche *System › Sicherung erstellen* (Rolle `admin`),
 - per Kommandozeile: nativ `bun --env-file=.env run cli backup`, Docker `docker compose run --rm cli backup`.
 
 Jede Sicherung erscheint unter *System › Sicherungen* und im Audit-Log (`backup.create`). Ältere als die
@@ -170,7 +206,7 @@ Exit-Code 0 nur, wenn die Audit-Kette danach intakt ist.
 3. Alle Personen müssen sich neu anmelden; API-Tokens, die nach der Sicherung erzeugt wurden, sind ungültig.
 4. Wurde der Master-Key seit der Sicherung rotiert, beim Start `MESH_MASTER_KEY_PREVIOUS` (alter Schlüssel)
    setzen und anschließend `rotate-master-key` ausführen (siehe unten).
-5. BI-Views werden beim Start neu aufgebaut (oder *BI › Neu aufbauen*).
+5. BI-Views werden beim Start neu aufgebaut (oder *System › BI-Schnittstelle › Views aktualisieren*).
 
 ### Wiederherstellungstest (vierteljährlich empfohlen)
 
@@ -300,6 +336,7 @@ Danach in *System* die Version prüfen. Weitere Updates:
 |---|---|---|
 | Empfangene Daten von Partnern | gelöscht bei Widerruf, Ablauf der Freigabe (minütliche Prüfung), Löschmitteilung oder manuell | – |
 | Replay-Schutz (Nonces) | 15 Minuten | – |
+| Zähler der Ratenbegrenzung (Anmeldung, Föderation) | nur im Speicher, 5-Minuten-Fenster; nach Neustart leer | – |
 | Sitzungen | Ablauf nach `MESH_SESSION_TTL_HOURS` | – |
 | Sicherungen | neueste `MESH_BACKUP_RETENTION` Dateien | Aufbewahrung ausgelagerter Kopien |
 | Athleten- und Messdaten | bis zur Löschung durch Datenverantwortliche | Löschfristen je Datensatz (z. B. Ende der Kaderzugehörigkeit + x Jahre), regelmäßige Prüfung |
@@ -325,8 +362,8 @@ erkennbar wird.
 
 - Ausgelegt auf das Mengengerüst eines OSP: einige tausend Personen, zehn- bis hunderttausende Messwerte je
   Datensatz. Freigaberegeln werden in TypeScript ausgewertet (siehe [ADR 0004](adr/0004-freigabelogik-reine-funktionen.md)).
-- Uploads bis 20 MB je CSV-Datei, Antworten im Partneraustausch bis 50 MB; der Datenabruf (`access.data`)
-  ist auf 100 000 Zeilen je Anfrage begrenzt.
+- Uploads bis 20 MB je CSV-Datei, sonstige API-Anfragen bis 1 MB; im Partneraustausch Anfragen bis 2 MB
+  und Antworten bis 50 MB; der Datenabruf (`access.data`) ist auf 100 000 Zeilen je Anfrage begrenzt.
 - Importe: höchstens 500 Spalten und 100 000 Zeilen (bzw. API-Einträge) je Lauf, API-Antworten insgesamt
   bis 50 MB; darüber schlägt der Lauf mit `too_many_columns` bzw. `too_many_rows` (bzw.
   `invalid_response`) fehl, ohne die Quelle weiter zu lesen.

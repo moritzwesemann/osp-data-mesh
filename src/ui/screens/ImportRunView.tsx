@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { importCodeText } from '../components/connectors/shared.ts';
+import { importCodeText, importParamTexts } from '../components/connectors/shared.ts';
 import { ConfirmDialog } from '../components/Dialog.tsx';
 import { DateTime, DescriptionList } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
@@ -117,7 +117,7 @@ function RunView({ detail }: { detail: RunDetail }) {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || run.validRows + run.warningRows === 0}
+                  disabled={busy || run.validRows === 0 /* validRows enthält Zeilen mit Warnung */}
                   onClick={() => {
                     commit.reset();
                     setConfirm('commit');
@@ -329,13 +329,11 @@ function ErrorLog({ runId }: { runId: string }) {
       key: 'code',
       header: t('connectors.colCheck'),
       render: (e) => {
-        const params = Object.entries(e.params);
+        const params = importParamTexts(i, e.params);
         return (
-          <span>
-            {importCodeText(i, e.code)}
-            {params.length > 0 && (
-              <span className="small muted mono"> ({params.map(([k, v]) => `${k}: ${v}`).join(', ')})</span>
-            )}
+          <span className="stack-sm">
+            <span>{importCodeText(i, e.code, e.params)}</span>
+            {params.length > 0 && <span className="small muted">{params.join(' · ')}</span>}
           </span>
         );
       },

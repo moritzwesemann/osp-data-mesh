@@ -22,6 +22,31 @@ type AuditEntry = ApiOutput<'audit.list'>['items'][number];
 type ExchangeEntry = ApiOutput<'exchange.log'>['items'][number];
 
 const PAGE_SIZE = 50;
+/** Objekttypen, die der Server ins Audit-Log schreibt (Filterauswahl) */
+const OBJECT_TYPES = [
+  'api_token',
+  'athlete',
+  'audit_log',
+  'backup_run',
+  'bi',
+  'connector',
+  'consent',
+  'dataset',
+  'discovery',
+  'federation_message',
+  'import_run',
+  'master_key',
+  'outbox',
+  'outbox_message',
+  'peer',
+  'product',
+  'received_product',
+  'release',
+  'remote_release',
+  'route',
+  'source',
+  'user',
+] as const;
 
 /** /audit – Audit-Log (Filter, Details, Integritätsprüfung, Export) und Austauschprotokoll. */
 export function Audit() {
@@ -172,11 +197,13 @@ function AuditLog() {
 
       <Section title={t('common.filter')}>
         <form className="toolbar" onSubmit={apply}>
-          <FormField label={t('audit.filterAction')} hint={t('audit.filterActionHint')}>
+          {/* Beispiel als Platzhalter: ein Hinweis unter dem Feld würde die Filterzeile verschieben */}
+          <FormField label={t('audit.filterAction')}>
             {(a) => (
               <input
                 {...a}
                 className="input"
+                placeholder={t('audit.filterActionHint')}
                 value={draft.action}
                 onChange={(e) => set('action', e.target.value)}
               />
@@ -201,12 +228,22 @@ function AuditLog() {
           </FormField>
           <FormField label={t('audit.filterObjectType')}>
             {(a) => (
-              <input
+              <select
                 {...a}
                 className="input"
                 value={draft.objectType}
                 onChange={(e) => set('objectType', e.target.value)}
-              />
+              >
+                <option value="">{t('audit.allObjectTypes')}</option>
+                {OBJECT_TYPES.map((o) => (
+                  <option key={o} value={o}>
+                    {t(`audit.objectTypes.${o}`)}
+                  </option>
+                ))}
+                {draft.objectType && !(OBJECT_TYPES as readonly string[]).includes(draft.objectType) && (
+                  <option value={draft.objectType}>{draft.objectType}</option>
+                )}
+              </select>
             )}
           </FormField>
           <FormField label={t('audit.filterObjectId')}>
@@ -281,7 +318,7 @@ function AuditTable({
   open: number | null;
   onToggle: (id: number) => void;
 }) {
-  const { t } = useI18n();
+  const { t, tx } = useI18n();
   return (
     <Table
       caption={t('audit.tabLog')}
@@ -308,7 +345,7 @@ function AuditTable({
           render: (r) =>
             r.objectType ? (
               <span className="stack-sm">
-                <span>{r.objectType}</span>
+                <span>{tx(`audit.objectTypes.${r.objectType}`) ?? r.objectType}</span>
                 {r.objectId && <span className="mono small muted break">{r.objectId}</span>}
               </span>
             ) : (
@@ -448,7 +485,13 @@ function ExchangeLog() {
                 {
                   key: 'product',
                   header: t('audit.product'),
-                  render: (r) => r.productRef ?? t('common.empty'),
+                  render: (r) => {
+                    if (!r.productRef) return t('common.empty');
+                    // Mitteilungen (Widerruf, Löschmitteilung) stehen als "notice:<art>" im Protokoll
+                    const notice = /^notice:(\w+)$/.exec(r.productRef)?.[1];
+                    const label = notice ? i.tx(`partners.messageTypes.${notice}`) : undefined;
+                    return label ?? <span className="mono small">{r.productRef}</span>;
+                  },
                 },
                 {
                   key: 'purpose',

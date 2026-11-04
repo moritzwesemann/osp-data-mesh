@@ -80,6 +80,7 @@ sudo chown -R osp-mesh:osp-mesh /opt/osp-data-mesh
 sudo -iu osp-mesh
 cd /opt/osp-data-mesh
 bun install --frozen-lockfile
+mkdir -m 700 backups     # Sicherungsverzeichnis (MESH_BACKUP_DIR=./backups); muss vor dem Start des Dienstes existieren
 ```
 
 Alle weiteren Befehle der Variante A laufen als Benutzer `osp-mesh` im Verzeichnis `/opt/osp-data-mesh`
@@ -89,6 +90,8 @@ Alle weiteren Befehle der Variante A laufen als Benutzer `osp-mesh` im Verzeichn
 
 Die Passwörter der drei Datenbankrollen und der Owner-Zugang kommen in eine eigene Datei `.env.owner`,
 die **nur** für Kommandozeilenaufrufe geladen wird. Der Server-Prozess erhält das Owner-Passwort nie.
+A3 bis A5 in **derselben Shell-Sitzung** ausführen: Die Variablen `OWNER_PW`, `APP_PW` und `BI_PW` werden
+weiter unten verwendet.
 
 ```sh
 OWNER_PW=$(openssl rand -hex 24); APP_PW=$(openssl rand -hex 24); BI_PW=$(openssl rand -hex 24)
@@ -114,7 +117,9 @@ bun --env-file=.env.owner run cli db-bootstrap \
   --superuser-url "postgres://postgres:$SU_PW@127.0.0.1:5432/postgres"
 ```
 
-Erwartete Ausgabe endet mit `Weiter / next: bun run migrate`. Das Superuser-Passwort in der
+Erwartete Ausgabe endet mit `Weiter / next: bun run migrate (MESH_DB_OWNER_URL)`. Ein anderer
+Datenbankname als `mesh` ist mit `--db <name>` möglich (nur `a-z`, `0-9`, `_`; dann auch die URLs in
+`.env` und `.env.owner` anpassen). Das Superuser-Passwort in der
 Passwortverwaltung ablegen (nur für Wartung).
 
 *Alternative ohne Superuser-Passwort:* `sudo -u postgres psql -v ON_ERROR_STOP=1 -v db_name=mesh
@@ -150,7 +155,8 @@ bun --env-file=.env run cli create-admin --email it@osp-beispiel.example.de --na
 ```
 
 `create-admin` gibt ein **Initialpasswort einmalig** aus; es muss bei der ersten Anmeldung geändert
-werden. (Soll ein eigenes Passwort gesetzt werden: vorher `export MESH_ADMIN_PASSWORD=…`, mind. 12 Zeichen.)
+werden. (Soll ein eigenes Passwort gesetzt werden: vorher `export MESH_ADMIN_PASSWORD=…`, mind. 12 Zeichen,
+nicht gleich der E-Mail-Adresse; dann entfällt der erzwungene Wechsel.)
 
 ### A7. Probestart
 
@@ -182,7 +188,7 @@ mesh.osp-beispiel.example.de {
 	tls it@osp-beispiel.example.de
 	encode zstd gzip
 	request_body {
-		max_size 60MB
+		max_size 25MB
 	}
 	reverse_proxy 127.0.0.1:4401
 }
@@ -193,7 +199,11 @@ sudo systemctl reload caddy
 ```
 
 Der Server lauscht nur auf `127.0.0.1` (`MESH_HOST`); von außen ist ausschließlich Caddy erreichbar.
-`MESH_TRUST_PROXY=true` (Standard in `.env.example`) übernimmt die Client-Adresse aus `X-Forwarded-For`.
+`MESH_TRUST_PROXY=true` (Standard in `.env.example`) übernimmt die Client-Adresse aus `X-Forwarded-For`,
+das Caddy mit der echten Client-Adresse setzt. Ohne diese Einstellung sähe der Server für alle Anfragen
+die Adresse von Caddy: Die Ratenbegrenzungen je IP-Adresse (Anmeldung, abgelehnte Föderationsanfragen)
+träfen dann alle Nutzenden und Partner gemeinsam (siehe
+[Betrieb](betrieb.md#föderationsendpunkt-größen-ratenbegrenzung-protokollierung)).
 Weiter mit [Prüfen](#prüfen).
 
 ---
@@ -271,10 +281,11 @@ Für Kopien außerhalb des Servers siehe [Betrieb › Sicherungen](betrieb.md#si
    Stelle importieren.
 
 2. **Anmeldung:** `https://mesh.osp-beispiel.example.de/` im Browser öffnen, mit der E-Mail-Adresse und
-   dem Initialpasswort anmelden. Die Oberfläche verlangt sofort ein neues Passwort (mind. 12 Zeichen).
+   dem Initialpasswort anmelden. Bei einem erzeugten Initialpasswort verlangt die Oberfläche sofort ein
+   neues Passwort (mind. 12 Zeichen).
 
 3. **Systemstatus:** Menü *System* zeigt Version, Datenbank/Migrationen, Audit-Kette (*ok*), Sicherungen
-   und den Fingerprint des Knotens. Eine erste Sicherung mit *Sicherung jetzt erstellen* anlegen.
+   und den Fingerprint des Knotens. Eine erste Sicherung mit *Sicherung erstellen* anlegen.
 
 4. **Hilfe:** `https://mesh.osp-beispiel.example.de/hilfe/` zeigt diese Dokumentation.
 
@@ -296,7 +307,7 @@ Fingerprints über einen zweiten Kanal schützt davor, eine gefälschte Knotenka
    `sudo docker compose run --rm cli node-card`. Die Karte enthält Kennung, Name, Adresse, öffentlichen
    Schlüssel und Fingerprint – keine Geheimnisse.
 2. **Karte an den Partner senden** (z. B. per E-Mail) und die Karte des Partners empfangen.
-3. **Partnerkarte aufnehmen:** *Partner › Partner hinzufügen*, JSON der Karte einfügen. Der Partner erhält
+3. **Partnerkarte aufnehmen:** *Partner › Partner aufnehmen*, JSON der Karte einfügen. Der Partner erhält
    den Status *ausstehend* (`pending`).
 4. **Fingerprint abgleichen – telefonisch oder persönlich**, nicht über denselben Kanal wie die Karte:
    Die Partner-Administration liest ihren Fingerprint (*System* bzw. Logzeile `node started`) vor; er muss
@@ -352,4 +363,5 @@ Für eine Vorführung ohne Server: `bun install` und `bun run demo` starten drei
 und ein simuliertes Messsystem (Port 4410), spielen das Szenario durch und stoppen danach alles. Mit
 `bun run demo -- --keep-running` bleiben die Knoten für die Oberfläche erreichbar; beenden mit
 `bun run demo:stop`. `bun test` führt die automatisierten Tests aus (eigener Testcluster
-auf Port 55434). Voraussetzung: PostgreSQL-18-Programme (`initdb`, `pg_ctl`, `psql`) lokal installiert.
+auf Port 55434). Voraussetzung: PostgreSQL-18-Programme (`initdb`, `pg_ctl`, `psql`, `pg_dump`) lokal
+installiert (Suchorte siehe README; abweichend `MESH_PG_BIN=<verzeichnis>`).

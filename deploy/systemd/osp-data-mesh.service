@@ -30,6 +30,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+# Einziges beschreibbares Verzeichnis (MESH_BACKUP_DIR); muss existieren, sonst startet der Dienst nicht
+# (docs/installation.md, A2: mkdir -m 700 backups)
 ReadWritePaths=/opt/osp-data-mesh/backups
 ProtectKernelTunables=true
 ProtectKernelModules=true

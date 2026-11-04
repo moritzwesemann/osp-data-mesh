@@ -120,6 +120,18 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
     setForm((f) => ({ ...f, [key]: value }));
 
   const health = form.category === 'health';
+  // Einstufung geändert: Produkte erhalten eine neue Version (Freigaben veralten); strengere Einstufung
+  // (besondere Kategorie neu oder geändert, „Nur intern“ neu) widerruft zusätzlich alle Partnerfreigaben
+  const special = health || form.specialCategory;
+  const reclassified =
+    Boolean(id) &&
+    (form.category !== initial.category ||
+      special !== initial.specialCategory ||
+      form.shareability !== initial.shareability);
+  const peerReleasesEnd =
+    reclassified &&
+    ((special && (!initial.specialCategory || initial.category !== form.category)) ||
+      (form.shareability === 'internal' && initial.shareability !== 'internal'));
   const fieldNames = form.fields.map((f) => f.name.trim()).filter((n) => FIELD_NAME_RE.test(n));
   const uniqueNames = [...new Set(fieldNames)];
   const dateFields = form.fields.filter(
@@ -255,6 +267,12 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
               error={fe('specialCategory')}
               onChange={(checked) => set('specialCategory', checked)}
             />
+            {reclassified && (
+              <div className="alert alert-warning span-2" role="status">
+                <p>{t('datasets.reclassifyWarning')}</p>
+                {peerReleasesEnd && <p>{t('datasets.reclassifyPeerWarning')}</p>}
+              </div>
+            )}
             <FormField
               label={t('datasets.ownerContact')}
               hint={t('datasets.ownerContactHint')}

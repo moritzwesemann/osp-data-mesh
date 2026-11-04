@@ -188,7 +188,8 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
     {
       key: 'source',
       header: t('connectors.sourceField'),
-      render: (m) => <span className="mono break">{m.source}</span>,
+      className: 'nowrap',
+      render: (m) => <span className="mono">{m.source}</span>,
     },
     {
       key: 'target',

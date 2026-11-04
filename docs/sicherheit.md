@@ -28,7 +28,7 @@ Grundsätze:
 | Caddy → Server | unverschlüsselt, aber nur über `127.0.0.1` (nativ) bzw. das Docker-Netz `frontend` |
 | Server → PostgreSQL | über `127.0.0.1` bzw. das interne Docker-Netz `backend` (`internal: true`) |
 | BI-Werkzeuge → PostgreSQL (`mesh_bi`) | nur wenn bewusst freigeschaltet; dann **PostgreSQL-TLS** (`ssl = on`) oder VPN erforderlich (siehe [BI-Anbindung](bi.md)) |
-| Knoten → API-Quellen (Messsysteme) | HTTPS empfohlen; nur Hosts aus `MESH_SOURCE_ALLOWED_HOSTS` |
+| Knoten → API-Quellen (Messsysteme) | HTTPS empfohlen; nur Hosts aus `MESH_SOURCE_ALLOWED_HOSTS`; **Zugangsgeheimnisse nur über HTTPS** (Ausnahmen: Loopback-Adressen oder ausdrücklich `MESH_SOURCE_ALLOW_INSECURE_HTTP=true`, siehe [SSRF](#schutz-vor-server-side-request-forgery-ssrf)) |
 
 ## Föderation: Signaturen und Vertrauen
 
@@ -65,10 +65,18 @@ Details: [Föderationsprotokoll](protokoll.md), [ADR 0005](adr/0005-pull-austaus
 | Kontosperre | nach **5** Fehlversuchen in Folge für **15 Minuten** (gilt auch mit richtigem Passwort; Fehlversuche während der Sperre verlängern sie nicht); Entsperren durch Administration (*Benutzer › Sperre aufheben*, `users.update` mit `unlock: true`) |
 | Ratenbegrenzung | 30 Anmeldeversuche je IP-Adresse in 5 Minuten (im Speicher des Prozesses) |
 | Konto-Aufzählung | bei unbekannter E-Mail wird trotzdem ein Hash geprüft (gleiche Antwortzeit); **einheitliche Antwort** 401 `invalid_credentials` für unbekannte E-Mail, falsches Passwort, inaktives und gesperrtes Konto (Meldung: „E-Mail-Adresse oder Passwort ist falsch, oder das Konto ist vorübergehend gesperrt.“); der tatsächliche Grund (`invalid_credentials`, `inactive`, `locked`) steht nur im Audit-Log |
-| Sitzungen | zufälliges 256-Bit-Token im Cookie `osp_session` (`HttpOnly`, `SameSite=Strict`, `Secure`); in der Datenbank nur SHA-256; Ablauf nach `MESH_SESSION_TTL_HOURS` (Standard 12 h); Passwort-Reset beendet alle Sitzungen der Person |
+| Sitzungen | zufälliges 256-Bit-Token im Cookie `osp_session` (`HttpOnly`, `SameSite=Strict`, `Secure`, ohne `Domain`-Attribut, also nur für genau den Hostnamen des Knotens); in der Datenbank nur SHA-256; Ablauf nach `MESH_SESSION_TTL_HOURS` (Standard 12 h); neue Sitzung bei jeder Anmeldung (keine Sitzungsfixierung); Passwort-Reset und Deaktivierung beenden alle Sitzungen der Person, der eigene Passwortwechsel alle anderen |
 | CSRF | zustandsändernde Anfragen mit Sitzungs-Cookie benötigen zusätzlich den Header `X-OSP-CSRF: 1` (fremde Seiten können ihn ohne CORS-Freigabe nicht setzen) + `SameSite=Strict` |
 | API-Tokens | für Werkzeuge (Excel, Power BI, Python): `Authorization: Bearer osp_…`, 256 Bit Zufall, nur SHA-256 gespeichert, **einmalige Anzeige**, Ablauf 1–365 Tage (Standard 90), jederzeit widerrufbar; Rechte = Rollen der Person. Erzeugen nur mit Sitzung (Passwort-Anmeldung), nicht mit einem Token (403 `forbidden`, Grund `session_required`). **Alle Tokens einer Person werden widerrufen** bei eigenem Passwortwechsel, Zurücksetzen durch die Administration und Deaktivierung (Audit `token.revoke` je Token) |
 | Inaktive Konten | sofort abgewiesen (Sitzungen beendet, Tokens widerrufen; auch nach einer Reaktivierung bleiben sie ungültig) |
+
+**Restrisiko Protokollmenge bei Passwort-Angriffen:** Jeder fehlgeschlagene Anmeldeversuch wird einzeln
+im Audit-Log protokolliert (`auth.login`, `outcome = denied`, mit Grund). Je IP-Adresse ist das durch die
+Ratenbegrenzung beschränkt (30 Versuche in 5 Minuten, danach nur die erste Abweisung `rate_limited` je
+Zeitfenster); ein Angriff über **viele wechselnde IP-Adressen** kann das Audit-Log dagegen unbegrenzt
+wachsen lassen (Plattenplatz, Übersichtlichkeit; keine Vertraulichkeit). Erkennung über die Überwachung
+des Plattenplatzes und gehäufte `auth.login`-Ablehnungen; Gegenmaßnahme: Quellen am Proxy bzw. an der
+Firewall sperren. Die Föderation fasst Ablehnungen dagegen zusammen (siehe oben).
 
 **Restrisiko Kontosperre als Angriff:** Wer eine E-Mail-Adresse kennt, kann das Konto mit fünf
 Fehlversuchen je 15 Minuten gesperrt halten (Verfügbarkeit, keine Vertraulichkeit). Die Ratenbegrenzung je
@@ -78,7 +86,10 @@ Administration, Quelle am Proxy bzw. an der Firewall sperren. Die einheitliche A
 ob ein Konto existiert oder gesperrt ist.
 
 Nicht umgesetzt (offen): Zwei-Faktor-Authentisierung, Single Sign-on (SAML/OIDC) mit dem
-Verzeichnisdienst des OSP.
+Verzeichnisdienst des OSP. Als zusätzliche Härtung möglich, aber **nicht umgesetzt**: das Cookie-Präfix
+`__Host-` (z. B. `__Host-osp_session`), mit dem der Browser erzwingt, dass das Cookie nur mit `Secure`,
+`Path=/` und ohne `Domain` gesetzt werden kann; das schützt zusätzlich vor dem Überschreiben des Cookies
+durch Subdomains (z. B. `bi.<knoten>`). Voraussetzung wäre `MESH_COOKIE_SECURE=true` (Standard).
 
 ## Rollen und Rechte
 
@@ -147,7 +158,12 @@ Vier-Augen-Prinzip bei Nutzung, Rotation beim Ausscheiden einer berechtigten Per
 
 ## Trennung interner und externer Dienste
 
-- **Nur Caddy** ist von außen erreichbar (Ports 80/443, optional 8443 für Superset).
+- **Nur Caddy** ist von außen erreichbar (Ports 80/443). Apache Superset (optional, Profil `bi`) läuft
+  über denselben Port 443, aber unter einem **eigenen Hostnamen** `MESH_BI_DOMAIN` (Standard
+  `bi.<CADDY_DOMAIN>`), nie unter dem Namen des Knotens mit anderem Port: Cookies sind nicht an Ports
+  gebunden (RFC 6265, Abschnitt 8.5), der Browser schickte das Sitzungs-Cookie des Knotens sonst auch an
+  Superset. An einen anderen Hostnamen sendet er es nicht (Cookie ohne `Domain`-Attribut). Siehe
+  [Installation](installation.md#optional-apache-superset).
 - Der Server lauscht nativ auf `127.0.0.1` (`MESH_HOST`), im Container nur im Docker-Netz.
 - PostgreSQL ist nativ auf `localhost` beschränkt (Standard der Pakete), im Container nur im internen
   Netz `backend` (`internal: true`: weder von außen erreichbar noch mit Internetzugang).
@@ -163,9 +179,28 @@ abfragen kann:
 
 - Ziele nur aus der **Positivliste** `MESH_SOURCE_ALLOWED_HOSTS` (exakter Vergleich `host[:port]`, nicht
   über die Oberfläche änderbar); leere Liste = keine API-Quellen.
-- nur `http`/`https`; **Weiterleitungen werden nicht verfolgt**; Zeitlimit je Abruf (1–60 s);
-  Größenbegrenzung der Antwort.
-- Abweisung mit `source_not_allowed` und Audit-Eintrag.
+- nur `http`/`https`; **Weiterleitungen werden nicht verfolgt**; Zeitlimit je Abruf (1–60 s, Standard
+  15 s); Antworten insgesamt höchstens **50 MB** und **100 000 Einträge** je Lauf (über alle Seiten), sonst
+  bricht der Abruf ab, ohne weiterzulesen.
+- **Zugangsgeheimnisse sind an das gespeicherte Ziel gebunden:** Ändert sich beim Bearbeiten eines
+  Connectors der Origin der URL (Schema, Host, Port) oder die Art der Authentifizierung (einschließlich
+  Header-Name), wird das gespeicherte Geheimnis gelöscht (Audit `connector.secret_cleared`) und muss neu
+  gesetzt werden. So lässt sich ein Geheimnis nicht durch Ändern der URL an einen anderen Host umleiten.
+- *Beispiel abrufen* (`connectors.inspect`) mit einem gespeicherten Connector (`connectorId`) verwendet
+  ausschließlich dessen **gespeicherte** URL und Authentifizierung; URL und Authentifizierung aus der
+  Anfrage werden dann ignoriert.
+- Geheimnisse werden nur über **https://** gesendet, über `http://` nur an Loopback-Adressen
+  (`127.0.0.1`, `::1`, `localhost`) oder wenn `MESH_SOURCE_ALLOW_INSECURE_HTTP=true` gesetzt ist (Standard
+  `false`; nur in abgeschotteten Netzen, das Geheimnis geht dann im Klartext über das Netz).
+- Abweisung mit `source_not_allowed` (Host nicht freigegeben) bzw. `source_not_allowed` mit Grund
+  `insecure_http` (Geheimnis über unverschlüsselte Verbindung) und Audit-Eintrag.
+
+**Grenzen beim Import** (Schutz vor Überlastung durch Quelldateien, `src/server/modules/connectors/pipeline.ts`):
+CSV-Uploads höchstens **20 MB**; je Lauf höchstens **500 Spalten** und **100 000 Zeilen** (bzw.
+API-Einträge). Wird eine Grenze überschritten, endet das Lesen sofort und der Lauf schlägt mit
+`too_many_columns` bzw. `too_many_rows` fehl, ohne Zeilen zu übernehmen; *Beispiel abrufen* liest nur die
+ersten Zeilen und weist mehr als 500 Spalten mit `payload_too_large` ab. Verschachtelte JSON-Objekte
+werden bis zur Tiefe 32 in Spalten aufgelöst; Arrays und tiefere Teile werden als JSON-Text übernommen.
 
 Restrisiko: Die Liste prüft Namen, nicht die aufgelöste IP-Adresse; nur vertrauenswürdige Hosts eintragen.
 Partneradressen werden nur bei der manuellen Vertrauensaufnahme festgelegt.
@@ -191,7 +226,7 @@ Partneradressen werden nur bei der manuellen Vertrauensaufnahme festgelegt.
   Request-ID; die Oberfläche zeigt eine verständliche deutsche Meldung zum Code und die Request-ID.
   Server-Freitext (z. B. Datenbankmeldungen) erreicht die Nutzenden nie.
 - Unerwartete Fehler → HTTP 500 `internal_error`; Details nur im Log und in `app_error` (Administration:
-  *System › Fehler*).
+  *System › Letzte Fehler*).
 - Föderationsfehler werden mit Code beim Partner gespeichert (`last_error`) und im Austauschprotokoll
   vermerkt; Zustellfehler des Ausgangspostfachs sind sichtbar und werden wiederholt. Nach 20 Fehlversuchen
   ist eine Mitteilung *fehlgeschlagen*; *Jetzt zustellen* (`outbox.flush`) versucht sie erneut (Audit

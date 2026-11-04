@@ -13,6 +13,7 @@ export const received: Messages['received'] = {
   unlimited: 'unlimited',
   backToList: 'Received data',
   inactiveTitle: 'This copy is no longer active.',
+  holderReason: 'Reason given by the data holder: “{text}”',
   statusChanged: 'Status changed: {time}',
   provenance: 'Proof of origin',
   provenanceIntro:

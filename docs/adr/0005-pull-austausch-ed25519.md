@@ -30,6 +30,9 @@ oder HTTP-Message-Signatures.
 
 - Einfache, gut prüfbare Implementierung mit `node:crypto`; keine Abhängigkeit von JSON-Kanonisierung.
 - Der Empfänger muss die Rohbytes vor dem Parsen prüfen (umgesetzt im Föderationsmodul).
+- Der Föderationsendpunkt ist ohne Anmeldung erreichbar und muss sich selbst schützen: Absenderprüfung,
+  bevor der Body gelesen wird, Größengrenzen (Anfragen 2 MB, Antworten 50 MB), Ratenbegrenzung und
+  zusammengefasstes Audit abgelehnter Anfragen ([Protokoll](../protokoll.md#schutz-vor-überflutung)).
 - Replay-Schutz über Nonces (15 min) und Zeitfenster (± 5 min) erfordert synchronisierte Uhren (NTP).
 - Pull bedeutet: Berichtigungen erreichen Partner erst beim nächsten Abruf; Löschungen und Widerrufe
   werden aktiv mitgeteilt ([ADR 0011](0011-widerruf-mitteilung-keine-weitergabe.md)).

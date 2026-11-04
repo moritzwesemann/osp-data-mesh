@@ -8,8 +8,12 @@
  * - responsives, schlichtes CSS ohne externe Ressourcen, ohne JavaScript
  * - relative Links *.md → *.html, Überschriften erhalten Anker-IDs
  * - erzeugte Seiten: Startseite (docs/index.md + Seitenverzeichnis), Verzeichnis der ADRs
- * - abschließende Linkprüfung: jeder relative Link muss auf eine erzeugte Seite und ggf. einen
- *   vorhandenen Anker zeigen; sonst Exit-Code 1
+ * - Bilder aus docs/ (u. a. docs/screenshots/*.png für die Seite „Oberfläche“) werden mit gleichem
+ *   relativem Pfad nach dist/docs/ kopiert
+ * - abschließende Linkprüfung: jeder relative Link und jedes Bild muss auf eine erzeugte Seite bzw.
+ *   vorhandene Datei und ggf. einen vorhandenen Anker zeigen; sonst Exit-Code 1. Einzige Ausnahme: Fehlt
+ *   das Verzeichnis docs/screenshots/ ganz (Bildschirmfotos noch nicht erzeugt), sind fehlende
+ *   screenshots/*.png nur eine Warnung. Sobald das Verzeichnis existiert, gilt die Prüfung streng.
  */
 import {
   copyFileSync,
@@ -32,7 +36,7 @@ const SITE_TITLE = 'OSP-Data-Mesh – Hilfe';
 
 /** Navigationsabschnitte in fester Reihenfolge (Pfade relativ zu docs/, ohne .md). */
 const SECTIONS: { title: string; pages: string[] }[] = [
-  { title: 'Einstieg', pages: ['index', 'installation', 'betrieb'] },
+  { title: 'Einstieg', pages: ['index', 'oberflaeche', 'installation', 'betrieb'] },
   {
     title: 'Fachliches Konzept',
     pages: ['architektur', 'freigaberegeln', 'protokoll', 'datenmodell', 'rollen'],
@@ -304,6 +308,7 @@ table { border-collapse: collapse; font-size: .92rem; min-width: 60%; }
 th, td { border: 1px solid var(--line); padding: .35rem .6rem; vertical-align: top; text-align: left; }
 th { background: var(--bg2); }
 blockquote { margin: 1rem 0; padding: .5rem 1rem; border-left: 4px solid var(--accent); background: var(--accent-bg); }
+img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
 blockquote p { margin: .3rem 0; }
 .fuss { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
 @media (max-width: 52rem) {
@@ -334,7 +339,19 @@ function listFiles(dir: string): string[] {
   return out;
 }
 
-export function checkLinks(outDir: string): string[] {
+/** Bilddateien, die aus docs/ in die Website übernommen werden */
+const ASSET_RE = /\.(png|jpe?g|gif|svg|webp)$/i;
+/** Bildschirmfotos der Oberfläche (docs/screenshots/, von einem eigenen Skript erzeugt) */
+const SCREENSHOT_RE = /(^|\/)screenshots\/[^/]+\.png$/;
+
+/**
+ * Prüft alle relativen Links und Bilder. Mit `tolerateMissingScreenshots` sind fehlende
+ * screenshots/*.png keine Fehler, sondern Warnungen (nur solange docs/screenshots/ fehlt).
+ */
+export function checkLinks(
+  outDir: string,
+  opts: { tolerateMissingScreenshots?: boolean; warnings?: string[] } = {},
+): string[] {
   const errors: string[] = [];
   const files = listFiles(outDir).filter((f) => f.endsWith('.html'));
   const ids = new Map<string, Set<string>>();
@@ -355,6 +372,10 @@ export function checkLinks(outDir: string): string[] {
         continue;
       }
       if (!existsSync(target) || statSync(target).isDirectory()) {
+        if (opts.tolerateMissingScreenshots && SCREENSHOT_RE.test(pathPart)) {
+          opts.warnings?.push(`${where}: Bildschirmfoto fehlt (noch nicht erzeugt): ${href}`);
+          continue;
+        }
         errors.push(`${where}: Ziel fehlt: ${href}`);
         continue;
       }
@@ -385,9 +406,11 @@ if (import.meta.main) {
   mkdirSync(join(OUT, 'assets'), { recursive: true });
   writeFileSync(join(OUT, 'assets', 'hilfe.css'), CSS);
 
-  // Bilder und andere Dateien aus docs/ übernehmen
+  // Bilder aus docs/ übernehmen (z. B. docs/screenshots/*.png → dist/docs/screenshots/*.png)
+  let images = 0;
   for (const f of listFiles(SRC)) {
-    if (f.endsWith('.md')) continue;
+    if (!ASSET_RE.test(f)) continue;
+    images++;
     const rel = relative(SRC, f);
     mkdirSync(dirname(join(OUT, rel)), { recursive: true });
     copyFileSync(f, join(OUT, rel));
@@ -400,8 +423,16 @@ if (import.meta.main) {
     writeFileSync(file, pageHtml(page, pages, built));
   }
 
-  const errors = checkLinks(OUT);
-  console.log(`Dokumentation erzeugt: ${posix.join(relative(ROOT, OUT))}/ (${pages.length} Seiten)`);
+  const warnings: string[] = [];
+  const screenshotsMissing = !existsSync(join(SRC, 'screenshots'));
+  const errors = checkLinks(OUT, { tolerateMissingScreenshots: screenshotsMissing, warnings });
+  console.log(
+    `Dokumentation erzeugt: ${posix.join(relative(ROOT, OUT))}/ (${pages.length} Seiten, ${images} Bilder)`,
+  );
+  if (warnings.length) {
+    console.warn(`Linkprüfung: ${warnings.length} Warnungen (docs/screenshots/ fehlt)`);
+    for (const w of warnings) console.warn(`  ${w}`);
+  }
   if (errors.length) {
     console.error(`Linkprüfung: ${errors.length} Fehler`);
     for (const e of errors) console.error(`  ${e}`);

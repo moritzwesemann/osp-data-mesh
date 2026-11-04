@@ -48,7 +48,7 @@ export const releases: Messages['releases'] = {
   rangeFrom: 'from {from}',
   rangeUntil: 'until {until}',
   rangeBoth: '{from} to {until}',
-  validUntilExclusive: '{from} until before {until}',
+  validUntilExclusive: '{from} until {until} (exclusive)',
   consent: 'Consent requirement',
   consentOn: 'Yes – only persons with valid consent for purpose and category',
   consentOff: 'No',
@@ -114,7 +114,6 @@ export const releases: Messages['releases'] = {
   selectAll: 'Select all',
   selectNone: 'None',
   columnsSelected: '{count} of {total} selected',
-  columnMeta: '{key} · {type}',
   sectionRows: 'Row restriction',
   rowsHint:
     'Only rows meeting all conditions are provided. Conditions may also use columns that are not released.',

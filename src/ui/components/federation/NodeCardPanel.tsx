@@ -4,6 +4,7 @@ import { useApiQuery } from '../../lib/query.ts';
 import { CopyButton, DescriptionList } from '../Misc.tsx';
 import { Section } from '../PageHeader.tsx';
 import { QueryView } from '../QueryState.tsx';
+import { FingerprintBox } from './FingerprintBox.tsx';
 
 /** Eigene Knotenkarte (node.card) mit hervorgehobenem Fingerprint, Download und Kopieren. */
 export function NodeCardPanel() {
@@ -17,7 +18,7 @@ export function NodeCardPanel() {
           <div className="stack">
             <div className="stack-sm">
               <span className="field-label">{t('common.fingerprint')}</span>
-              <p className="fingerprint">{c.fingerprint}</p>
+              <FingerprintBox value={c.fingerprint} />
             </div>
             <DescriptionList
               items={[

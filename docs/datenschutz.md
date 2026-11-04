@@ -89,8 +89,15 @@ Audit- bzw. Austauschprotokoll festgehalten.
 - **Freigaben** beschränken zusätzlich nach Spalten, Zeilen (Bedingungen), Datenzeitraum,
   Gültigkeitsdauer und Zweck. Was nicht freigegeben ist, wird nicht ausgegeben (*deny by default*); neue
   Spalten eines Produkts sind nicht automatisch freigegeben.
-- **Produktänderungen** machen bestehende Freigaben ungültig, bis sie neu erteilt werden – eine
-  Ausweitung kann nicht unbemerkt geschehen ([ADR 0010](adr/0010-produktaenderung-invalidiert-freigaben.md)).
+- **Produkt- und Datensatzänderungen** machen bestehende Freigaben ungültig, bis sie neu erteilt werden –
+  eine Ausweitung kann nicht unbemerkt geschehen ([ADR 0010](adr/0010-produktaenderung-invalidiert-freigaben.md)).
+  Wird ein Datensatz neu besondere Kategorie, wechselt ein Datensatz besonderer Kategorie die Kategorie
+  oder wird er intern, werden alle Partnerfreigaben der betroffenen Produkte widerrufen
+  (`dataset_reclassified`) und die Partner löschen ihre Kopien.
+- **Abrufstatistik:** Empfänger sehen beim Abruf (`access.data`) nur die Zahl der gelieferten Zeilen,
+  nicht, wie viele Zeilen durch Zeilenbeschränkung, Zeitraum oder fehlende Einwilligung entfallen (daraus
+  ließe sich etwa ablesen, für wie viele Personen keine Einwilligung vorliegt); diese Zahlen zeigen nur die
+  Vorschauen für Datenverantwortliche.
 - **Vorschau** (`releases.preview`) zeigt vor dem Erteilen, wie viele Zeilen und welche Spalten eine
   Freigabe liefern würde.
 - **Keine Gesamtsynchronisation:** Partner erhalten nur einzelne freigegebene Produkte; jeder Abruf
@@ -120,7 +127,8 @@ Protokolliert werden u. a. jede Anmeldung (auch fehlgeschlagen), jeder lesende Z
 (Athletenliste und -detail, Datensatz-Einträge, Produktvorschau, Datenabruf, empfangene Daten), jede
 Freigabe und jeder Widerruf, Einwilligungen und deren Widerruf, Löschungen, jeder Austausch mit Partnern
 (geliefert, empfangen, abgelehnt – mit Spalten, Zeilenzahl und übermittelten Pseudonymen) und abgewiesene
-Zugriffe. Das Audit-Log ist nur anhängbar und durch eine Hash-Kette gesichert; einsehen und exportieren
+Zugriffe. Abgelehnte Föderationsanfragen ohne gültige, frische Signatur werden zusammengefasst
+protokolliert (erste je Quelle und Code in 5 Minuten, höchstens 20 je 5 Minuten; alle im Betriebslog). Das Audit-Log ist nur anhängbar und durch eine Hash-Kette gesichert; einsehen und exportieren
 kann es die Rolle `auditor` (Datenschutz, Revision). Die Protokolle enthalten keine Fachdaten, nur IDs,
 Zähler und Codes.
 

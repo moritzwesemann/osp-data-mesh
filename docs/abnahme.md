@@ -29,8 +29,9 @@ bun run build            # Oberfläche + Hilfe
 
 ## AK1 – mindestens zwei CSV-Quellen und eine API-Quelle durchgängig verarbeitet
 
-Nachweis: `bun run demo` (drei Knoten mit Beispieldaten aus drei CSV-Dateien und einem simulierten
-Messsystem mit HTTP-API auf Port 4410). Für die Prüfschritte in der Oberfläche die Demo mit
+Nachweis: `bun run demo` (drei Knoten mit Beispieldaten aus fünf CSV-Dateien – drei bei `osp-nord`, je
+eine bei `osp-mitte` und `osp-sued`, in verschiedenen Kodierungen – und einem simulierten Messsystem mit
+HTTP-API auf Port 4410). Für die Prüfschritte in der Oberfläche die Demo mit
 `bun run demo -- --keep-running` starten und danach mit `bun run demo:stop` beenden.
 
 | # | Prüfschritt | Erwartet | Ergebnis | Bemerkung |
@@ -53,7 +54,7 @@ Nachweis: `bun run demo` – Knoten `osp-nord`, `osp-mitte`, `osp-sued` auf `htt
 | 2.2 | *Partner* auf jedem Knoten | die beiden anderen Knoten *vertrauenswürdig*, Verbindungsprüfung erfolgreich | | |
 | 2.3 | *Discovery* auf einem Knoten | Kataloge der Partner mit Status *ok*, nur Metadaten | | |
 | 2.4 | Abruf eines freigegebenen Produkts bei einem Partner | Daten mit Pseudonymen, nur freigegebene Spalten; Herkunftsnachweis | | |
-| 2.5 | Abruf ohne passende Freigabe bzw. mit falschem Zweck | abgelehnt (`access_denied`), auf beiden Seiten protokolliert | | |
+| 2.5 | Abruf ohne passende Freigabe bzw. mit falschem Zweck | abgelehnt: der abrufende Knoten meldet `peer_rejected` mit Grund `purpose_not_allowed` bzw. ohne passende Freigabe `not_found`; der Datenhalter protokolliert `exchange.pull.denied`, beide Seiten im Austauschprotokoll | | |
 | 2.6 | Freigabe widerrufen | Mitteilung zugestellt, Kopie beim Empfänger gelöscht (*Empfangene Daten*: *widerrufen*) | | |
 | 2.7 | Einwilligung einer Person widerrufen bzw. Person löschen | `subjects_withdrawn` zugestellt, Zeilen beim Empfänger entfernt | | |
 
@@ -90,7 +91,8 @@ Nachweis: `bun test` (lokaler Testcluster auf Port 55434, wird automatisch angel
 | 4.3 | `bun test tests/integration/backup.test.ts` | Sicherung verschlüsselt, Wiederherstellung inkl. Audit-Kette | | |
 | 4.4 | `bun test tests/integration/errors.test.ts` | Fehlercodes, Request-ID, Fehlerprotokoll | | |
 | 4.5 | `bun test tests/unit/crypto.test.ts tests/unit/release-engine.test.ts` | Kryptografie, Freigaberegeln | | |
-| 4.6 | `bun test tests/integration/federation.test.ts tests/integration/audit.test.ts` | Signaturen, Replay-Schutz, Widerruf; Unveränderlichkeit des Audit-Logs | | |
+| 4.6 | `bun test tests/unit/federation-protocol.test.ts tests/integration/federation-protocol.test.ts tests/integration/federation-exchange.test.ts tests/integration/core.test.ts` | Signaturen, Replay-Schutz, Widerruf und Löschmitteilungen; Unveränderlichkeit und Hash-Kette des Audit-Logs | | |
+| 4.7 | `bun test fix-` (alle Dateien `tests/**/fix-*.test.ts`) | Korrekturen aus der Sicherheitsprüfung: einheitliche Anmeldefehler, Token-Widerruf bei Zugangswechsel, Schutz der Föderation vor Überflutung, Mitteilungen gesperrter Datenhalter, erneute Zustellung, Bindung von Quellgeheimnissen, Import-Grenzen und Löschung in Importläufen, Neueinstufung von Datensätzen, Liefersperre der BI, Abrufstatistik nur für Datenverantwortliche, eigener Hostname für Superset | | |
 
 ## Ergebnis
 

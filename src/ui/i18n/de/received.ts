@@ -12,6 +12,7 @@ export const received = {
   unlimited: 'unbefristet',
   backToList: 'Empfangene Daten',
   inactiveTitle: 'Diese Kopie ist nicht mehr aktiv.',
+  holderReason: 'Begründung des Datenhalters: „{text}“',
   statusChanged: 'Status geändert: {time}',
   provenance: 'Herkunftsnachweis',
   provenanceIntro:

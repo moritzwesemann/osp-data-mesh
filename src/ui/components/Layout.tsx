@@ -1,4 +1,4 @@
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import type { RouteId } from '../../shared/contract/index.ts';
 import { type MessageKey, useI18n } from '../i18n/index.tsx';
@@ -61,6 +61,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const [lastPath, setLastPath] = useState(location.pathname);
 
@@ -69,6 +70,18 @@ export function AppShell() {
     setLastPath(location.pathname);
     setOpen(false);
   }
+
+  // Escape schließt das aufgeklappte Menü und setzt den Fokus zurück auf die Menütaste
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      menuButton.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
 
   const groups = NAV.map((g) => ({
     ...g,
@@ -87,7 +100,10 @@ export function AppShell() {
         {t('shell.skipToContent')}
       </a>
       <header className="topbar">
+        {/* Gleichbleibende Beschriftung (Zustand über aria-expanded), damit die Kopfzeile auf schmalen
+            Bildschirmen nicht breiter wird; das Symbol wechselt zu × */}
         <button
+          ref={menuButton}
           type="button"
           className="menu-button"
           aria-expanded={open}
@@ -95,7 +111,7 @@ export function AppShell() {
           onClick={() => setOpen((o) => !o)}
         >
           <span className="menu-icon" aria-hidden="true" />
-          <span>{open ? t('shell.closeMenu') : t('shell.menu')}</span>
+          <span>{t('shell.menu')}</span>
         </button>
         <Link to="/" className="brand">
           <img src="/icon.svg" alt="" width={28} height={28} />

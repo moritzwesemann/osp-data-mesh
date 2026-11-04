@@ -4,19 +4,10 @@ import type { Actor } from '../../core/audit.ts';
 import type { DbOrTx, Tx } from '../../core/db.ts';
 import type { NewRow } from '../../core/db-types.ts';
 
-/** Advisory-Lock-Schlüssel (7212001 Audit-Kette, 7212002 Migrationen) */
-const DELIVERY_LOCK = 7212101;
+/** Advisory-Lock-Schlüssel: siehe core/locks.ts */
 const RECEIVED_COPY_LOCK = 7212102;
 
-/**
- * Serialisiert Datenlieferungen (shared: Pull vom PEP-Aufruf bis zum Protokolleintrag) gegen die Suche nach
- * gelieferten Personen (exclusive: Einwilligungswiderruf, Löschung, Stilllegung). So findet die Suche jede
- * Lieferung, deren PEP-Prüfung vor dem Widerruf lag, und jede spätere Lieferung sieht den Widerruf bereits.
- */
-export async function lockDeliveries(trx: Tx, mode: 'shared' | 'exclusive'): Promise<void> {
-  const fn = mode === 'shared' ? 'pg_advisory_xact_lock_shared' : 'pg_advisory_xact_lock';
-  await sql`select ${sql.raw(fn)}(${sql.lit(DELIVERY_LOCK)}::bigint)`.execute(trx);
-}
+export { lockDeliveries } from '../../core/locks.ts';
 
 /** Serialisiert Speichern eines Abrufs und Verarbeiten von Mitteilungen je (Partner, entfernte Freigabe). */
 export async function lockReceivedCopy(trx: Tx, peerId: string, remoteReleaseId: string): Promise<void> {

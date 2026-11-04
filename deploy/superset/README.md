@@ -1,0 +1,114 @@
+# Apache Superset für OSP-Data-Mesh (optional)
+
+> **NICHT LOKAL VERIFIZIERT.** Auf der Entwicklungsmaschine ist kein Docker installiert; geprüft wurden
+> nur die Python-Syntax (Python 3.9), der Plan des Einrichtungsskripts (`--print-plan`), die Struktur von
+> `docker-compose.yml` und die Superset-Schnittstellen anhand der Quellen von Superset 6.1.0. Vor einem
+> Einsatz einmal vollständig durchspielen.
+
+Superset dient als Referenz für die BI-Anforderung (B1/B2): Es liest **ausschließlich als Datenbankrolle
+`mesh_bi`** die Views im Schema `bi` (nur lesend, nur freigegebene Daten) und bringt drei
+Referenz-Dashboards mit. Keine Beispieldaten von Superset.
+
+## Dateien
+
+| Datei | Zweck |
+|---|---|
+| `Dockerfile` | `apache/superset:6.1.0` (schlankes Abbild) + PostgreSQL-Treiber `psycopg2-binary` |
+| `superset_config.py` | `SECRET_KEY` aus `SUPERSET_SECRET_KEY` (Pflicht, ≥ 32 Zeichen), Metadaten in SQLite im Volume `superset_home`, Betrieb hinter Caddy, sichere Cookies, keine öffentliche Rolle |
+| `bootstrap_superset.py` | legt über die Superset-REST-API idempotent Datenbankverbindung, Datasets, Diagramme und Dashboards an (nur Python-Standardbibliothek) |
+
+## Start (Docker Compose, Profil `bi`)
+
+In `deploy/.env` setzen:
+
+```sh
+SUPERSET_SECRET_KEY=<openssl rand -base64 42>
+SUPERSET_ADMIN_USER=admin
+SUPERSET_ADMIN_EMAIL=bi@osp-beispiel.example.de
+SUPERSET_ADMIN_PASSWORD=<openssl rand -hex 16>
+```
+
+```sh
+cd deploy
+docker compose --profile bi up -d --build
+docker compose --profile bi logs -f superset-bootstrap
+```
+
+Ablauf: `superset-init` (Metadaten-Datenbank anlegen/aktualisieren, Administrationskonto, Rollen) →
+`superset` (Webserver, Port 8088 nur intern) → `superset-bootstrap` (Einrichtung über die REST-API,
+wartet auf `/health`). Erreichbar über Caddy unter `https://<CADDY_DOMAIN>:8443/`.
+
+Die Einrichtung kann jederzeit wiederholt werden (z. B. nachdem die BI-Freigaben angelegt wurden oder das
+Passwort von `mesh_bi` geändert wurde):
+
+```sh
+docker compose --profile bi run --rm superset-bootstrap
+```
+
+Plan ohne Superset anzeigen: `python3 bootstrap_superset.py --print-plan`.
+
+## Vertrag: Views im Schema `bi`
+
+Die Dashboards erwarten die folgenden Views. Eine View heißt wie das **Kürzel (slug) des Datenprodukts**
+und entsteht, sobald eine gültige Freigabe an die Empfängerrolle `bi` besteht; ihre Spalten sind die
+freigegebenen Produktspalten (`key`). Die Demo legt diese Produkte und Freigaben an.
+
+| View | Spalte | Typ (Feldtyp → PostgreSQL) | Bedeutung |
+|---|---|---|---|
+| `bi.kader_uebersicht` | `sport` | `string` → `text` | Sportart |
+| | `squad_status` | `string` → `text` | Kaderstatus (`OK`, `PK`, `EK`, `NK1`, `NK2`, `LK`, `none`) |
+| | `birth_year` | `integer` → `bigint` | Geburtsjahr (Quelle `athlete.birth_year`) |
+| | `sex` | `string` → `text` | Geschlecht (`f`, `m`, `d`) |
+| `bi.sprungkraft` | `sport` | `text` | Sportart |
+| | `squad_status` | `text` | Kaderstatus |
+| | `test_type` | `string`/`enum` → `text` | Sprungform; die Dashboards filtern auf **`CMJ`** (Countermovement Jump) |
+| | `jump_height_cm` | `number` → `double precision` | Sprunghöhe in cm |
+| | `peak_power_w` | `number` → `double precision` | Maximalleistung in W |
+| | `measured_at` | `date` oder `datetime` → `date`/`timestamptz` | Messdatum (Zeitachse, Monatsraster) |
+| `bi.leistungsdiagnostik` | `sport` | `text` | Sportart |
+| | `squad_status` | `text` | Kaderstatus |
+| | `test_date` | `date` → `date` | Testdatum (Zeitachse, Quartalsraster) |
+| | `protocol` | `string`/`enum` → `text` | Testprotokoll (z. B. Stufentest Rad/Laufband) |
+| | `vo2max` | `number` → `double precision` | VO2max in ml/min/kg |
+| | `lactate_threshold_power` | `number` → `double precision` | Leistung an der Laktatschwelle in W |
+| | `max_heart_rate` | `integer` → `bigint` | maximale Herzfrequenz in 1/min |
+
+Fehlt eine View, überspringt das Skript die zugehörigen Diagramme mit einer Warnung; das Dashboard wird
+trotzdem angelegt und beim nächsten Lauf vervollständigt.
+
+## Referenz-Dashboards
+
+| Dashboard (Slug) | Diagramme |
+|---|---|
+| **Kaderübersicht** (`osp-kaderuebersicht`) | Personen gesamt (Kennzahl); Personen nach Sportart und Kaderstatus (gestapelte Balken); Anteile Kaderstatus (Kreis); Jahrgänge nach Geschlecht (Balken); Sportart × Kaderstatus (Pivot-Tabelle) |
+| **Sprungkraft-Entwicklung** (`osp-sprungkraft`) | Ø CMJ-Sprunghöhe je Sportart (Linie, Monat); Ø Maximalleistung CMJ je Sportart (Linie, Monat); Ø CMJ-Sprunghöhe nach Kaderstatus (Balken); Anzahl Messungen (Kennzahl) |
+| **Leistungsdiagnostik** (`osp-leistungsdiagnostik`) | VO2max-Verteilung je Sportart (Histogramm); Ø Leistung an der Laktatschwelle je Sportart (Balken); Ø VO2max im Zeitverlauf (Linie, Quartal); Kennwerte je Sportart (Tabelle) |
+
+Verwendete Superset-Diagrammtypen: `big_number_total`, `echarts_timeseries_bar`, `pie`,
+`pivot_table_v2`, `echarts_timeseries_line`, `histogram_v2`, `table`.
+
+## Manuelle Einrichtung (falls das Skript scheitert)
+
+1. Als Administration in Superset anmelden.
+2. *Settings › Database Connections › + Database › PostgreSQL*, SQLAlchemy-URI
+   `postgresql+psycopg2://mesh_bi:<passwort>@db:5432/mesh`, Anzeigename `OSP-Data-Mesh (BI)`;
+   unter *Advanced › SQL Lab*: DML nicht erlauben; *Advanced › Other › Engine Parameters*:
+   `{"connect_args": {"options": "-csearch_path=bi"}}`.
+3. *Datasets › + Dataset*: Datenbank `OSP-Data-Mesh (BI)`, Schema `bi`, Tabellen `kader_uebersicht`,
+   `sprungkraft`, `leistungsdiagnostik`.
+4. Je Dashboard die Diagramme aus der Tabelle oben anlegen (*Charts › + Chart*; Metrik `COUNT(*)` bzw.
+   `AVG(<spalte>)`; Zeitachse `measured_at`/`test_date`; Filter `test_type = CMJ` bei Sprungkraft) und
+   einem neuen Dashboard mit dem angegebenen Namen hinzufügen.
+5. Rollen: Für Lesende eine Rolle auf Basis von *Gamma* mit Zugriff nur auf diese Datenbank/Datasets
+   anlegen (Dashboard-Zugriff über Rollen ist mit `DASHBOARD_RBAC` aktiviert).
+
+## Sicherheitshinweise
+
+- Superset sieht nur, was `mesh_bi` sieht: Views im Schema `bi`, nur lesend, Abfragezeit ≤ 60 s.
+- Die Verbindungsdaten speichert Superset mit `SUPERSET_SECRET_KEY` verschlüsselt in seiner
+  Metadaten-Datenbank (Volume `superset_home`); Schlüssel in der Passwortverwaltung ablegen.
+- Superset-Konten sind unabhängig von den Konten des Knotens; Zugriffe in Superset protokolliert Superset
+  selbst (Action Log), nicht das Audit-Log des Knotens. Auf der Datenbankseite sind sie als Abfragen der
+  Rolle `mesh_bi` sichtbar.
+- Für größere Installationen eine eigene PostgreSQL-Datenbank für die Superset-Metadaten verwenden
+  (`SUPERSET_METADATA_DB_URI`), nicht die Knotendatenbank.

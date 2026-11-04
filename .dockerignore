@@ -1,0 +1,26 @@
+# Build-Kontext für deploy/Dockerfile (Repository-Wurzel). Nichts Geheimes und nichts Lokales
+# in das Abbild übernehmen; Abhängigkeiten und Build-Ergebnisse entstehen im Container neu.
+.git
+.github
+node_modules
+dist
+coverage
+.local
+backups
+*.log
+.DS_Store
+
+# Umgebungsdateien mit Geheimnissen
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/.env.*
+# TLS-Schlüssel des optionalen BI-Datenbankzugangs
+deploy/postgres/tls
+
+# Editor/Tooling
+.idea
+.vscode
+.claude
+docs/site

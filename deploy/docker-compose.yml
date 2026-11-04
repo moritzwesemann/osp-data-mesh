@@ -1,0 +1,240 @@
+# OSP-Data-Mesh: ein Knoten mit Docker Compose
+#
+# Bedienung (im Verzeichnis deploy/, siehe docs/installation.md, Variante B):
+#   cp .env.example .env            # Werte setzen (Schlüssel/Passwörter erzeugen, siehe .env.example)
+#   docker compose up -d --build    # db → migrate (einmalig) → node → caddy
+#   docker compose run --rm cli create-admin --email it@osp.example --name "IT-Administration"
+#   docker compose --profile bi up -d --build   # zusätzlich Apache Superset (optional)
+#
+# Netztrennung (interne und externe Dienste):
+#   frontend  normales Bridge-Netz: Caddy, Knoten, Superset. Nur Caddy veröffentlicht Ports.
+#             Der Knoten braucht ausgehenden Zugang (Partnerknoten, API-Quellen) und ist daher hier.
+#   backend   internes Netz (internal: true, kein Zugang nach außen): Datenbank, Knoten, Migration,
+#             CLI, Superset. Die Datenbank ist von außen nicht erreichbar.
+#
+# Zugangsdaten: Der Knoten erhält ausschließlich die Laufzeitrolle mesh_app. Das Passwort von
+# mesh_owner erhalten nur die Einmal-Dienste "migrate" und "cli"; Superset erhält nur mesh_bi.
+#
+# Hinweis: Compose ersetzt Variablen in der gesamten Datei, auch für inaktive Profile. Variablen der
+# optionalen Dienste (Superset) sind daher nicht als Pflicht (":?") markiert; sie werden zur Laufzeit
+# geprüft.
+
+name: osp-data-mesh
+
+x-app: &app
+  image: osp-data-mesh:${MESH_IMAGE_TAG:-local}
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+
+# Laufzeitkonfiguration des Knotens (vollständige Liste: src/server/config.ts, ../.env.example)
+x-node-env: &node-env
+  MESH_NODE_ID: ${MESH_NODE_ID:?MESH_NODE_ID in .env setzen}
+  MESH_NODE_NAME: ${MESH_NODE_NAME:?MESH_NODE_NAME in .env setzen}
+  MESH_PUBLIC_URL: ${MESH_PUBLIC_URL:?MESH_PUBLIC_URL in .env setzen (https://...)}
+  MESH_HOST: 0.0.0.0
+  MESH_PORT: "4401"
+  MESH_DB_URL: postgres://mesh_app:${MESH_DB_APP_PASSWORD:?MESH_DB_APP_PASSWORD in .env setzen}@db:5432/mesh
+  MESH_DB_POOL_MAX: ${MESH_DB_POOL_MAX:-10}
+  MESH_MASTER_KEY: ${MESH_MASTER_KEY:?MESH_MASTER_KEY in .env setzen (bun run cli gen-key)}
+  MESH_MASTER_KEY_PREVIOUS: ${MESH_MASTER_KEY_PREVIOUS:-}
+  MESH_BACKUP_KEY: ${MESH_BACKUP_KEY:?MESH_BACKUP_KEY in .env setzen (bun run cli gen-key)}
+  MESH_BACKUP_DIR: /var/lib/osp-mesh/backups
+  MESH_BACKUP_INTERVAL_HOURS: ${MESH_BACKUP_INTERVAL_HOURS:-24}
+  MESH_BACKUP_RETENTION: ${MESH_BACKUP_RETENTION:-14}
+  MESH_PG_DUMP: /usr/lib/postgresql/18/bin/pg_dump
+  MESH_COOKIE_SECURE: "true"
+  MESH_SESSION_TTL_HOURS: ${MESH_SESSION_TTL_HOURS:-12}
+  MESH_FEDERATION_ALLOW_HTTP: "false"
+  MESH_SOURCE_ALLOWED_HOSTS: ${MESH_SOURCE_ALLOWED_HOSTS:-}
+  MESH_TRUST_PROXY: "true"
+  MESH_LOG_LEVEL: ${MESH_LOG_LEVEL:-info}
+  MESH_TIMEZONE: ${MESH_TIMEZONE:-Europe/Berlin}
+  MESH_UI_DIR: /app/dist/ui
+  MESH_DOCS_DIR: /app/dist/docs
+  MESH_BI_DB_HOST: ${MESH_BI_DB_HOST:-}
+  MESH_BI_DB_PORT: ${MESH_BI_DB_PORT:-}
+  MESH_BI_DB_NAME: ${MESH_BI_DB_NAME:-}
+  MESH_WORKERS: "true"
+
+services:
+  # ---------------------------------------------------------------------------------------------
+  # PostgreSQL 18. Beim allerersten Start (leeres Volume) legt init/10-osp-bootstrap.sh mit
+  # bootstrap.sql die Rollen mesh_owner, mesh_app, mesh_bi und die Datenbank "mesh" an.
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD in .env setzen}
+      MESH_DB_OWNER_PASSWORD: ${MESH_DB_OWNER_PASSWORD:?MESH_DB_OWNER_PASSWORD in .env setzen}
+      MESH_DB_APP_PASSWORD: ${MESH_DB_APP_PASSWORD:?MESH_DB_APP_PASSWORD in .env setzen}
+      MESH_DB_BI_PASSWORD: ${MESH_DB_BI_PASSWORD:?MESH_DB_BI_PASSWORD in .env setzen}
+    volumes:
+      # Ab PostgreSQL 18 liegt das Datenverzeichnis unter /var/lib/postgresql/18/docker
+      - db_data:/var/lib/postgresql
+      - ./postgres/bootstrap.sql:/opt/osp-data-mesh/bootstrap.sql:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]
+    healthcheck:
+      # Über TCP prüfen: der Initialisierungs-Server lauscht nur auf dem Unix-Socket, daher wird
+      # "healthy" erst nach Abschluss der Initialisierung erreicht.
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -p 5432 -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    shm_size: 256mb
+    stop_grace_period: 60s
+
+  # ---------------------------------------------------------------------------------------------
+  # Schemamigrationen (einmalig bei jedem "up"), Rolle mesh_owner. Der Server migriert nie selbst.
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["bun", "src/server/cli/main.ts", "migrate"]
+    environment:
+      MESH_DB_OWNER_URL: postgres://mesh_owner:${MESH_DB_OWNER_PASSWORD:?MESH_DB_OWNER_PASSWORD in .env setzen}@db:5432/mesh
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------------------------
+  # Der Knoten (Server). Nur Laufzeitrolle mesh_app, kein Owner-Passwort.
+  node:
+    <<: *app
+    restart: unless-stopped
+    environment: *node-env
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - backups:/var/lib/osp-mesh/backups
+    networks: [backend, frontend]
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://127.0.0.1:4401/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+
+  # ---------------------------------------------------------------------------------------------
+  # TLS-Reverse-Proxy. Einziger Dienst mit veröffentlichten Ports.
+  #   443/8443: HTTPS (8443 nur für Superset, Profil "bi"); 80: Weiterleitung auf HTTPS und ACME-Prüfung
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on:
+      node:
+        condition: service_started
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN in .env setzen}
+      CADDY_TLS: ${CADDY_TLS:-internal}
+    # CADDY_BIND: Adresse der Netzwerkschnittstelle (Standard alle); z. B. nur die LAN-Adresse
+    ports:
+      - "${CADDY_BIND:-0.0.0.0}:80:80"
+      - "${CADDY_BIND:-0.0.0.0}:443:443"
+      - "${CADDY_BIND:-0.0.0.0}:443:443/udp"
+      - "${CADDY_BIND:-0.0.0.0}:8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [frontend]
+
+  # ---------------------------------------------------------------------------------------------
+  # Betriebs-Kommandozeile (Profil "tools"): docker compose run --rm cli <kommando> [optionen]
+  # z. B. create-admin, backup, restore, verify-audit, rotate-master-key, node-card, gen-key
+  cli:
+    <<: *app
+    profiles: [tools]
+    restart: "no"
+    entrypoint: ["/app/deploy/docker-entrypoint.sh", "bun", "src/server/cli/main.ts"]
+    environment:
+      <<: *node-env
+      MESH_DB_OWNER_URL: postgres://mesh_owner:${MESH_DB_OWNER_PASSWORD:?MESH_DB_OWNER_PASSWORD in .env setzen}@db:5432/mesh
+      MESH_ADMIN_PASSWORD: ${MESH_ADMIN_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backups:/var/lib/osp-mesh/backups
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------------------------
+  # Optional: Apache Superset mit Referenz-Dashboards (Profil "bi"), liest nur als mesh_bi.
+  # NICHT LOKAL VERIFIZIERT (siehe superset/README.md).
+  superset-init:
+    image: osp-data-mesh-superset:6.1.0
+    build:
+      context: ./superset
+    profiles: [bi]
+    restart: "no"
+    command:
+      - /bin/bash
+      - -ec
+      - |
+        superset db upgrade
+        superset fab create-admin --username "$${SUPERSET_ADMIN_USER:-admin}" --firstname Superset \
+          --lastname Admin --email "$${SUPERSET_ADMIN_EMAIL:-admin@localhost}" \
+          --password "$${SUPERSET_ADMIN_PASSWORD:?SUPERSET_ADMIN_PASSWORD fehlt}" || true
+        superset init
+    environment: &superset-env
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-}
+      SUPERSET_ADMIN_USER: ${SUPERSET_ADMIN_USER:-admin}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@localhost}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-}
+    volumes:
+      - superset_home:/app/superset_home
+    networks: [backend]
+
+  superset:
+    image: osp-data-mesh-superset:6.1.0
+    build:
+      context: ./superset
+    profiles: [bi]
+    restart: unless-stopped
+    environment: *superset-env
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    volumes:
+      - superset_home:/app/superset_home
+    networks: [backend, frontend]
+
+  # Legt Datenbankverbindung (mesh_bi), Datasets, Diagramme und die drei Referenz-Dashboards an.
+  # Idempotent: vorhandene Objekte werden wiederverwendet.
+  superset-bootstrap:
+    image: osp-data-mesh-superset:6.1.0
+    build:
+      context: ./superset
+    profiles: [bi]
+    restart: "no"
+    command: ["python", "/app/osp/bootstrap_superset.py"]
+    environment:
+      <<: *superset-env
+      SUPERSET_URL: http://superset:8088
+      SUPERSET_MESH_DB_URI: postgresql+psycopg2://mesh_bi:${MESH_DB_BI_PASSWORD:-}@db:5432/mesh
+    depends_on:
+      superset:
+        condition: service_healthy
+    networks: [backend]
+
+volumes:
+  db_data:
+  backups:
+  caddy_data:
+  caddy_config:
+  superset_home:
+
+networks:
+  frontend: {}
+  backend:
+    internal: true

@@ -1,0 +1,42 @@
+# systemd-Unit für einen nativ installierten OSP-Data-Node (siehe docs/installation.md, Variante A)
+#
+#   sudo cp deploy/systemd/osp-data-mesh.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now osp-data-mesh
+#
+# Annahmen: Code unter /opt/osp-data-mesh, Systembenutzer "osp-mesh", Bun unter /usr/local/bin/bun,
+# Konfiguration in /opt/osp-data-mesh/.env (ohne Owner-Passwort, siehe .env.example).
+
+[Unit]
+Description=OSP-Data-Mesh Knoten
+Documentation=file:///opt/osp-data-mesh/docs/betrieb.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=osp-mesh
+Group=osp-mesh
+WorkingDirectory=/opt/osp-data-mesh
+# Bun liest .env im Arbeitsverzeichnis; explizit angegeben, damit keine weiteren .env-Dateien geladen werden
+ExecStart=/usr/local/bin/bun --env-file=/opt/osp-data-mesh/.env src/server/main.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+Environment=NODE_ENV=production
+
+# Härtung
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/osp-data-mesh/backups
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

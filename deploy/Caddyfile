@@ -1,0 +1,53 @@
+# OSP-Data-Mesh: Caddy als TLS-Reverse-Proxy vor dem Knoten
+#
+# Umgebungsvariablen (deploy/.env bzw. Umgebung des caddy-Dienstes):
+#   CADDY_DOMAIN  öffentlicher DNS-Name des Knotens, z. B. mesh.osp-nord.example.de
+#                 (muss zu MESH_PUBLIC_URL passen: https://<CADDY_DOMAIN>)
+#   CADDY_TLS     "internal"  → Zertifikat aus Caddys eigener lokaler CA (LAN/Test; Clients und
+#                               Partnerknoten müssen der CA vertrauen, siehe docs/installation.md)
+#                 E-Mail-Adresse → automatisches HTTPS mit Let's Encrypt/ZeroSSL (ACME) für eine
+#                               öffentlich erreichbare Domain (Ports 80/443 aus dem Internet erreichbar)
+#
+# Native Installation (ohne Docker): Upstream "node:4401" durch "127.0.0.1:4401" und "superset:8088"
+# durch die Superset-Adresse ersetzen bzw. den zweiten Block entfernen.
+
+# Die Verwaltungs-API von Caddy lauscht nur innerhalb des Containers (localhost:2019) und wird nicht
+# veröffentlicht; Änderungen an dieser Datei: docker compose restart caddy
+
+(common) {
+	tls {$CADDY_TLS:internal}
+	encode zstd gzip
+	# Server-Kennung nicht preisgeben; Sicherheits-Header setzt der Knoten selbst
+	header -Server
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Knoten: Web-Oberfläche, REST-API, Föderationsprotokoll, Doku (/hilfe/), /healthz, /readyz
+{$CADDY_DOMAIN:localhost} {
+	import common
+
+	# Uploads bis 20 MB, Föderationsantworten bis 50 MB (der Knoten prüft zusätzlich selbst)
+	request_body {
+		max_size 60MB
+	}
+
+	reverse_proxy node:4401 {
+		# Caddy überschreibt X-Forwarded-For mit der echten Client-Adresse (keine vertrauten Proxys
+		# vor Caddy konfiguriert); der Knoten wertet den Header nur mit MESH_TRUST_PROXY=true aus.
+		# X-Forwarded-Proto/-Host setzt Caddy standardmäßig.
+		transport http {
+			read_timeout 5m
+			write_timeout 5m
+		}
+	}
+}
+
+# Optional: Apache Superset (Profil "bi") auf Port 8443 desselben Namens.
+# Ohne laufenden Superset-Dienst antwortet dieser Port mit 502.
+{$CADDY_DOMAIN:localhost}:8443 {
+	import common
+	reverse_proxy superset:8088
+}

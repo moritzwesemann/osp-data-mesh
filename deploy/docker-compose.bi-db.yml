@@ -1,0 +1,34 @@
+# Optional: PostgreSQL für BI-Werkzeuge (Excel, Power BI, Tableau, Python) im internen Netz des OSP
+# erreichbar machen. Nur die nur-lesende Rolle mesh_bi darf von außen und nur per TLS zugreifen.
+# NICHT LOKAL VERIFIZIERT (kein Docker auf der Entwicklungsmaschine).
+#
+# Voraussetzungen (siehe docs/bi.md):
+#   - in deploy/.env: BI_DB_BIND=<interne IP-Adresse des Servers>, z. B. 10.0.5.10 (nie 0.0.0.0 im Internet)
+#   - TLS-Zertifikat für den Datenbank-Hostnamen:
+#       deploy/postgres/tls/server.crt und server.key (Schlüssel: chown 999:999, chmod 600;
+#       UID 999 = Benutzer postgres im Abbild)
+#
+# Start:  docker compose -f docker-compose.yml -f docker-compose.bi-db.yml up -d
+
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/osp-db-tls/server.crt
+      - -c
+      - ssl_key_file=/etc/osp-db-tls/server.key
+      - -c
+      - hba_file=/etc/osp-db-hba/pg_hba.conf
+    ports:
+      - "${BI_DB_BIND:?BI_DB_BIND (interne IP-Adresse) in .env setzen}:5432:5432"
+    volumes:
+      - ./postgres/tls:/etc/osp-db-tls:ro
+      - ./postgres/pg_hba.bi.conf:/etc/osp-db-hba/pg_hba.conf:ro
+    # Das Netz "backend" ist intern (ohne veröffentlichte Ports); für den BI-Zugang ein eigenes Netz
+    networks: [backend, bi_access]
+
+networks:
+  bi_access: {}

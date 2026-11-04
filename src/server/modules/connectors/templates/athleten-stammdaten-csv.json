@@ -1,0 +1,55 @@
+{
+  "format": "osp-data-mesh/connector@1",
+  "connector": {
+    "slug": "athleten-stammdaten-csv",
+    "name": "Athleten-Stammdaten (CSV)",
+    "description": "Stammdaten der Athletinnen und Athleten aus einer Kaderliste (CSV, z. B. Excel-Export). Erwartete Spalten: Athleten-ID, Nachname, Vorname, Geburtsdatum (TT.MM.JJJJ), Geschlecht (w/m/d), Sportart, Disziplin, Kaderstatus (z. B. Perspektivkader), Verein. Zuordnung über die Athleten-ID (Kennungssystem osp-id), ersatzweise über Name und Geburtsdatum.",
+    "kind": "csv_upload",
+    "targetType": "athletes",
+    "targetDatasetSlug": null,
+    "config": {
+      "type": "csv",
+      "delimiter": "auto",
+      "encoding": "utf-8",
+      "decimalSeparator": ",",
+      "dateFormat": "DD.MM.YYYY"
+    },
+    "mapping": [
+      { "source": "Athleten-ID", "target": "athlete.external_id", "transform": "trim" },
+      { "source": "Nachname", "target": "athlete.last_name", "transform": "trim" },
+      { "source": "Vorname", "target": "athlete.first_name", "transform": "trim" },
+      { "source": "Geburtsdatum", "target": "athlete.date_of_birth", "transform": "trim" },
+      {
+        "source": "Geschlecht",
+        "target": "athlete.sex",
+        "transform": "lower",
+        "valueMap": { "w": "f", "weiblich": "f", "m": "m", "männlich": "m", "d": "d", "divers": "d" }
+      },
+      { "source": "Sportart", "target": "athlete.sport", "transform": "trim" },
+      { "source": "Disziplin", "target": "athlete.discipline", "transform": "trim" },
+      {
+        "source": "Kaderstatus",
+        "target": "athlete.squad_status",
+        "transform": "trim",
+        "valueMap": {
+          "Olympiakader": "OK",
+          "Perspektivkader": "PK",
+          "Ergänzungskader": "EK",
+          "Nachwuchskader 1": "NK1",
+          "Nachwuchskader I": "NK1",
+          "Nachwuchskader 2": "NK2",
+          "Nachwuchskader II": "NK2",
+          "Landeskader": "LK",
+          "kein Kader": "none",
+          "ohne Kader": "none"
+        },
+        "defaultValue": "none"
+      },
+      { "source": "Verein", "target": "athlete.club", "transform": "trim" }
+    ],
+    "athleteMatch": { "strategy": "external_id", "system": "osp-id" },
+    "onError": "skip_row",
+    "active": true
+  },
+  "dataset": null
+}

@@ -182,7 +182,21 @@ export const IMPORT_ERROR_CODES = [
   'duplicate_in_source',
   'missing_column',
   'invalid_row',
+  /** Text länger als zulässig (params.max) */
+  'too_long',
+  /** Hinweis (warning): vorhandene Person bzw. vorhandener Eintrag wird mit geänderten Werten überschrieben */
+  'will_update',
+  /** Hinweis (warning, Zeile 0): Datei ist kein gültiges UTF-8, wurde als Windows-1252 gelesen */
+  'encoding_fallback',
+  /** Hinweis (warning, Zeile 0): API-Abruf nach maxPages Seiten beendet, evtl. unvollständig */
+  'max_pages_reached',
+  /** Zeile 0 eines fehlgeschlagenen API-Abrufs (params.status = HTTP-Status, falls vorhanden) */
+  'source_unreachable',
+  'invalid_response',
 ] as const;
+
+/** Übersetzbare Gründe für status=failed eines Importlaufs (ImportRun.failureCode) */
+export const IMPORT_FAILURE_CODES = ['missing_column', 'source_unreachable', 'invalid_response'] as const;
 
 export const ImportError = z.object({
   rowNumber: z.number().int(),

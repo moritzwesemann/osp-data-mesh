@@ -1,0 +1,80 @@
+{
+  "format": "osp-data-mesh/connector@1",
+  "connector": {
+    "slug": "leistungsdiagnostik-csv",
+    "name": "Leistungsdiagnostik (CSV)",
+    "description": "Ergebnisse von Stufentests aus der Leistungsdiagnostik (CSV mit Komma, ISO-Datum, Dezimalpunkt). Erwartete Spalten: Nachname, Vorname, Geburtsdatum, Testdatum, Protokoll, VO2max, Laktatschwelle_W, HFmax. Zuordnung der Personen über Nachname, Vorname und Geburtsdatum.",
+    "kind": "csv_upload",
+    "targetType": "dataset",
+    "targetDatasetSlug": "leistungsdiagnostik",
+    "config": {
+      "type": "csv",
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "decimalSeparator": ".",
+      "dateFormat": "YYYY-MM-DD"
+    },
+    "mapping": [
+      { "source": "Nachname", "target": "athlete.last_name", "transform": "trim" },
+      { "source": "Vorname", "target": "athlete.first_name", "transform": "trim" },
+      { "source": "Geburtsdatum", "target": "athlete.date_of_birth", "transform": "trim" },
+      { "source": "Testdatum", "target": "data.test_date", "transform": "trim" },
+      { "source": "Protokoll", "target": "data.protocol", "transform": "trim" },
+      { "source": "VO2max", "target": "data.vo2max", "transform": "trim" },
+      { "source": "Laktatschwelle_W", "target": "data.lactate_threshold_power", "transform": "trim" },
+      { "source": "HFmax", "target": "data.max_heart_rate", "transform": "trim" }
+    ],
+    "athleteMatch": { "strategy": "natural_key" },
+    "onError": "skip_row",
+    "active": true
+  },
+  "dataset": {
+    "slug": "leistungsdiagnostik",
+    "name": "Leistungsdiagnostik",
+    "description": "Stufentests auf Laufband, Ruder- und Radergometer: maximale Sauerstoffaufnahme, Leistung an der Laktatschwelle und maximale Herzfrequenz.",
+    "category": "performance",
+    "specialCategory": false,
+    "shareability": "on_request",
+    "fields": [
+      { "name": "test_date", "label": "Testdatum", "type": "date", "required": true },
+      {
+        "name": "protocol",
+        "label": "Testprotokoll",
+        "type": "enum",
+        "required": true,
+        "enumValues": ["Stufentest Laufband", "Stufentest Ruderergometer", "Stufentest Radergometer"]
+      },
+      {
+        "name": "vo2max",
+        "label": "Maximale Sauerstoffaufnahme (VO2max)",
+        "type": "number",
+        "unit": "ml/kg/min",
+        "required": true,
+        "min": 20,
+        "max": 95
+      },
+      {
+        "name": "lactate_threshold_power",
+        "label": "Leistung an der Laktatschwelle",
+        "type": "number",
+        "unit": "W",
+        "required": false,
+        "min": 50,
+        "max": 600,
+        "description": "Nur bei Ergometer-Protokollen"
+      },
+      {
+        "name": "max_heart_rate",
+        "label": "Maximale Herzfrequenz",
+        "type": "integer",
+        "unit": "1/min",
+        "required": true,
+        "min": 120,
+        "max": 230
+      }
+    ],
+    "keyFields": ["test_date", "protocol"],
+    "observedAtField": "test_date",
+    "ownerContact": "Leistungsdiagnostik des OSP"
+  }
+}

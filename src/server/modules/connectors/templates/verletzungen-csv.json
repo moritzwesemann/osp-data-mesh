@@ -1,0 +1,88 @@
+{
+  "format": "osp-data-mesh/connector@1",
+  "connector": {
+    "slug": "verletzungen-csv",
+    "name": "Verletzungen (CSV)",
+    "description": "Verletzungsdokumentation der sportmedizinischen Betreuung (Gesundheitsdaten, besondere Kategorie nach Art. 9 DSGVO). Erwartete Spalten: Athleten-ID, Verletzungsdatum (TT.MM.JJJJ), Körperregion, Verletzungsart, Ausfalltage, Status. Zuordnung über die Athleten-ID (Kennungssystem osp-id).",
+    "kind": "csv_upload",
+    "targetType": "dataset",
+    "targetDatasetSlug": "verletzungen",
+    "config": {
+      "type": "csv",
+      "delimiter": "auto",
+      "encoding": "utf-8",
+      "decimalSeparator": ",",
+      "dateFormat": "DD.MM.YYYY"
+    },
+    "mapping": [
+      { "source": "Athleten-ID", "target": "athlete.external_id", "transform": "trim" },
+      { "source": "Verletzungsdatum", "target": "data.injury_date", "transform": "trim" },
+      { "source": "Körperregion", "target": "data.body_region", "transform": "trim" },
+      { "source": "Verletzungsart", "target": "data.injury_type", "transform": "trim" },
+      { "source": "Ausfalltage", "target": "data.days_absent", "transform": "trim" },
+      { "source": "Status", "target": "data.status", "transform": "trim" }
+    ],
+    "athleteMatch": { "strategy": "external_id", "system": "osp-id" },
+    "onError": "skip_row",
+    "active": true
+  },
+  "dataset": {
+    "slug": "verletzungen",
+    "name": "Verletzungen",
+    "description": "Verletzungen und Ausfallzeiten (Gesundheitsdaten). Weitergabe nur mit dokumentierter Einwilligung.",
+    "category": "health",
+    "specialCategory": true,
+    "shareability": "on_request",
+    "fields": [
+      { "name": "injury_date", "label": "Verletzungsdatum", "type": "date", "required": true },
+      {
+        "name": "body_region",
+        "label": "Körperregion",
+        "type": "enum",
+        "required": true,
+        "enumValues": [
+          "Knie",
+          "Sprunggelenk",
+          "Schulter",
+          "Rücken",
+          "Oberschenkel",
+          "Hand/Handgelenk",
+          "Sonstige"
+        ]
+      },
+      {
+        "name": "injury_type",
+        "label": "Verletzungsart",
+        "type": "enum",
+        "required": true,
+        "enumValues": [
+          "Muskelverletzung",
+          "Bänderverletzung",
+          "Überlastung",
+          "Fraktur",
+          "Prellung",
+          "Sonstige"
+        ]
+      },
+      {
+        "name": "days_absent",
+        "label": "Ausfalltage",
+        "type": "integer",
+        "unit": "Tage",
+        "required": false,
+        "min": 0,
+        "max": 365
+      },
+      {
+        "name": "status",
+        "label": "Status",
+        "type": "enum",
+        "required": true,
+        "enumValues": ["akut", "in Reha", "ausgeheilt"]
+      }
+    ],
+    "keyFields": ["injury_date", "body_region"],
+    "observedAtField": "injury_date",
+    "ownerContact": "Sportmedizin des OSP"
+  }
+}

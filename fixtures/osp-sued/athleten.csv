@@ -1,0 +1,21 @@
+﻿Athleten-ID;Nachname;Vorname;Geburtsdatum;Geschlecht;Sportart;Disziplin;Kaderstatus;Verein
+SUED-0001;Krause;Katharina;21.01.2007;w;Fechten;Florett;Nachwuchskader 2;Fechtsport Schönau
+SUED-0002;Berger;Emma;18.01.2009;w;Radsport;Mountainbike;Nachwuchskader 1;Radteam Sonnenhang
+SUED-0003;Schneider;Jonas;12.05.2002;m;Rudern;Achter;Ergänzungskader;Ruderclub Seewinkel
+SUED-0004;Brandt;Clara;22.12.2010;w;Judo;bis 73 kg;Nachwuchskader 1;Budo-Sport Kastanienhof
+SUED-0005;Walter;Tobias;20.04.1999;m;Rudern;Doppelzweier;Nachwuchskader 1;Ruderclub Seewinkel
+SUED-0006;Hölzle;Emma;22.02.2004;w;Fechten;Florett;Nachwuchskader 2;Fechtclub Burgberg
+SUED-0007;Fröhlich;Elias;28.06.2006;m;Leichtathletik;400 m Hürden;Perspektivkader;LG Talblick
+SUED-0008;Winter;Niklas;24.09.2001;m;Kanu-Rennsport;K2 500 m;Nachwuchskader 1;Paddelfreunde Mühlwasser
+SUED-0009;Schröder;Leon;17.02.1996;m;Judo;bis 57 kg;Nachwuchskader 2;Budo-Sport Kastanienhof
+SUED-0010;Schulz;Lotta;10.02.2007;w;Judo;bis 73 kg;Nachwuchskader 2;Budo-Sport Kastanienhof
+SUED-0011;Fischer;Niklas;16.06.2003;m;Judo;bis 73 kg;Olympiakader;Judo-Club Mühlbach
+SUED-0012;Klein;Lukas;13.11.1996;m;Schwimmen;100 m Freistil;kein Kader;SG Blauweiher
+SUED-0013;König;Lotta;17.01.2005;w;Kanu-Rennsport;C1 1000 m;Perspektivkader;Kanu-Club Auenstein
+SUED-0014;Maier;Jana;04.05.2002;w;Schwimmen;200 m Brust;Olympiakader;SG Blauweiher
+SUED-0015;Graf;Elias;03.07.2008;m;Rudern;Leichtgewichts-Doppelzweier;Perspektivkader;Ruderverein Großsee
+SUED-0016;Neumann;Felix;18.10.1996;m;Radsport;Mountainbike;Nachwuchskader 1;Radteam Sonnenhang
+SUED-0017;Hartmann;Paula;15.07.2010;w;Fechten;Säbel;Nachwuchskader 2;Fechtsport Schönau
+SUED-0018;Krause;Paula;22.10.2000;w;Schwimmen;100 m Freistil;Ergänzungskader;SG Blauweiher
+SUED-0019;Scholz;Maximilian;05.09.2003;m;Rudern;Leichtgewichts-Doppelzweier;kein Kader;Ruderclub Seewinkel
+SUED-0020;Hahn;Jan;28.03.2003;m;Judo;bis 57 kg;Nachwuchskader 2;Budo-Sport Kastanienhof

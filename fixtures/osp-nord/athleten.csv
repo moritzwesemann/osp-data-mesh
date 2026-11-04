@@ -1,0 +1,44 @@
+Athleten-ID;Nachname;Vorname;Geburtsdatum;Geschlecht;Sportart;Disziplin;Kaderstatus;Verein
+NORD-0001;Lorenz;Lotta;10.05.1997;w;Judo;bis 57 kg;Perspektivkader;Judo-Club Mühlbach
+NORD-0002;Groß;Hannes;24.04.2001;m;Rudern;Einer;kein Kader;Ruderclub Seewinkel
+NORD-0003;Fischer;Tobias;11.12.2001;m;Ringen;Freistil bis 65 kg;Perspektivkader;AC Eichenhain
+NORD-0004;Groß;Maximilian;11.01.1998;m;Radsport;Mountainbike;Nachwuchskader 1;RSV Hügelfeld
+NORD-0005;Bäumer;Lena;10.02.2009;w;Radsport;Bahn Sprint;Perspektivkader;RSV Hügelfeld
+NORD-0006;Schulz;Sarah;13.06.2009;w;Rudern;Einer;Perspektivkader;Ruderverein Großsee
+NORD-0007;Fuchs;Jürgen;11.06.2002;m;Radsport;Mountainbike;Nachwuchskader 2;RSV Hügelfeld
+NORD-0008;Köhler;Philipp;25.07.2004;m;Leichtathletik;Speerwurf;Nachwuchskader 2;LG Talblick
+NORD-0009;Süß;Paula;11.07.2002;w;Ringen;Freistil bis 65 kg;Nachwuchskader 2;AC Eichenhain
+NORD-0010;Kühn;Finn;18.06.1998;m;Judo;bis 73 kg;Nachwuchskader 2;Judo-Club Mühlbach
+NORD-0011;Schneider;Marie;07.10.2009;w;Judo;bis 57 kg;Nachwuchskader 2;Budo-Sport Kastanienhof
+NORD-0012;Schneider;Mia;11.01.2000;w;Schwimmen;400 m Lagen;Ergänzungskader;SG Blauweiher
+NORD-0013;Hahn;Katharina;31.02.2004;w;Radsport;Mountainbike;Nachwuchskader 1;RSV Hügelfeld
+NORD-0014;Albrecht;Zoë;13.04.1999;w;Kanu-Rennsport;K1 500 m;Olympiakader;Kanu-Club Auenstein
+NORD-0015;Kühn;Julia;02.11.1999;w;Schwimmen;200 m Brust;Landeskader;SG Blauweiher
+NORD-0016;Zimmermann;Jürgen;17.02.2006;m;Rudern;Achter;Nachwuchskader 2;Ruderclub Seewinkel
+NORD-0017;Graf;Finn;05.10.2006;m;Rudern;Leichtgewichts-Doppelzweier;Ergänzungskader;Ruderclub Seewinkel
+NORD-0018;Fuchs;Jan;09.07.2002;m;Radsport;Bahn Sprint;kein Kader;RSV Hügelfeld
+NORD-0019;Huber;Clara;19.06.2002;w;Judo;bis 73 kg;Perspektivkader;Budo-Sport Kastanienhof
+NORD-0020;Krämer;Charlotte;07.04.2006;w;Fechten;Säbel;Nachwuchskader 1;Fechtclub Burgberg
+NORD-0021;Walter;Emma;19.10.2002;w;Ringen;Griechisch-römisch bis 77 kg;kein Kader;KSV Felsental
+NORD-0022;Hoffmann;Jürgen;14.08.1996;m;Rudern;Achter;Landeskader;Ruderclub Seewinkel
+NORD-0023;Neumann;Paula;02.04.1999;w;Rudern;Doppelzweier;Olympiakader;Ruderverein Großsee
+NORD-0024;Scholz;Sophie;28.09.1998;w;Leichtathletik;Speerwurf;Olympiakader;TSG Eichenhain
+NORD-0025;Scholz;Björn;21.02.2000;m;Radsport;Bahn Sprint;Perspektivkader;Radteam Sonnenhang
+NORD-0026;Winter;Lea;20.12.2003;w;Fechten;Florett;Ergänzungskader;Fechtsport Schönau
+NORD-0027;Werner;Jana;27.05.2001;w;;Leichtgewichts-Doppelzweier;Ergänzungskader;Ruderverein Großsee
+NORD-0028;Hahn;Lea;11.05.2010;w;Schwimmen;200 m Brust;kein Kader;Schwimmverein Lindenwasser
+NORD-0029;Weber;Erik;06.01.2000;m;Leichtathletik;Hochsprung;Landeskader;TSG Eichenhain
+NORD-0030;Ludwig;Sophie;18.03.1998;w;Judo;bis 90 kg;Nachwuchskader 2;Budo-Sport Kastanienhof
+NORD-0031;Weiß;Lisa;11.01.1998;w;Leichtathletik;1500 m;Nachwuchskader 2;LG Talblick
+NORD-0032;Koch;Leon;11.04.2003;m;Radsport;Mountainbike;kein Kader;Radteam Sonnenhang
+NORD-0033;Krämer;Noah;16.12.2001;m;Ringen;Freistil bis 65 kg;Nachwuchskader 1;AC Eichenhain
+NORD-0034;Frank;Lotta;15.12.2010;w;Kanu-Rennsport;K1 500 m;kein Kader;Kanu-Club Auenstein
+NORD-0035;Jung;Nele;21.04.2007;w;Radsport;Mountainbike;kein Kader;Radteam Sonnenhang
+NORD-0036;Jung;Fabian;08.08.1997;m;Ringen;Freistil bis 65 kg;Perspektivkader;AC Eichenhain
+NORD-0037;Jäger;Hannes;12.01.2005;m;Schwimmen;100 m Freistil;Ergänzungskader;Schwimmverein Lindenwasser
+NORD-0038;Winter;Lotta;15.05.2005;w;Kanu-Rennsport;K2 500 m;Bundeskader;Kanu-Club Auenstein
+NORD-0039;Wolf;Clara;06.05.2001;w;Ringen;Freistil bis 65 kg;Nachwuchskader 2;KSV Felsental
+NORD-0040;Peters;Amelie;22.03.2010;w;Radsport;Bahn Sprint;Olympiakader;RSV Hügelfeld
+NORD-0041;Berger;Finn;15.02.2002;m;Radsport;Straße;kein Kader;RSV Hügelfeld
+NORD-0042;Schmidt;Paul;14.05.2005;m;Ringen;Griechisch-römisch bis 77 kg;Landeskader;KSV Felsental
+NORD-0043;Schäfer;Paul;22.02.2010;m;Schwimmen;400 m Lagen;Olympiakader;SG Blauweiher

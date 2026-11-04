@@ -1,0 +1,26 @@
+Athleten-ID;Nachname;Vorname;Geburtsdatum;Geschlecht;Sportart;Disziplin;Kaderstatus;Verein
+MITTE-0001;König;Moritz;12.05.2004;m;Rudern;Leichtgewichts-Doppelzweier;Olympiakader;Ruderclub Seewinkel
+MITTE-0002;Fröhlich;Jan;17.12.2003;m;Judo;bis 73 kg;kein Kader;Judo-Club Mühlbach
+MITTE-0003;Möller;Finn;04.06.2006;m;Fechten;Säbel;Nachwuchskader 2;Fechtclub Burgberg
+MITTE-0004;Hölzle;Jana;12.02.2002;w;Leichtathletik;Speerwurf;Nachwuchskader 2;LG Talblick
+MITTE-0005;Kühn;Clara;19.08.1997;w;Leichtathletik;100 m;Ergänzungskader;LG Talblick
+MITTE-0006;Schröder;Björn;15.10.2009;m;Radsport;Mountainbike;Nachwuchskader 2;Radteam Sonnenhang
+MITTE-0007;Böhm;Sophie;02.07.1999;w;Leichtathletik;Weitsprung;kein Kader;TSG Eichenhain
+MITTE-0008;Fröhlich;Maja;25.11.1999;w;Judo;bis 57 kg;Landeskader;Budo-Sport Kastanienhof
+MITTE-0009;Klein;Lotta;20.06.1998;w;Ringen;Griechisch-römisch bis 77 kg;Nachwuchskader 2;KSV Felsental
+MITTE-0010;König;Paula;23.11.2000;w;Ringen;Griechisch-römisch bis 77 kg;Landeskader;AC Eichenhain
+MITTE-0011;Müller;Laura;18.04.2002;w;Rudern;Leichtgewichts-Doppelzweier;Nachwuchskader 1;Ruderverein Großsee
+MITTE-0012;Günther;Sophie;07.12.2010;w;Kanu-Rennsport;K2 500 m;Nachwuchskader 1;Paddelfreunde Mühlwasser
+MITTE-0013;Fröhlich;Lukas;18.05.2004;m;Schwimmen;100 m Rücken;Nachwuchskader 2;Schwimmverein Lindenwasser
+MITTE-0014;Klein;David;27.12.2000;m;Judo;bis 73 kg;Nachwuchskader 1;Judo-Club Mühlbach
+MITTE-0015;Böhm;Lea;24.07.2007;w;Kanu-Rennsport;C1 1000 m;Olympiakader;Paddelfreunde Mühlwasser
+MITTE-0016;Härtel;Sören;28.10.1999;m;Radsport;Bahn Sprint;Nachwuchskader 2;RSV Hügelfeld
+MITTE-0017;Schneider;Finn;06.04.2008;m;Leichtathletik;Weitsprung;Landeskader;TSG Eichenhain
+MITTE-0018;Weiß;Jakob;07.02.1999;m;Fechten;Degen;Nachwuchskader 2;Fechtclub Burgberg
+MITTE-0019;Groß;Jan;03.10.1998;m;Fechten;Degen;Nachwuchskader 2;Fechtclub Burgberg
+MITTE-0020;Weiß;Emma;10.09.2006;w;Kanu-Rennsport;K2 500 m;Nachwuchskader 1;Paddelfreunde Mühlwasser
+MITTE-0021;Krause;Lukas;22.11.2006;m;Kanu-Rennsport;K1 500 m;Ergänzungskader;Kanu-Club Auenstein
+MITTE-0022;Scholz;Charlotte;08.08.2009;w;Ringen;Freistil bis 65 kg;Nachwuchskader 1;KSV Felsental
+MITTE-0023;Möller;David;09.09.2000;m;Schwimmen;100 m Freistil;Nachwuchskader 2;SG Blauweiher
+MITTE-0024;Hölzle;Greta;01.11.2009;w;Schwimmen;100 m Rücken;Landeskader;Schwimmverein Lindenwasser
+MITTE-0025;Möller;Laura;27.11.2007;w;Ringen;Griechisch-römisch bis 77 kg;Landeskader;KSV Felsental

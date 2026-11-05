@@ -27,7 +27,7 @@ describe('Anmeldung', () => {
 
     await page.getByLabel('Passwort').fill(env.password);
     await page.getByRole('button', { name: 'Anmelden', exact: true }).click();
-    await page.getByRole('heading', { level: 1, name: 'Willkommen, E2E analyst' }).waitFor();
+    await page.getByRole('heading', { level: 1, name: /^Guten (Morgen|Tag|Abend), E2E analyst$/ }).waitFor();
     await page.getByText('Test-OSP Nord · Analyse').waitFor();
     expect(await page.getByRole('alert').count()).toBe(0);
 

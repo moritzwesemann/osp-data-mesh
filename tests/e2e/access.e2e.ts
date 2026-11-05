@@ -32,6 +32,6 @@ describe('Zugriffsschutz', () => {
     expect(statuses).toEqual([403, 403]);
 
     await page.getByRole('link', { name: 'Zur Übersicht' }).click();
-    await page.getByRole('heading', { level: 1, name: 'Willkommen, E2E coach' }).waitFor();
+    await page.getByRole('heading', { level: 1, name: /^Guten (Morgen|Tag|Abend), E2E coach$/ }).waitFor();
   });
 });

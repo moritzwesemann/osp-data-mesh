@@ -17,7 +17,14 @@ import { dirname, extname, join, resolve } from 'node:path';
 export const ROOT = resolve(import.meta.dir, '..');
 
 /** Pakete, die in die Web-Oberfläche (dist/ui) gebündelt und damit ausgeliefert werden. */
-export const UI_BUNDLE_ROOTS = ['react', 'react-dom', 'react-router', '@tanstack/react-query', 'zod'];
+export const UI_BUNDLE_ROOTS = [
+  'react',
+  'react-dom',
+  'react-router',
+  '@tanstack/react-query',
+  'zod',
+  '@fontsource-variable/hanken-grotesk',
+];
 
 export type Usage = 'server' | 'ui' | 'dev';
 
@@ -552,7 +559,10 @@ ${[...byLicense.entries()]
   .join('\n')}
 
 Alle zur Laufzeit ausgelieferten npm-Pakete stehen unter freizügigen Lizenzen (MIT, ISC, BSD, Apache-2.0),
-die mit der EUPL-1.2 vereinbar sind. Die MPL-2.0 (\`lightningcss\`) betrifft nur ein Build-Werkzeug,
+die mit der EUPL-1.2 vereinbar sind. Ausnahme ist die Schrift Hanken Grotesk
+(\`@fontsource-variable/hanken-grotesk\`) unter der SIL Open Font License 1.1 (OFL-1.1): Sie erlaubt,
+die Schrift mit Software zu bündeln und weiterzugeben; die Schrift selbst bleibt unter der OFL und darf
+nicht allein verkauft werden. Die MPL-2.0 (\`lightningcss\`) betrifft nur ein Build-Werkzeug,
 das nicht ausgeliefert wird. Eine abschließende rechtliche Prüfung der Lizenzkompatibilität vor einer
 Veröffentlichung wird empfohlen.
 

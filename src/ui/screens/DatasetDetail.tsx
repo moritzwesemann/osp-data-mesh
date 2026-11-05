@@ -9,6 +9,7 @@ import { type Column, Pagination, Table } from '../components/Table.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import type { ApiOutput } from '../lib/api.ts';
 import { useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 
 type DatasetRecord = ApiOutput<'datasets.records'>['items'][number];
@@ -18,6 +19,7 @@ const PAGE_SIZE = 50;
 export function DatasetDetail() {
   const { id = '' } = useParams();
   const dataset = useApiQuery('datasets.get', { params: { id } });
+  useRememberVisit('dataset', id, dataset.isSuccess);
   return (
     <div className="page">
       <QueryView query={dataset}>{(d) => <DatasetDetailBody dataset={d} />}</QueryView>

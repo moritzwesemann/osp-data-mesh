@@ -15,6 +15,7 @@ import { absoluteUrl, downloadFile } from '../lib/api.ts';
 import { describeError } from '../lib/errors.ts';
 import { usePurposeLabel } from '../lib/purposes.ts';
 import { useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 
 /** Höchstzahl angezeigter Zeilen in der Tabelle; Exporte enthalten alle Zeilen. */
 const MAX_SHOWN = 500;
@@ -25,6 +26,7 @@ export function MyDataView() {
   const { id = '' } = useParams();
   const { t } = useI18n();
   const q = useApiQuery('access.list', {});
+  useRememberVisit('myData', id, q.data?.items.some((g) => g.releaseId === id) ?? false);
   const back = { to: '/meine-daten', label: t('myData.backToList') };
 
   return (

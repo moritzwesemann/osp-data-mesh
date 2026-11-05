@@ -1,20 +1,30 @@
-import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+import { type ReactNode, useEffect, useId, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import type { RouteId } from '../../shared/contract/index.ts';
 import { FingerprintBox } from '../components/federation/FingerprintBox.tsx';
+import { Icon, type IconName, initials } from '../components/Icon.tsx';
 import { DescriptionList, Details } from '../components/Misc.tsx';
-import { PageHeader, Section } from '../components/PageHeader.tsx';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { QueryView, Skeleton } from '../components/QueryState.tsx';
-import { useI18n } from '../i18n/index.tsx';
+import { type MessageKey, useI18n } from '../i18n/index.tsx';
 import { useApiQuery } from '../lib/query.ts';
+import { forgetVisits, RECENT_SOURCE, type RecentEntry, readRecent, recentKey } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
+import { cx } from '../lib/util.ts';
 
-/** Höchstzahl der auf der Startseite gezeigten freigegebenen Datenprodukte */
-const MY_DATA_SHOWN = 5;
+/** Höchstzahl der Kacheln unter „Zuletzt geöffnet“ und „Für Sie freigegeben“ */
+const TILES_SHOWN = 4;
+
+function greetingKey(): MessageKey {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 11) return 'overview.greetMorning';
+  if (h >= 11 && h < 18) return 'overview.greetDay';
+  return 'overview.greetEvening';
+}
 
 /**
- * / – Startseite: offene Aufgaben (nur wenn es welche gibt), für mich freigegebene Daten, Kennzahlen.
- * Knotenkennung und Fingerprint aufklappbar am Ende (für alle Rollen), Rollen mit Beschreibung im Konto.
+ * / – Startseite: Gruß und Suche, offene Aufgaben wie ein Posteingang, zuletzt Geöffnetes und für mich
+ * freigegebene Daten als Kacheln, Kennzahlen. Knotenkennung und Fingerprint aufklappbar am Ende.
  */
 export function Overview() {
   const { t } = useI18n();
@@ -22,13 +32,15 @@ export function Overview() {
   const roles = s.roles.map((r) => t(`roles.${r}`)).join(', ');
 
   return (
-    <div className="page">
+    <div className="page home">
       <PageHeader
-        title={t('overview.welcome', { name: s.user.displayName })}
+        title={t(greetingKey(), { name: s.user.displayName })}
         docTitle={t('overview.title')}
         description={`${s.node.displayName} · ${roles}`}
+        actions={s.can('catalog.local') ? <HomeSearch /> : undefined}
       />
       <Todos />
+      <Recent />
       {s.can('access.list') && <MyDataSummary />}
       <AtAGlance />
       <Details summary={t('overview.thisNode')}>
@@ -52,93 +64,376 @@ export function Overview() {
   );
 }
 
+/** Suche im Katalog (eigene Datenprodukte und Angebote der Partner) */
+function HomeSearch() {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+  return (
+    <search className="home-search">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const term = q.trim();
+          navigate(term ? `/katalog?q=${encodeURIComponent(term)}` : '/katalog');
+        }}
+      >
+        <Icon name="search" size={17} />
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t('overview.searchPlaceholder')}
+          aria-label={t('overview.searchLabel')}
+          enterKeyHint="search"
+        />
+      </form>
+    </search>
+  );
+}
+
+function HomeSection({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+  const id = useId();
+  return (
+    <section className="home-section" aria-labelledby={id}>
+      <div className="home-section-head">
+        <h2 id={id}>{title}</h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+type Tone = 'teal' | 'violet' | 'blue' | 'amber' | 'rose';
+
+function Tile({
+  to,
+  icon,
+  tone,
+  title,
+  sub,
+}: {
+  to: string;
+  icon: IconName | { initials: string };
+  tone: Tone;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <li>
+      <Link to={to} className="tile">
+        <span className={cx('tile-icon', `tone-${tone}`)} aria-hidden="true">
+          {typeof icon === 'string' ? <Icon name={icon} size={17} /> : icon.initials}
+        </span>
+        <span className="tile-text">
+          <span className="tile-title">{title}</span>
+          {sub && <span className="tile-sub">{sub}</span>}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
 interface Todo {
   key: string;
-  text: string;
+  title: string;
+  detail?: string;
+  /** kurzer Hinweis neben dem Titel, z. B. „2 Fehler“ */
+  tag?: string;
   to: string;
+  action: string;
   tone: 'warning' | 'danger';
 }
 
-/** Offene Aufgaben aus Importen, Partnern und Systemstatus; erscheint nur, wenn etwas zu tun ist. */
+/** Offene Aufgaben aus Importen, Partnern und Systemstatus, wie ein Posteingang. */
 function Todos() {
   const { t, fmt } = useI18n();
   const s = useSession();
   const connectors = useApiQuery('connectors.list', {}, { enabled: s.can('connectors.list') });
   const peers = useApiQuery('peers.list', {}, { enabled: s.can('peers.list') });
   const system = useApiQuery('system.status', {}, { enabled: s.can('system.status') });
+  const sources = [
+    s.can('connectors.list') && connectors,
+    s.can('peers.list') && peers,
+    s.can('system.status') && system,
+  ].filter((q) => q !== false);
+  if (sources.length === 0) return null;
 
+  const review = t('overview.actionReview');
+  const view = t('overview.actionView');
   const todos: Todo[] = [];
   for (const c of connectors.data?.items ?? []) {
-    if (c.lastRun?.status === 'previewed') {
-      todos.push({
-        key: `run-${c.lastRun.id}`,
-        text: t('overview.todoPreview', { name: c.name }),
-        to: `/importe/${c.lastRun.id}`,
-        tone: 'warning',
-      });
-    }
-  }
-  const pending = (peers.data?.items ?? []).filter((p) => p.status === 'pending').length;
-  if (pending > 0) {
+    const run = c.lastRun;
+    if (run?.status !== 'previewed') continue;
     todos.push({
-      key: 'peers',
-      text: t('overview.todoPeers', { count: pending }),
+      key: `run-${run.id}`,
+      title: t('overview.todoImportTitle', { name: c.name }),
+      detail:
+        run.totalRows > 0
+          ? t('overview.todoImportRows', { valid: run.validRows, total: run.totalRows })
+          : undefined,
+      tag: run.errorRows > 0 ? t('overview.todoImportErrors', { count: run.errorRows }) : undefined,
+      to: `/importe/${run.id}`,
+      action: review,
+      tone: 'warning',
+    });
+  }
+  for (const p of peers.data?.items ?? []) {
+    if (p.status !== 'pending') continue;
+    todos.push({
+      key: `peer-${p.id}`,
+      title: t('overview.todoPeerTitle', { name: p.displayName }),
+      detail: t('overview.todoPeerDetail'),
       to: '/partner',
+      action: view,
       tone: 'warning',
     });
   }
   const st = system.data;
   if (st) {
-    if (!st.db.ok) todos.push({ key: 'db', text: t('overview.dbFailed'), to: '/system', tone: 'danger' });
-    if (!st.audit.ok) {
-      todos.push({ key: 'audit', text: t('overview.auditBroken'), to: '/system', tone: 'danger' });
-    }
+    const sys = (key: string, title: string, tone: Todo['tone'], detail?: string, to = '/system') =>
+      todos.push({ key, title, detail, to, action: view, tone });
+    if (!st.db.ok) sys('db', t('overview.dbFailed'), 'danger');
+    if (!st.audit.ok) sys('audit', t('overview.auditBroken'), 'danger');
     const last = st.backups.last;
     if (!last) {
-      todos.push({ key: 'backup', text: t('overview.noBackup'), to: '/system', tone: 'warning' });
+      sys('backup', t('overview.noBackup'), 'warning');
     } else if (last.status === 'failed') {
-      todos.push({ key: 'backup', text: t('overview.backupFailed'), to: '/system', tone: 'danger' });
+      sys('backup', t('overview.backupFailed'), 'danger');
     } else if (
       st.backups.intervalHours > 0 &&
       Date.now() - Date.parse(last.startedAt) > 2 * st.backups.intervalHours * 3_600_000
     ) {
-      todos.push({
-        key: 'backup',
-        text: t('overview.backupOld', { time: fmt.dateTime(last.startedAt) }),
-        to: '/system',
-        tone: 'warning',
-      });
+      sys(
+        'backup',
+        t('overview.backupOldTitle'),
+        'warning',
+        t('overview.backupOldDetail', { time: fmt.dateTime(last.startedAt) }),
+      );
     }
     if (st.outbox.failed > 0) {
-      todos.push({
-        key: 'outbox',
-        text: t('overview.todoOutbox', { count: st.outbox.failed }),
-        to: '/partner',
-        tone: 'warning',
-      });
+      sys('outbox', t('overview.todoOutbox', { count: st.outbox.failed }), 'warning', undefined, '/partner');
     }
-    if (st.errors24h > 0) {
-      todos.push({
-        key: 'errors',
-        text: t('overview.todoErrors', { count: st.errors24h }),
-        to: '/system',
-        tone: 'warning',
-      });
-    }
+    if (st.errors24h > 0) sys('errors', t('overview.todoErrors', { count: st.errors24h }), 'warning');
   }
 
-  if (todos.length === 0) return null;
+  const loaded = sources.every((q) => q.isSuccess);
+  if (todos.length === 0 && !loaded) return null;
   return (
-    <Section title={t('overview.todoTitle')}>
-      <ul className="list-plain todo-list">
-        {todos.map((x) => (
-          <li key={x.key}>
-            <span className={x.tone === 'danger' ? 'status-dot bad' : 'status-dot warn'} aria-hidden="true" />
-            <Link to={x.to}>{x.text}</Link>
-          </li>
-        ))}
-      </ul>
-    </Section>
+    <HomeSection
+      title={t('overview.todoTitle')}
+      aside={
+        todos.length > 0 && (
+          <span className="home-aside">{t('overview.openCount', { count: todos.length })}</span>
+        )
+      }
+    >
+      {todos.length === 0 ? (
+        <p className="inbox-empty">
+          <Icon name="check" size={18} />
+          {t('overview.todoNone')}
+        </p>
+      ) : (
+        <ul className="inbox">
+          {todos.map((x) => (
+            <li key={x.key} className="inbox-row">
+              <span className={cx('inbox-ring', x.tone === 'danger' && 'is-danger')} aria-hidden="true" />
+              <span className="inbox-text">
+                <span className="inbox-title">{x.title}</span>
+                {x.detail && <span className="inbox-detail">{x.detail}</span>}
+              </span>
+              {x.tag && <span className="inbox-tag">{x.tag}</span>}
+              <Link to={x.to} className="btn btn-sm btn-primary">
+                {x.action}
+                <span className="sr-only">: {x.title}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </HomeSection>
+  );
+}
+
+/**
+ * Zuletzt geöffnet: Kennungen aus dem Browser, Bezeichnungen aus den Listen mit den Rechten der Person.
+ * Nur die ersten Einträge werden geladen; was es nicht mehr gibt, wird aus der Liste entfernt.
+ */
+function Recent() {
+  const { t } = useI18n();
+  const s = useSession();
+  const [entries] = useState(() =>
+    readRecent(s.node.nodeId, s.user.id)
+      .filter((e) => s.can(RECENT_SOURCE[e.kind]))
+      .slice(0, TILES_SHOWN),
+  );
+  const need = (kind: RecentEntry['kind']) => entries.some((e) => e.kind === kind);
+  const athleteIds = entries.filter((e) => e.kind === 'athlete').map((e) => e.id);
+
+  const athletes = useApiQuery(
+    'athletes.list',
+    { query: { ids: athleteIds.join(','), page: 1, pageSize: TILES_SHOWN } },
+    { enabled: athleteIds.length > 0 },
+  );
+  const datasets = useApiQuery('datasets.list', {}, { enabled: need('dataset') });
+  const products = useApiQuery('products.list', {}, { enabled: need('product') });
+  const connectors = useApiQuery('connectors.list', {}, { enabled: need('connector') });
+  const releases = useApiQuery('releases.list', { query: {} }, { enabled: need('release') });
+  const received = useApiQuery('received.list', {}, { enabled: need('received') });
+  const access = useApiQuery('access.list', {}, { enabled: need('myData') });
+
+  const sources = {
+    athlete: athletes,
+    dataset: datasets,
+    product: products,
+    connector: connectors,
+    release: releases,
+    received,
+    myData: access,
+  } as const;
+  const used = entries.map((e) => sources[e.kind]);
+  const loaded = used.every((q) => q.isSuccess);
+  const failed = used.some((q) => q.isError);
+
+  const tile = (e: RecentEntry): ReactNode | null => {
+    switch (e.kind) {
+      case 'athlete': {
+        const a = athletes.data?.items.find((x) => x.id === e.id);
+        return (
+          a && (
+            <Tile
+              key={`${e.kind}-${e.id}`}
+              to={`/athleten/${a.id}`}
+              icon={{ initials: initials(`${a.firstName} ${a.lastName}`) }}
+              tone="violet"
+              title={`${a.firstName} ${a.lastName}`}
+              sub={`${a.sport} · ${t(`squad.${a.squadStatus}`)}`}
+            />
+          )
+        );
+      }
+      case 'dataset': {
+        const d = datasets.data?.items.find((x) => x.id === e.id);
+        return (
+          d && (
+            <Tile
+              key={`${e.kind}-${e.id}`}
+              to={`/datensaetze/${d.id}`}
+              icon="database"
+              tone="teal"
+              title={d.name}
+              sub={t('common.entries', { count: d.recordCount })}
+            />
+          )
+        );
+      }
+      case 'product': {
+        const p = products.data?.items.find((x) => x.id === e.id);
+        return (
+          p && (
+            <Tile
+              key={`${e.kind}-${e.id}`}
+              to={`/produkte/${p.id}`}
+              icon="box"
+              tone="blue"
+              title={p.name}
+              sub={t('overview.recentProduct')}
+            />
+          )
+        );
+      }
+      case 'connector': {
+        const c = connectors.data?.items.find((x) => x.id === e.id);
+        return (
+          c && (
+            <Tile
+              key={`${e.kind}-${e.id}`}
+              to={`/quellen/${c.id}`}
+              icon="upload"
+              tone="amber"
+              title={c.name}
+              sub={t('overview.recentConnector')}
+            />
+          )
+        );
+      }
+      case 'release': {
+        const r = releases.data?.items.find((x) => x.id === e.id);
+        if (!r) return null;
+        const to =
+          r.recipient.type === 'peer' ? r.recipient.peerName : t(`recipientRoles.${r.recipient.role}`);
+        return (
+          <Tile
+            key={`${e.kind}-${e.id}`}
+            to={`/freigaben/${r.id}`}
+            icon="shield"
+            tone="blue"
+            title={r.productName}
+            sub={t('overview.recentReleaseTo', { name: to })}
+          />
+        );
+      }
+      case 'received': {
+        const r = received.data?.items.find((x) => x.id === e.id);
+        return (
+          r && (
+            <Tile
+              key={`${e.kind}-${e.id}`}
+              to={`/empfangen/${r.id}`}
+              icon="download"
+              tone="rose"
+              title={r.title}
+              sub={t('overview.recentReceivedFrom', { name: r.peer.displayName })}
+            />
+          )
+        );
+      }
+      case 'myData': {
+        const g = access.data?.items.find((x) => x.releaseId === e.id);
+        return (
+          g && (
+            <Tile
+              key={`${e.kind}-${e.id}`}
+              to={`/meine-daten/${g.releaseId}`}
+              icon="inbox"
+              tone="teal"
+              title={g.product.name}
+              sub={t('overview.recentMyData')}
+            />
+          )
+        );
+      }
+    }
+  };
+
+  const resolved = loaded ? entries.map((e) => ({ e, node: tile(e) })) : [];
+  // nicht mehr vorhandene Einträge vergessen (beim nächsten Besuch rücken andere nach)
+  const gone = resolved
+    .filter((x) => !x.node)
+    .map((x) => recentKey(x.e))
+    .join(' ');
+  const nodeId = s.node.nodeId;
+  const userId = s.user.id;
+  useEffect(() => {
+    if (gone) forgetVisits(nodeId, userId, gone.split(' '));
+  }, [gone, nodeId, userId]);
+
+  if (entries.length === 0 || failed) return null;
+  const tiles = resolved.map((x) => x.node).filter(Boolean);
+  if (loaded && tiles.length === 0) return null;
+  return (
+    <HomeSection title={t('overview.recentTitle')}>
+      {loaded ? (
+        <ul className="tiles">{tiles}</ul>
+      ) : (
+        <ul className="tiles" aria-busy="true">
+          {entries.map((e) => (
+            <li key={`${e.kind}-${e.id}`} className="tile tile-loading" />
+          ))}
+        </ul>
+      )}
+    </HomeSection>
   );
 }
 
@@ -147,10 +442,10 @@ function MyDataSummary() {
   const s = useSession();
   const q = useApiQuery('access.list', {});
   return (
-    <Section
+    <HomeSection
       title={t('overview.myData')}
-      actions={
-        <Link to="/meine-daten" className="btn btn-sm">
+      aside={
+        <Link to="/meine-daten" className="home-aside">
           {t('overview.openMyData')}
         </Link>
       }
@@ -163,27 +458,29 @@ function MyDataSummary() {
               {s.can('catalog.local') && <Link to="/katalog">{t('overview.toCatalog')}</Link>}
             </p>
           ) : (
-            <ul className="list-plain list-divided">
-              {data.items.slice(0, MY_DATA_SHOWN).map((g) => (
-                <li key={g.releaseId} className="row-between">
-                  <Link to={`/meine-daten/${g.releaseId}`}>{g.product.name}</Link>
-                  {g.product.description && (
-                    <span className="small muted clamp-1">{g.product.description}</span>
-                  )}
-                </li>
-              ))}
-              {data.items.length > MY_DATA_SHOWN && (
-                <li>
-                  <Link to="/meine-daten" className="small">
-                    {t('overview.myDataMore', { count: data.items.length - MY_DATA_SHOWN })}
-                  </Link>
-                </li>
+            <>
+              <ul className="tiles">
+                {data.items.slice(0, TILES_SHOWN).map((g) => (
+                  <Tile
+                    key={g.releaseId}
+                    to={`/meine-daten/${g.releaseId}`}
+                    icon="inbox"
+                    tone="teal"
+                    title={g.product.name}
+                    sub={g.product.description || t(`categories.${g.product.category}`)}
+                  />
+                ))}
+              </ul>
+              {data.items.length > TILES_SHOWN && (
+                <Link to="/meine-daten" className="small">
+                  {t('overview.myDataMore', { count: data.items.length - TILES_SHOWN })}
+                </Link>
               )}
-            </ul>
+            </>
           )
         }
       </QueryView>
-    </Section>
+    </HomeSection>
   );
 }
 
@@ -260,8 +557,8 @@ function AtAGlance() {
 
   if (tiles.length === 0) return null;
   return (
-    <Section title={t('overview.atAGlance')}>
+    <HomeSection title={t('overview.atAGlance')}>
       <div className="stat-grid">{tiles}</div>
-    </Section>
+    </HomeSection>
   );
 }

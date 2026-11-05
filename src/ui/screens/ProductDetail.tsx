@@ -12,6 +12,7 @@ import { type Column, Table } from '../components/Table.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 
 type ProductColumn = Product['columns'][number];
@@ -21,6 +22,7 @@ export function ProductDetail() {
   const { id = '' } = useParams();
   const { t } = useI18n();
   const q = useApiQuery('products.get', { params: { id } });
+  useRememberVisit('product', id, q.isSuccess);
   return (
     <div className="page">
       {!q.data && (

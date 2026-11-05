@@ -122,6 +122,8 @@ export const nav = {
 
 export const shell = {
   menu: 'Menü',
+  expandNav: 'Seitenleiste aufklappen',
+  collapseNav: 'Seitenleiste zuklappen',
   signOut: 'Abmelden',
   signingOut: 'Abmeldung …',
   skipToContent: 'Zum Inhalt springen',

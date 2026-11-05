@@ -16,6 +16,7 @@ import { type ApiOutput, api, downloadFile, saveJson } from '../lib/api.ts';
 import { codeText, describeError, receivedReasonText } from '../lib/errors.ts';
 import { usePurposeLabel } from '../lib/purposes.ts';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 
 type Detail = ApiOutput<'received.get'>;
@@ -30,6 +31,7 @@ const FORMATS: readonly ExportFormat[] = ['csv', 'json', 'xml'];
 export function ReceivedDetail() {
   const { id = '' } = useParams();
   const detail = useApiQuery('received.get', { params: { id } }, { enabled: id !== '' });
+  useRememberVisit('received', id, detail.isSuccess);
 
   return (
     <div className="page">

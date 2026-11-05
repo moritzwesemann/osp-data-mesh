@@ -21,6 +21,7 @@ import type { ApiOutput } from '../lib/api.ts';
 import { codeText, revocationReasonText } from '../lib/errors.ts';
 import { usePurposeLabel } from '../lib/purposes.ts';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 
 type ReleaseWithHistory = ApiOutput<'releases.get'>;
@@ -29,6 +30,7 @@ type ReleaseWithHistory = ApiOutput<'releases.get'>;
 export function ReleaseDetail() {
   const { id = '' } = useParams();
   const release = useApiQuery('releases.get', { params: { id } });
+  useRememberVisit('release', id, release.isSuccess);
   return (
     <div className="page">
       <QueryView query={release}>{(r) => <ReleaseView release={r} />}</QueryView>

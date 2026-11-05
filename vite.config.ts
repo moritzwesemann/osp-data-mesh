@@ -12,6 +12,9 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
     chunkSizeWarningLimit: 800,
+    // Schriften immer als Datei ausliefern: die Content-Security-Policy des Knotens erlaubt keine data:-URLs
+    // für Schriften (default-src 'self')
+    assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
   },
   server: {
     port: 4409,

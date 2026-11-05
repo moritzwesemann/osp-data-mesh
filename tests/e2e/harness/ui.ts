@@ -118,7 +118,10 @@ export function uiTest(name: string, body: (t: UiTest) => Promise<void>, timeout
               await page.getByLabel('Passwort').fill(env.password);
               await page.getByRole('button', { name: 'Anmelden', exact: true }).click();
               await waitForHeading(page);
-              await page.getByRole('button', { name: 'Abmelden' }).waitFor();
+              // Rahmen geladen (Abmelden steht auf schmalen Bildschirmen im Klappmenü)
+              await page
+                .getByRole('navigation', { name: 'Hauptnavigation', includeHidden: true })
+                .waitFor({ state: 'attached' });
             },
             async open(path, heading) {
               await page.goto(path);

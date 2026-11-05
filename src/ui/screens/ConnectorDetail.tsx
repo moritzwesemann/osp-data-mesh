@@ -17,6 +17,7 @@ import { Badge, StatusBadge } from '../components/StatusBadge.tsx';
 import { type Column, Table } from '../components/Table.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import { useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 
 /** /quellen/:id – Quelle: Import starten, kurzer Überblick, Feldzuordnung, Laufhistorie, technische Details. */
@@ -24,6 +25,7 @@ export function ConnectorDetail() {
   const { id = '' } = useParams();
   const { t } = useI18n();
   const query = useApiQuery('connectors.get', { params: { id } });
+  useRememberVisit('connector', id, query.isSuccess);
   return (
     <div className="page">
       <QueryView

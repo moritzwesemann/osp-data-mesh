@@ -120,6 +120,8 @@ export const nav: Messages['nav'] = {
 
 export const shell: Messages['shell'] = {
   menu: 'Menu',
+  expandNav: 'Expand sidebar',
+  collapseNav: 'Collapse sidebar',
   signOut: 'Sign out',
   signingOut: 'Signing out …',
   skipToContent: 'Skip to content',

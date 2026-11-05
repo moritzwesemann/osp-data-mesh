@@ -14,6 +14,7 @@ import { useI18n } from '../i18n/index.tsx';
 import type { ApiOutput } from '../lib/api.ts';
 import { usePurposeLabel } from '../lib/purposes.ts';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
+import { useRememberVisit } from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 
 type Detail = ApiOutput<'athletes.get'>;
@@ -24,6 +25,7 @@ type RecordCount = Detail['recordCounts'][number];
 export function AthleteDetail() {
   const { id = '' } = useParams();
   const athlete = useApiQuery('athletes.get', { params: { id } });
+  useRememberVisit('athlete', id, athlete.isSuccess);
   return (
     <div className="page">
       <QueryView query={athlete}>{(a) => <AthleteDetailBody athlete={a} />}</QueryView>

@@ -108,3 +108,15 @@ Unterschriften:
 | Auftraggeber | Auftragnehmer |
 |---|---|
 | | |
+
+## Interner Vorabnahme-Durchlauf (Entwicklung, 05.11.2026)
+
+Kein Ersatz für die Abnahme durch den Auftraggeber; Ergebnisse der Entwicklungsumgebung (macOS, Bun 1.4.3,
+PostgreSQL 18.6, kein Docker). Einzelnachweise: [Anforderungen und Nachverfolgbarkeit](requirements.md).
+
+| Kriterium | Ergebnis | Bemerkung |
+|---|---|---|
+| AK1 | bestanden | `bun run demo`: 5 CSV-Dateien und 1 API-Quelle bis Freigabe, BI und Austausch (57 Prüfungen bestanden) |
+| AK2 | bestanden (lokal) | 3 Knoten mit je eigenem PostgreSQL-Cluster, gegenseitigem Vertrauen und Austausch; nicht an Pilotstandorten |
+| AK3 | nativ bestanden, Docker offen | Installation aus einem Quellcode-Export in ein leeres Verzeichnis nur nach dieser Dokumentation, inkl. Sicherung, Wiederherstellung und zweitem Knoten; gefundene Dokumentationsmängel behoben; Docker-Variante, systemd und Caddy nicht geprüft |
+| AK4 | bestanden | `bun test`: 637 Tests in 42 Dateien bestanden (Sicherheit, Sicherung/Wiederherstellung, Fehlerbehandlung u. a.) |

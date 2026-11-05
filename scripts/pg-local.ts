@@ -178,6 +178,8 @@ export function bootstrapDatabase(cluster: ClusterInfo, creds: DbCredentials): v
     '-v',
     `db_name=${creds.dbName}`,
     '-v',
+    'rotate_passwords=true',
+    '-v',
     `owner_password=${creds.ownerPassword}`,
     '-v',
     `app_password=${creds.appPassword}`,

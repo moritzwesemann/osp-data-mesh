@@ -439,11 +439,8 @@ function persistLimit(
  */
 async function rowsOfVanishedAthletes(trx: DbOrTx, subjects: readonly RowSubject[]): Promise<Set<number>> {
   const ids = [...new Set(subjects.map((s) => s.a).filter((a): a is string => !!a))];
-  const present = new Set<string>();
-  for (const chunk of chunks(ids)) {
-    const found = await trx.selectFrom('athlete').select('id').where('id', 'in', chunk).forShare().execute();
-    for (const f of found) present.add(f.id);
-  }
+  // Gleiche Sperrreihenfolge wie der Import-Commit (nach id sortiert), sonst Verklemmung (core/locks.ts)
+  const present = await lockAthletes(trx, 'share', { ids, naturalKeys: [] });
   return new Set(subjects.filter((s) => s.a && !present.has(s.a)).map((s) => s.r));
 }
 

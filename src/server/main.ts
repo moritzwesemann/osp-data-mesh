@@ -6,8 +6,20 @@
 
 import { buildDeps, createApp, startModules, stopModules } from './app.ts';
 import { APP_VERSION } from './config.ts';
+import { SERVER_APPLICATION_NAME } from './core/db.ts';
+import { tryAcquireNodeLock } from './core/node-lock.ts';
 
 const deps = await buildDeps();
+const nodeLock = await tryAcquireNodeLock(deps.config.MESH_DB_URL, `${SERVER_APPLICATION_NAME}-lock`, (err) =>
+  deps.log.error('node lock connection lost', { error: err.message }),
+);
+if (!nodeLock) {
+  deps.log.error(
+    'node lock is held by another process (another server on this database or a restore in progress); refusing to start',
+  );
+  await deps.db.destroy();
+  process.exit(1);
+}
 const app = createApp(deps);
 await startModules(deps);
 
@@ -38,6 +50,7 @@ async function shutdown(signal: string) {
   server.stop();
   await stopModules();
   await deps.db.destroy();
+  await nodeLock?.release();
   process.exit(0);
 }
 process.on('SIGINT', () => void shutdown('SIGINT'));

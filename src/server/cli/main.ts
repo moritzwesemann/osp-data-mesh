@@ -12,12 +12,13 @@ Aufruf / usage:  bun run cli <befehl> [optionen]
 Befehle / commands:
   migrate                          Migrationen anwenden (MESH_DB_OWNER_URL), üblicher Aufruf:
                                    bun --env-file=.env --env-file=.env.owner run cli migrate
-  db-bootstrap [--superuser-url <url>] [--db mesh] [--force]
+  db-bootstrap [--superuser-url <url>] [--db mesh] [--force] [--rotate-passwords]
                                    Rollen + Datenbank anlegen (deploy/postgres/bootstrap.sql); Superuser-URL
                                    bevorzugt aus MESH_DB_SUPERUSER_URL (nicht auf der Kommandozeile);
                                    Passwörter aus MESH_DB_OWNER_PASSWORD, MESH_DB_APP_PASSWORD, MESH_DB_BI_PASSWORD.
                                    Ein PostgreSQL-Cluster je Knoten: bricht ab, wenn der Cluster schon eine
-                                   andere Datenbank von mesh_owner enthält (außer mit --force)
+                                   andere Datenbank von mesh_owner enthält (außer mit --force). Passwörter
+                                   bestehender Rollen werden nur mit --rotate-passwords geändert
   gen-key                          zufälligen 32-Byte-Schlüssel (base64) ausgeben
   create-admin --email <e> --name <n>
                                    Administrator anlegen (MESH_DB_URL); Passwort aus MESH_ADMIN_PASSWORD,

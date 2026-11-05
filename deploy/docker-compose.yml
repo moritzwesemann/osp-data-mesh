@@ -252,5 +252,7 @@ networks:
     ipam:
       config:
         - subnet: 172.31.252.0/24
+          # dynamische Adressen nur aus der oberen Hälfte: 172.31.252.10 (Caddy) wird nie an andere Container vergeben
+          ip_range: 172.31.252.128/25
   backend:
     internal: true

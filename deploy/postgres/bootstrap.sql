@@ -12,6 +12,13 @@
 --   mesh_bi     rein lesende BI-Rolle; sieht ausschließlich das Schema "bi"
 
 \set ON_ERROR_STOP on
+-- Passwörter bestehender Rollen nur auf ausdrücklichen Wunsch ändern (-v rotate_passwords=true bzw.
+-- CLI db-bootstrap --rotate-passwords). Sonst könnte ein zweiter Aufruf mit neuen Passwörtern (z. B. ein
+-- versehentlich in denselben Cluster installierter zweiter Knoten) die Zugänge eines laufenden Knotens übernehmen.
+\if :{?rotate_passwords}
+\else
+  \set rotate_passwords false
+\endif
 
 select format('create role mesh_owner login password %L', :'owner_password')
   where not exists (select 1 from pg_roles where rolname = 'mesh_owner') \gexec
@@ -20,10 +27,10 @@ select format('create role mesh_app login password %L', :'app_password')
 select format('create role mesh_bi login password %L', :'bi_password')
   where not exists (select 1 from pg_roles where rolname = 'mesh_bi') \gexec
 
--- Passwörter bei erneutem Aufruf angleichen (Rotation)
-select format('alter role mesh_owner password %L', :'owner_password') \gexec
-select format('alter role mesh_app password %L', :'app_password') \gexec
-select format('alter role mesh_bi password %L', :'bi_password') \gexec
+-- Passwörter bestehender Rollen nur bei rotate_passwords=true angleichen (Rotation)
+select format('alter role mesh_owner password %L', :'owner_password') where :'rotate_passwords' = 'true' \gexec
+select format('alter role mesh_app password %L', :'app_password') where :'rotate_passwords' = 'true' \gexec
+select format('alter role mesh_bi password %L', :'bi_password') where :'rotate_passwords' = 'true' \gexec
 
 alter role mesh_bi set default_transaction_read_only = on;
 alter role mesh_bi set statement_timeout = '60s';

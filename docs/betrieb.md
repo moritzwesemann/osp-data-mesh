@@ -187,8 +187,13 @@ Rechte (`migrations/grants.sql`) wieder her, beendet alle Sitzungen und prüft d
 **Der Knoten muss vorher gestoppt sein.** Liefe er weiter, griffen seine Anfragen und
 Hintergrundaufgaben (Ausgangspostfach, BI-Aktualisierung, Sicherungen) während der Wiederherstellung auf
 die Datenbank zu; sie könnten die Wiederherstellung blockieren oder den zurückgespielten Stand sofort
-wieder verändern. `restore` prüft das: Bestehen noch Datenbankverbindungen des laufenden Servers (in
-PostgreSQL am Anwendungsnamen `osp-data-mesh` erkennbar), bricht der Befehl ab, ohne etwas zu verändern. Dann den Knoten stoppen (Tabelle [Starten, Stoppen](#starten-stoppen-neustarten)) und
+wieder verändern. `restore` prüft das zweifach: Jeder laufende Server hält für seine ganze Laufzeit eine
+**Knotensperre** (PostgreSQL-Advisory-Sperre auf einer eigenen Verbindung). Kann `restore` sie nicht
+übernehmen, oder bestehen noch Datenbankverbindungen des Servers (in PostgreSQL am Anwendungsnamen
+`osp-data-mesh` erkennbar), bricht der Befehl ab, ohne etwas zu verändern. Während der Wiederherstellung
+hält `restore` die Knotensperre selbst; ein in dieser Zeit gestarteter Server beendet sich sofort mit dem
+Hinweis „node lock is held by another process“. Aus demselben Grund startet auch kein zweiter Server auf
+derselben Datenbank. Dann den Knoten stoppen (Tabelle [Starten, Stoppen](#starten-stoppen-neustarten)) und
 `restore` wiederholen. Prüfen, welche Verbindungen bestehen (als Superuser bzw. `mesh_owner`):
 `select pid, usename, client_addr, backend_start from pg_stat_activity where application_name = 'osp-data-mesh';`
 Die Option `--force` übergeht die Prüfung; nur verwenden, wenn sicher ist, dass kein Server-Prozess

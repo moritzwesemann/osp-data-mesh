@@ -14,6 +14,7 @@ import { randomToken, SecretBox } from '../core/crypto.ts';
 import { createDb, type Db, pgCode } from '../core/db.ts';
 import { migrate } from '../core/migrate.ts';
 import { NodeIdentity } from '../core/node-identity.ts';
+import { tryAcquireNodeLock } from '../core/node-lock.ts';
 import { passwordPolicyViolation } from '../modules/auth/policy.ts';
 import { hashPassword } from '../modules/auth/sessions.ts';
 import { BackupManager } from '../modules/system/backup.ts';
@@ -117,6 +118,20 @@ export async function otherNodeDatabases(superuserUrl: string, dbName: string): 
   }
 }
 
+/** Bereits vorhandene Rollen mesh_owner/mesh_app/mesh_bi im Cluster */
+async function existingMeshRoles(superuserUrl: string): Promise<string[]> {
+  const client = new pg.Client({ connectionString: superuserUrl, application_name: 'osp-data-mesh-cli' });
+  await client.connect();
+  try {
+    const r = await client.query<{ rolname: string }>(
+      `select rolname from pg_roles where rolname in ('mesh_owner', 'mesh_app', 'mesh_bi') order by rolname`,
+    );
+    return r.rows.map((row) => row.rolname);
+  } finally {
+    await client.end();
+  }
+}
+
 /** Wert für psql "\set name '…'" (einfache Anführungszeichen, Backslash-Escapes) */
 function psqlQuote(v: string): string {
   if (/[\r\n\0]/.test(v)) throw new Error('value must not contain line breaks');
@@ -133,7 +148,8 @@ export const commands: Record<string, Command> = {
   },
 
   async 'db-bootstrap'(args) {
-    const p = parseArgs(args, ['force']);
+    const p = parseArgs(args, ['force', 'rotate-passwords']);
+    const rotate = p.flags['rotate-passwords'] === true;
     // Superuser-URL bevorzugt aus der Umgebung (Passwort nicht auf der Kommandozeile bzw. in der Ausgabe von bun run)
     const superuserUrl = flag(p, 'superuser-url') ?? process.env.MESH_DB_SUPERUSER_URL;
     if (!superuserUrl) {
@@ -161,12 +177,14 @@ export const commands: Record<string, Command> = {
           'one PostgreSQL cluster per node (roles are cluster-wide); use a separate cluster or --force',
       );
     }
+    const existingRoles = await existingMeshRoles(superuserUrl);
     // Passwörter über stdin (nicht als Argumente, sonst in der Prozessliste sichtbar)
     const script = [
       `\\set db_name ${psqlQuote(dbName)}`,
       `\\set owner_password ${psqlQuote(env('MESH_DB_OWNER_PASSWORD'))}`,
       `\\set app_password ${psqlQuote(env('MESH_DB_APP_PASSWORD'))}`,
       `\\set bi_password ${psqlQuote(env('MESH_DB_BI_PASSWORD'))}`,
+      `\\set rotate_passwords ${rotate ? 'true' : 'false'}`,
       `\\i ${psqlQuote(resolve(ROOT, 'deploy/postgres/bootstrap.sql'))}`,
       '',
     ].join('\n');
@@ -183,6 +201,12 @@ export const commands: Record<string, Command> = {
     const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
     if (code !== 0) throw new Error(`psql failed (exit ${code}): ${sanitizeToolOutput(stderr)}`);
     out(`Datenbank "${dbName}" und Rollen mesh_owner, mesh_app, mesh_bi eingerichtet / bootstrapped.`);
+    if (existingRoles.length > 0 && !rotate) {
+      out(
+        `Hinweis: Rollen existierten bereits (${existingRoles.join(', ')}); ihre Passwörter wurden NICHT geändert ` +
+          '(ändern mit --rotate-passwords) / roles already existed; passwords were NOT changed (use --rotate-passwords)',
+      );
+    }
     out(`Weiter / next: ${MIGRATE_COMMAND}`);
     return 0;
   },
@@ -273,8 +297,19 @@ export const commands: Record<string, Command> = {
     const ownerUrl = env('MESH_DB_OWNER_URL');
     const backupKey = env('MESH_BACKUP_KEY');
     const nodeId = env('MESH_NODE_ID');
+    // Knotensperre: hält ein laufender Server sie, wird nicht wiederhergestellt; während der Wiederherstellung
+    // hält die CLI sie selbst, sodass auch kein Server starten kann.
+    const nodeLock = await tryAcquireNodeLock(ownerUrl, 'osp-data-mesh-restore');
+    if (!nodeLock && p.flags.force !== true) {
+      throw new Error(
+        'Der Knoten läuft noch (Knotensperre gehalten) oder eine andere Wiederherstellung läuft. Knoten stoppen und ' +
+          'erneut aufrufen; --force übergeht diese Prüfung / the node is still running (node lock held) or another ' +
+          'restore is in progress: stop it first, or use --force',
+      );
+    }
     const running = await runningNodeConnections(ownerUrl);
     if (running > 0 && p.flags.force !== true) {
+      await nodeLock?.release();
       throw new Error(
         `Der Knoten läuft noch (${running} Verbindung(en) des Servers zu dieser Datenbank). Knoten stoppen und ` +
           'erneut aufrufen; --force übergeht diese Prüfung / ' +
@@ -306,6 +341,8 @@ export const commands: Record<string, Command> = {
     } catch (err) {
       if (err instanceof BackupFileError) throw new Error(`${err.code}: ${err.message}`);
       throw err;
+    } finally {
+      await nodeLock?.release();
     }
   },
 

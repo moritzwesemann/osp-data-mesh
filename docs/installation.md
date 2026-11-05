@@ -199,6 +199,11 @@ nächster Schritt wird `bun --env-file=.env --env-file=.env.owner run cli migrat
   [Ein PostgreSQL-Cluster je Knoten](#vorbereitung-beide-varianten)). Die Option `--force` übergeht
   diese Prüfung; sie ist **nur für Fachleute**, die wissen, dass dann beide Datenbanken dieselben Rollen
   und Passwörter verwenden und die Knoten nicht mehr voneinander getrennt sind.
+- **Erneuter Aufruf:** Bestehen die Rollen bereits, ändert `db-bootstrap` ihre Passwörter **nicht** und
+  meldet das („Passwörter wurden NICHT geändert“). So kann ein versehentlicher zweiter Aufruf – etwa für
+  einen zweiten Knoten im selben Cluster – die Zugänge eines laufenden Knotens nicht übernehmen. Um die
+  Passwörter bewusst zu ändern (Rotation), mit `--rotate-passwords` aufrufen und danach `.env` und
+  `.env.owner` anpassen.
 - Ein anderer Datenbankname als `mesh` ist mit `--db <name>` möglich (nur `a-z`, `0-9`, `_`; dann auch
   den Namen in den URLs in `.env` und `.env.owner` anpassen). Er ändert nichts an der Regel „ein Cluster
   je Knoten“.

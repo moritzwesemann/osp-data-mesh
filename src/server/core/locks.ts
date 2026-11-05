@@ -1,7 +1,8 @@
 /**
  * Prozessübergreifende Sperren (PostgreSQL Advisory Locks, transaktionsgebunden) und die globale
  * Sperrreihenfolge.
- * Schlüssel: 7212001 Audit-Kette (Trigger auf audit_log), 7212002 Migrationen (nur CLI),
+ * Schlüssel: 7212001 Audit-Kette (Trigger auf audit_log), 7212002 Migrationen (nur CLI), 7212003 Knotensperre
+ *   (sitzungsgebunden, core/node-lock.ts),
  * 7212101 Datenlieferungen (DELIVERY_LOCK), 7212102 empfangene Kopien (federation/store.ts).
  *
  * GLOBALE SPERRREIHENFOLGE – verbindlich für jede schreibende Transaktion. Eine Transaktion nimmt

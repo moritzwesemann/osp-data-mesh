@@ -69,7 +69,7 @@ export async function loadConnectors(db: DbOrTx, id?: string): Promise<Connector
   const runs = await db
     .selectFrom('import_run')
     .distinctOn('connector_id')
-    .select(['id', 'connector_id', 'status', 'created_at'])
+    .select(['id', 'connector_id', 'status', 'created_at', 'total_rows', 'valid_rows', 'error_rows'])
     .where(
       'connector_id',
       'in',
@@ -86,7 +86,14 @@ export async function loadConnectors(db: DbOrTx, id?: string): Promise<Connector
       r,
       r.dataset_name ?? null,
       run
-        ? { id: run.id, status: run.status as ImportRun['status'], createdAt: isoReq(run.created_at) }
+        ? {
+            id: run.id,
+            status: run.status as ImportRun['status'],
+            createdAt: isoReq(run.created_at),
+            totalRows: run.total_rows,
+            validRows: run.valid_rows,
+            errorRows: run.error_rows,
+          }
         : null,
     );
   });

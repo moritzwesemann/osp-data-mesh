@@ -160,6 +160,10 @@ export const Connector = z.object({
       id: Uuid,
       status: z.enum(['previewed', 'committed', 'discarded', 'failed']),
       createdAt: IsoDateTime,
+      /** Zeilen der Quelle, davon gültig bzw. mit Fehlern (für Hinweise wie „78 von 80 gültig“) */
+      totalRows: z.number().int(),
+      validRows: z.number().int(),
+      errorRows: z.number().int(),
     })
     .nullable(),
 });

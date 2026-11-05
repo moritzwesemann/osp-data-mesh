@@ -13,6 +13,10 @@ import {
 } from './common.ts';
 import { route } from './route.ts';
 
+const UUID_RE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+/** Bis zu 20 UUIDs, durch Komma getrennt (Abfrageparameter ids) */
+const UUID_LIST = new RegExp(`^${UUID_RE}(,${UUID_RE}){0,19}$`);
+
 export const Sex = z.enum(['f', 'm', 'd']);
 
 export const AthleteInput = z.object({
@@ -92,6 +96,8 @@ export const athleteRoutes = {
       q: z.string().max(100).optional(),
       sport: z.string().max(100).optional(),
       squadStatus: SquadStatus.optional(),
+      /** Nur diese Personen: bis zu 20 IDs, durch Komma getrennt (z. B. „Zuletzt geöffnet“ auf der Startseite) */
+      ids: z.string().regex(UUID_LIST, 'Bis zu 20 UUIDs, durch Komma getrennt').optional(),
     }),
     response: paginated(Athlete),
   }),

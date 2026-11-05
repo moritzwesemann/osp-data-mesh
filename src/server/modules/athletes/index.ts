@@ -61,6 +61,8 @@ export const athletesModule: Module = {
         }
         if (query.sport) base = base.where('athlete.sport', '=', query.sport);
         if (query.squadStatus) base = base.where('athlete.squad_status', '=', query.squadStatus);
+        const ids = query.ids ? [...new Set(query.ids.toLowerCase().split(','))] : null;
+        if (ids) base = base.where('athlete.id', 'in', ids);
 
         const { total } = await base
           .select((eb) => eb.fn.countAll<number>().as('total'))
@@ -77,7 +79,14 @@ export const athletesModule: Module = {
           actor,
           action: 'athlete.list',
           objectType: 'athlete',
-          details: { count: rows.length, total: Number(total), page: query.page, filtered: terms.length > 0 },
+          details: {
+            count: rows.length,
+            total: Number(total),
+            page: query.page,
+            filtered: terms.length > 0 || ids !== null,
+            // welche Personen angezeigt wurden, wenn gezielt nach IDs gefragt wurde
+            ...(ids ? { ids } : {}),
+          },
           ip,
           requestId,
         });

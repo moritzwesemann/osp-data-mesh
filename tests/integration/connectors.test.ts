@@ -581,6 +581,10 @@ describe('API-Quelle: Sprungkraft-Messsystem', () => {
     expect(list.json.items.find((c) => c.id === api.id)!.lastRun).toMatchObject({
       id: r.run.id,
       status: 'committed',
+      // die Quelle liefert 123 Zeilen, davon 3 ungültig (übersprungen)
+      totalRows: 123,
+      validRows: 120,
+      errorRows: 3,
     });
     const runs = await node.request<{ items: ImportRun[] }>('GET', `/api/v1/connectors/${api.id}/runs`, {
       as: steward,

@@ -167,6 +167,19 @@ describe('Stammdaten', () => {
     const [audit] = await auditEntries(node, 'athlete.list');
     expect(audit!.details).toEqual({ count: 1, total: 4, page: 2, filtered: false });
 
+    // gezielt nach IDs (Startseite „Zuletzt geöffnet“): übliche Sortierung, angezeigte Personen im Audit
+    const ids = [all.json.items[3]!.id, all.json.items[0]!.id];
+    const byIds = await node.request<{ items: Athlete[]; total: number }>(
+      'GET',
+      `/api/v1/athletes?ids=${ids.join(',')}`,
+      { as: steward },
+    );
+    expect(byIds.json.items.map((x) => x.lastName)).toEqual(['Beispiel', 'Zander']);
+    const [idsAudit] = await auditEntries(node, 'athlete.list');
+    expect(idsAudit!.details).toEqual({ count: 2, total: 2, page: 1, filtered: true, ids });
+    const badIds = await node.request('GET', '/api/v1/athletes?ids=keine-uuid', { as: steward });
+    expect(badIds.status).toBe(400);
+
     const sports = await node.request<{ items: string[] }>('GET', '/api/v1/athletes/sports', { as: steward });
     expect(sports.json.items).toEqual(['Fechten', 'Judo', 'Rudern']);
   });

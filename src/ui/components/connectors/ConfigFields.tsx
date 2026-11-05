@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import { type CsvConfig, DateFormat, type HttpApiConfig } from '../../../shared/contract/index.ts';
 import { useI18n } from '../../i18n/index.tsx';
 import { FormField } from '../FormField.tsx';
+import { Details, useOpenWhen } from '../Misc.tsx';
 import { dateFormatLabel, delimiterLabel, ENCODING_LABELS, formatKv, parseKv } from './shared.ts';
 
 type FieldErr = (path: string) => string | undefined;
@@ -82,6 +83,38 @@ export function apiStateFrom(cfg: HttpApiConfig): ApiState {
 }
 
 const num = (s: string): number => (s.trim() === '' ? Number.NaN : Number(s));
+
+/** true, wenn eine CSV-Einstellung vom Standard abweicht (dann ist der Abschnitt aufgeklappt). */
+export function csvDiffers(c: CsvConfig): boolean {
+  return (
+    c.delimiter !== DEFAULT_CSV.delimiter ||
+    c.encoding !== DEFAULT_CSV.encoding ||
+    c.decimalSeparator !== DEFAULT_CSV.decimalSeparator ||
+    c.dateFormat !== DEFAULT_CSV.dateFormat
+  );
+}
+
+const API_ADVANCED: readonly (keyof ApiState)[] = [
+  'itemsPath',
+  'paginationType',
+  'pageParam',
+  'sizeParam',
+  'pageSize',
+  'firstPage',
+  'maxPages',
+  'cursorParam',
+  'nextCursorPath',
+  'queryText',
+  'dateFormat',
+  'timeoutMs',
+];
+const API_ADVANCED_ERRORS = [
+  'config.itemsPath',
+  'config.pagination',
+  'config.query',
+  'config.dateFormat',
+  'config.timeoutMs',
+] as const;
 
 /** Zustand → Konfiguration laut Vertrag; queryInvalid bei fehlerhaften Parameterzeilen. */
 export function buildApiConfig(s: ApiState): {
@@ -241,6 +274,12 @@ export function ApiConfigFields({
 }) {
   const { t } = useI18n();
   const set = <K extends keyof ApiState>(k: K, v: ApiState[K]) => onChange({ ...value, [k]: v });
+  // Erweiterte Einstellungen: aufgeklappt bei abweichenden Werten oder Fehlern darin
+  const advancedOpen = useOpenWhen(
+    API_ADVANCED.some((k) => value[k] !== DEFAULT_API[k]) ||
+      Boolean(queryInvalid) ||
+      API_ADVANCED_ERRORS.some((p) => fe(p)),
+  );
   return (
     <div className="form-grid">
       <FormField
@@ -259,21 +298,6 @@ export function ApiConfigFields({
             placeholder="https://"
             value={value.url}
             onChange={(e) => set('url', e.target.value)}
-          />
-        )}
-      </FormField>
-      <FormField
-        className="span-2"
-        label={t('connectors.itemsPath')}
-        hint={t('connectors.itemsPathHint')}
-        error={fe('config.itemsPath')}
-      >
-        {(a) => (
-          <input
-            {...a}
-            className="input mono"
-            value={value.itemsPath}
-            onChange={(e) => set('itemsPath', e.target.value)}
           />
         )}
       </FormField>
@@ -320,147 +344,170 @@ export function ApiConfigFields({
           )}
         </FormField>
       )}
-      <FormField label={t('connectors.pagination')} error={fe('config.pagination')}>
-        {(a) => (
-          <select
-            {...a}
-            className="input"
-            value={value.paginationType}
-            onChange={(e) => set('paginationType', e.target.value as ApiState['paginationType'])}
+      <Details summary={t('connectors.advancedApi')} defaultOpen={advancedOpen} className="span-2">
+        <div className="form-grid">
+          <FormField
+            className="span-2"
+            label={t('connectors.itemsPath')}
+            hint={t('connectors.itemsPathHint')}
+            error={fe('config.itemsPath')}
           >
-            <option value="none">{t('connectors.paginationNone')}</option>
-            <option value="page">{t('connectors.paginationPage')}</option>
-            <option value="cursor">{t('connectors.paginationCursor')}</option>
-          </select>
-        )}
-      </FormField>
-      {value.paginationType !== 'none' ? (
-        <FormField label={t('connectors.maxPages')} error={fe('config.pagination.maxPages')}>
-          {(a) => (
-            <input
-              {...a}
-              className="input"
-              type="number"
-              min={1}
-              max={1000}
-              value={value.maxPages}
-              onChange={(e) => set('maxPages', e.target.value)}
-            />
-          )}
-        </FormField>
-      ) : (
-        <div />
-      )}
-      {value.paginationType === 'page' && (
-        <>
-          <FormField label={t('connectors.pageParam')} required error={fe('config.pagination.pageParam')}>
             {(a) => (
               <input
                 {...a}
                 className="input mono"
-                value={value.pageParam}
-                onChange={(e) => set('pageParam', e.target.value)}
+                value={value.itemsPath}
+                onChange={(e) => set('itemsPath', e.target.value)}
               />
             )}
           </FormField>
-          <FormField label={t('connectors.firstPage')} error={fe('config.pagination.firstPage')}>
+          <FormField label={t('connectors.pagination')} error={fe('config.pagination')}>
             {(a) => (
               <select
                 {...a}
                 className="input"
-                value={value.firstPage}
-                onChange={(e) => set('firstPage', e.target.value === '0' ? '0' : '1')}
+                value={value.paginationType}
+                onChange={(e) => set('paginationType', e.target.value as ApiState['paginationType'])}
               >
-                <option value="1">1</option>
-                <option value="0">0</option>
+                <option value="none">{t('connectors.paginationNone')}</option>
+                <option value="page">{t('connectors.paginationPage')}</option>
+                <option value="cursor">{t('connectors.paginationCursor')}</option>
               </select>
             )}
           </FormField>
-          <FormField label={t('connectors.sizeParam')} error={fe('config.pagination.sizeParam')}>
+          {value.paginationType !== 'none' ? (
+            <FormField label={t('connectors.maxPages')} error={fe('config.pagination.maxPages')}>
+              {(a) => (
+                <input
+                  {...a}
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={value.maxPages}
+                  onChange={(e) => set('maxPages', e.target.value)}
+                />
+              )}
+            </FormField>
+          ) : (
+            <div />
+          )}
+          {value.paginationType === 'page' && (
+            <>
+              <FormField label={t('connectors.pageParam')} required error={fe('config.pagination.pageParam')}>
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={value.pageParam}
+                    onChange={(e) => set('pageParam', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('connectors.firstPage')} error={fe('config.pagination.firstPage')}>
+                {(a) => (
+                  <select
+                    {...a}
+                    className="input"
+                    value={value.firstPage}
+                    onChange={(e) => set('firstPage', e.target.value === '0' ? '0' : '1')}
+                  >
+                    <option value="1">1</option>
+                    <option value="0">0</option>
+                  </select>
+                )}
+              </FormField>
+              <FormField label={t('connectors.sizeParam')} error={fe('config.pagination.sizeParam')}>
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={value.sizeParam}
+                    onChange={(e) => set('sizeParam', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('connectors.pageSize')} error={fe('config.pagination.pageSize')}>
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={value.pageSize}
+                    onChange={(e) => set('pageSize', e.target.value)}
+                  />
+                )}
+              </FormField>
+            </>
+          )}
+          {value.paginationType === 'cursor' && (
+            <>
+              <FormField
+                label={t('connectors.cursorParam')}
+                required
+                error={fe('config.pagination.cursorParam')}
+              >
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={value.cursorParam}
+                    onChange={(e) => set('cursorParam', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField
+                label={t('connectors.nextCursorPath')}
+                required
+                hint={t('connectors.nextCursorPathHint')}
+                error={fe('config.pagination.nextCursorPath')}
+              >
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={value.nextCursorPath}
+                    onChange={(e) => set('nextCursorPath', e.target.value)}
+                  />
+                )}
+              </FormField>
+            </>
+          )}
+          <FormField
+            className="span-2"
+            label={t('connectors.queryParams')}
+            hint={t('connectors.queryParamsHint')}
+            error={queryInvalid ? t('connectors.kvInvalid') : fe('config.query')}
+          >
             {(a) => (
-              <input
+              <textarea
                 {...a}
                 className="input mono"
-                value={value.sizeParam}
-                onChange={(e) => set('sizeParam', e.target.value)}
+                rows={3}
+                value={value.queryText}
+                onChange={(e) => set('queryText', e.target.value)}
               />
             )}
           </FormField>
-          <FormField label={t('connectors.pageSize')} error={fe('config.pagination.pageSize')}>
+          <DateFormatSelect value={value.dateFormat} onChange={(v) => set('dateFormat', v)} fe={fe} />
+          <FormField label={t('connectors.timeoutMs')} error={fe('config.timeoutMs')}>
             {(a) => (
               <input
                 {...a}
                 className="input"
                 type="number"
-                min={1}
-                max={1000}
-                value={value.pageSize}
-                onChange={(e) => set('pageSize', e.target.value)}
+                min={1000}
+                max={60000}
+                step={1000}
+                value={value.timeoutMs}
+                onChange={(e) => set('timeoutMs', e.target.value)}
               />
             )}
           </FormField>
-        </>
-      )}
-      {value.paginationType === 'cursor' && (
-        <>
-          <FormField label={t('connectors.cursorParam')} required error={fe('config.pagination.cursorParam')}>
-            {(a) => (
-              <input
-                {...a}
-                className="input mono"
-                value={value.cursorParam}
-                onChange={(e) => set('cursorParam', e.target.value)}
-              />
-            )}
-          </FormField>
-          <FormField
-            label={t('connectors.nextCursorPath')}
-            required
-            hint={t('connectors.nextCursorPathHint')}
-            error={fe('config.pagination.nextCursorPath')}
-          >
-            {(a) => (
-              <input
-                {...a}
-                className="input mono"
-                value={value.nextCursorPath}
-                onChange={(e) => set('nextCursorPath', e.target.value)}
-              />
-            )}
-          </FormField>
-        </>
-      )}
-      <FormField
-        className="span-2"
-        label={t('connectors.queryParams')}
-        hint={t('connectors.queryParamsHint')}
-        error={queryInvalid ? t('connectors.kvInvalid') : fe('config.query')}
-      >
-        {(a) => (
-          <textarea
-            {...a}
-            className="input mono"
-            rows={3}
-            value={value.queryText}
-            onChange={(e) => set('queryText', e.target.value)}
-          />
-        )}
-      </FormField>
-      <DateFormatSelect value={value.dateFormat} onChange={(v) => set('dateFormat', v)} fe={fe} />
-      <FormField label={t('connectors.timeoutMs')} error={fe('config.timeoutMs')}>
-        {(a) => (
-          <input
-            {...a}
-            className="input"
-            type="number"
-            min={1000}
-            max={60000}
-            step={1000}
-            value={value.timeoutMs}
-            onChange={(e) => set('timeoutMs', e.target.value)}
-          />
-        )}
-      </FormField>
+        </div>
+      </Details>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { ResultTable } from '../ResultTable.tsx';
 
 type PreviewResult = ApiOutput<'releases.preview'>;
 
-/** Ergebnis von releases.preview: Entscheidung, Zählwerte, Beispielzeilen. */
+/** Ergebnis von releases.preview: Entscheidung, gelieferte und ausgeschlossene Zeilen, Beispielzeilen. */
 export function ReleasePreviewResult({ result, stale }: { result: PreviewResult; stale: boolean }) {
   const i = useI18n();
   const { t, fmt } = i;
@@ -13,14 +13,6 @@ export function ReleasePreviewResult({ result, stale }: { result: PreviewResult;
   const reason = decision.reason
     ? (i.tx(`denyReasons.${decision.reason}`) ?? codeText(i, decision.reason))
     : undefined;
-
-  const statItems: [string, number][] = [
-    [t('releases.statTotal'), stats.total],
-    [t('releases.statReturned'), stats.returned],
-    [t('releases.statFilter'), stats.excludedByFilter],
-    [t('releases.statTime'), stats.excludedByTime],
-    [t('releases.statConsent'), stats.excludedByConsent],
-  ];
 
   return (
     <div className="stack" aria-live="polite">
@@ -32,6 +24,12 @@ export function ReleasePreviewResult({ result, stale }: { result: PreviewResult;
       {decision.allowed ? (
         <div className="alert alert-success">
           <p className="alert-title">{t('releases.previewAllowed')}</p>
+          <p>
+            {t('releases.previewReturned', {
+              returned: fmt.number(stats.returned),
+              total: fmt.number(stats.total),
+            })}
+          </p>
         </div>
       ) : (
         <div className="alert alert-warning">
@@ -41,14 +39,13 @@ export function ReleasePreviewResult({ result, stale }: { result: PreviewResult;
       )}
       {decision.allowed && (
         <>
-          <div className="stat-grid">
-            {statItems.map(([label, value]) => (
-              <div className="stat" key={label}>
-                <span className="stat-label">{label}</span>
-                <span className="stat-value">{fmt.number(value)}</span>
-              </div>
-            ))}
-          </div>
+          <p className="small muted">
+            {t('releases.previewExcluded', {
+              filter: fmt.number(stats.excludedByFilter),
+              time: fmt.number(stats.excludedByTime),
+              consent: fmt.number(stats.excludedByConsent),
+            })}
+          </p>
           <h3>{t('releases.previewSample')}</h3>
           <ResultTable columns={result.columns} rows={result.rows} caption={t('releases.previewCaption')} />
         </>

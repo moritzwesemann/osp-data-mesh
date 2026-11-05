@@ -3,11 +3,11 @@ import { Link, useParams } from 'react-router';
 import type { ExchangeLogEntry } from '../../shared/contract/index.ts';
 import { ConfirmDialog } from '../components/Dialog.tsx';
 import { FormField } from '../components/FormField.tsx';
-import { DateTime, DescriptionList } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
 import {
-  ConditionSummary,
+  ConditionText,
   PurposeList,
   RecipientLabel,
   rangeText,
@@ -25,7 +25,7 @@ import { useSession } from '../lib/session.tsx';
 
 type ReleaseWithHistory = ApiOutput<'releases.get'>;
 
-/** /freigaben/:id – Beschränkungen, Austauschhistorie, Widerruf (releases.get, releases.revoke). */
+/** /freigaben/:id – Überblick, Austauschhistorie, Widerruf (releases.get, releases.revoke). */
 export function ReleaseDetail() {
   const { id = '' } = useParams();
   const release = useApiQuery('releases.get', { params: { id } });
@@ -62,14 +62,32 @@ function ReleaseView({ release: r }: { release: ReleaseWithHistory }) {
   const canRevoke = session.can('releases.revoke') && r.status !== 'revoked';
   const canCreate = session.can('releases.create');
 
+  // Richtung und Partner nur zeigen, wenn sie sich unterscheiden (sonst steht beides schon im Kopf)
+  const showDirection = r.exchanges.some((e) => e.direction !== 'outgoing');
+  const recipientNode = r.recipient.type === 'peer' ? r.recipient.peerNodeId : null;
+  const showPeer = r.exchanges.some((e) => e.peerNodeId !== recipientNode);
+
   const historyColumns: Column<ExchangeLogEntry>[] = [
     { key: 'at', header: t('releases.colAt'), className: 'nowrap', render: (e) => <DateTime value={e.at} /> },
-    {
-      key: 'direction',
-      header: t('releases.colDirection'),
-      render: (e) => t(`exchangeDirection.${e.direction}`),
-    },
-    { key: 'peer', header: t('releases.colPeer'), className: 'mono', render: (e) => e.peerNodeId },
+    ...(showDirection
+      ? [
+          {
+            key: 'direction',
+            header: t('releases.colDirection'),
+            render: (e: ExchangeLogEntry) => t(`exchangeDirection.${e.direction}`),
+          },
+        ]
+      : []),
+    ...(showPeer
+      ? [
+          {
+            key: 'peer',
+            header: t('releases.colPeer'),
+            className: 'mono',
+            render: (e: ExchangeLogEntry) => e.peerNodeId,
+          },
+        ]
+      : []),
     {
       key: 'purpose',
       header: t('releases.colPurpose'),
@@ -78,54 +96,34 @@ function ReleaseView({ release: r }: { release: ReleaseWithHistory }) {
     {
       key: 'outcome',
       header: t('releases.colOutcome'),
-      render: (e) => <StatusBadge group="exchangeOutcome" value={e.outcome} />,
+      render: (e) => (
+        <div className="stack-sm">
+          <span>
+            <StatusBadge group="exchangeOutcome" value={e.outcome} />
+          </span>
+          {e.denyReason && (
+            <span className="small muted">
+              {i.tx(`denyReasons.${e.denyReason}`) ?? codeText(i, e.denyReason)}
+            </span>
+          )}
+        </div>
+      ),
     },
     {
-      key: 'reason',
-      header: t('releases.colReason'),
-      render: (e) =>
-        e.denyReason ? (i.tx(`denyReasons.${e.denyReason}`) ?? codeText(i, e.denyReason)) : t('common.empty'),
-    },
-    { key: 'rows', header: t('releases.colRows'), className: 'num', render: (e) => fmt.number(e.rowCount) },
-    {
-      key: 'payload',
-      header: t('releases.colPayload'),
-      className: 'mono nowrap',
-      render: (e) =>
-        e.payloadSha256 ? (
-          <span title={e.payloadSha256}>{`${e.payloadSha256.slice(0, 12)}…`}</span>
-        ) : (
-          t('common.empty')
-        ),
+      key: 'rows',
+      header: t('releases.colRows'),
+      className: 'num',
+      render: (e) => (
+        <span title={e.payloadSha256 ? t('releases.payloadTitle', { sha: e.payloadSha256 }) : undefined}>
+          {fmt.number(e.rowCount)}
+        </span>
+      ),
     },
   ];
 
-  const productCell = canProduct ? (
-    <Link to={`/produkte/${r.productId}`}>
-      {t('releases.productWithVersion', { name: r.productName, version: r.productVersion })}
-    </Link>
-  ) : (
-    t('releases.productWithVersion', { name: r.productName, version: r.productVersion })
-  );
-
-  const columnsCell =
-    r.columns.length === 0 ? (
-      <span className="muted">{t('common.noColumns')}</span>
-    ) : (
-      <ul className="list-plain stack-sm">
-        {r.columns.map((key) => (
-          <li key={key}>
-            {labels.get(key) ? (
-              <>
-                {labels.get(key)} <code className="muted">{key}</code>
-              </>
-            ) : (
-              <code>{key}</code>
-            )}
-          </li>
-        ))}
-      </ul>
-    );
+  const productName = t('releases.productWithVersion', { name: r.productName, version: r.productVersion });
+  const dataWindowSet = Boolean(r.dataFrom || r.dataUntil);
+  const hasRestrictions = r.rowFilter.length > 0 || dataWindowSet || r.requiresConsent;
 
   return (
     <>
@@ -133,13 +131,10 @@ function ReleaseView({ release: r }: { release: ReleaseWithHistory }) {
         title={r.productName}
         docTitle={`${t('releases.title')}: ${r.productName}`}
         back={{ to: '/freigaben', label: t('releases.backToList') }}
-        description={t('releases.detailDescription', { date: fmt.dateTime(r.createdAt) })}
-        meta={
+        meta={r.status !== 'active' ? <StatusBadge group="releaseStatus" value={r.status} /> : undefined}
+        description={
           <>
-            <StatusBadge group="releaseStatus" value={r.status} />
-            <span className="muted small">
-              <RecipientLabel recipient={r.recipient} />
-            </span>
+            {t('releases.detailRecipient')} <RecipientLabel recipient={r.recipient} />
           </>
         }
         actions={
@@ -174,68 +169,130 @@ function ReleaseView({ release: r }: { release: ReleaseWithHistory }) {
 
       {r.status === 'revoked' && (
         <div className="alert alert-info">
-          <p className="alert-title">{t('releases.revokedTitle')}</p>
+          <p className="alert-title">
+            {r.revokedAt
+              ? t('releases.revokedOn', { date: fmt.dateTime(r.revokedAt) })
+              : t('releases.revokedTitle')}
+          </p>
           {r.revocationReason && <p>{revocationReasonText(i, r.revocationReason)}</p>}
         </div>
       )}
 
-      <Section title={t('releases.restrictions')} description={t('releases.immutableHint')}>
+      <Section title={t('releases.summaryTitle')} description={t('releases.immutableHint')}>
         <DescriptionList
           items={[
-            [t('releases.product'), productCell],
-            [t('releases.recipient'), <RecipientLabel key="r" recipient={r.recipient} />],
             [t('releases.purposes'), <PurposeList key="p" purposes={r.purposes} />],
-            [t('releases.releasedColumns'), columnsCell],
             [
-              t('releases.rowFilter'),
-              <ConditionSummary
-                key="f"
-                conditions={r.rowFilter}
-                labels={labels}
-                emptyText={t('releases.noRowFilter')}
-              />,
-            ],
-            [
-              t('releases.dataWindow'),
-              rangeText(t, fmt.date, r.dataFrom, r.dataUntil, t('releases.unrestricted')),
-            ],
-            [t('releases.validity'), validityText(i, r.validFrom, r.validUntil)],
-            [t('releases.consent'), r.requiresConsent ? t('releases.consentOn') : t('releases.consentOff')],
-            [
-              t('releases.legalBasis'),
-              r.legalBasis || (
-                <span key="l" className="muted">
-                  {t('common.empty')}
-                </span>
-              ),
-            ],
-            [
-              t('releases.note'),
-              r.note ? (
-                <span key="n" className="break">
-                  {r.note}
+              t('releases.releasedColumns'),
+              r.columns.length === 0 ? (
+                <span key="c" className="muted">
+                  {t('common.noColumns')}
                 </span>
               ) : (
-                <span key="n" className="muted">
-                  {t('common.empty')}
+                // Ohne Leserecht auf das Produkt (z. B. Revision) fehlen Bezeichnungen: Schlüssel als Code zeigen
+                <span key="c">
+                  {r.columns.map((key, n) => (
+                    <span key={key}>
+                      {n > 0 && ', '}
+                      {labels.get(key) ?? <code>{key}</code>}
+                    </span>
+                  ))}
                 </span>
               ),
             ],
-            [t('releases.createdAt'), <DateTime key="c" value={r.createdAt} />],
-            ...(r.revokedAt
-              ? ([
-                  [t('releases.revokedAt'), <DateTime key="v" value={r.revokedAt} />],
-                  [
-                    t('releases.revocationReason'),
-                    r.revocationReason ? revocationReasonText(i, r.revocationReason) : t('common.empty'),
-                  ],
-                ] as [string, ReactNode][])
-              : []),
+            [
+              t('releases.restrictions'),
+              hasRestrictions ? (
+                <ul key="f" className="list-plain stack-sm">
+                  {r.rowFilter.map((c) => (
+                    <li key={JSON.stringify(c)}>
+                      <ConditionText condition={c} labels={labels} />
+                    </li>
+                  ))}
+                  {dataWindowSet && (
+                    <li>
+                      {t('releases.dataWindowLine', {
+                        range: rangeText(t, fmt.date, r.dataFrom, r.dataUntil, ''),
+                      })}
+                    </li>
+                  )}
+                  {r.requiresConsent && <li>{t('releases.consentOn')}</li>}
+                </ul>
+              ) : (
+                <span key="f" className="muted">
+                  {t('releases.noRestrictions')}
+                </span>
+              ),
+            ],
+            [t('releases.validity'), validityText(i, r.validFrom, r.validUntil)],
           ]}
         />
+        <Details summary={t('releases.moreDetails')}>
+          <DescriptionList
+            items={[
+              [
+                t('releases.legalBasis'),
+                r.legalBasis || (
+                  <span key="l" className="muted">
+                    {t('common.empty')}
+                  </span>
+                ),
+              ],
+              [
+                t('releases.note'),
+                r.note ? (
+                  <span key="n" className="break">
+                    {r.note}
+                  </span>
+                ) : (
+                  <span key="n" className="muted">
+                    {t('common.empty')}
+                  </span>
+                ),
+              ],
+              [
+                t('releases.product'),
+                canProduct ? (
+                  <Link key="p" to={`/produkte/${r.productId}`}>
+                    {productName}
+                  </Link>
+                ) : (
+                  productName
+                ),
+              ],
+              [t('releases.createdAt'), <DateTime key="c" value={r.createdAt} />],
+              ...(r.recipient.type === 'peer'
+                ? ([
+                    [
+                      t('releases.peerNodeId'),
+                      <code key="pn" className="mono">
+                        {r.recipient.peerNodeId}
+                      </code>,
+                    ],
+                  ] as [string, ReactNode][])
+                : []),
+              [
+                t('releases.columnKeys'),
+                <span key="k" className="mono break">
+                  {r.columns.join(', ') || t('common.empty')}
+                </span>,
+              ],
+              [
+                t('releases.releaseId'),
+                <code key="i" className="mono break">
+                  {r.id}
+                </code>,
+              ],
+            ]}
+          />
+        </Details>
       </Section>
 
-      <Section title={t('releases.history')} description={t('releases.historyIntro')}>
+      <Section
+        title={t('releases.historyCount', { count: r.exchanges.length })}
+        description={t('releases.historyIntro')}
+        collapsible
+      >
         {r.exchanges.length === 0 ? (
           <EmptyState message={t('releases.historyEmpty')} />
         ) : (

@@ -1,15 +1,14 @@
 import { Link } from 'react-router';
 import type { Dataset } from '../../shared/contract/index.ts';
-import { DateTime } from '../components/Misc.tsx';
 import { PageHeader } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
-import { CategoryBadge, ShareabilityBadge, SpecialCategoryBadge } from '../components/StatusBadge.tsx';
+import { ShareabilityBadge, SpecialCategoryBadge } from '../components/StatusBadge.tsx';
 import { type Column, Table } from '../components/Table.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import { useApiQuery } from '../lib/query.ts';
 import { useSession } from '../lib/session.tsx';
 
-/** /datensaetze – Strukturen mit Kategorie, Art.-9-Kennzeichen, Teilbarkeit und Bestand. */
+/** /datensaetze – Strukturen mit Kategorie und Bestand; Art. 9 und „Nur intern“ als Hinweis am Namen. */
 export function DatasetList() {
   const { t, fmt } = useI18n();
   const session = useSession();
@@ -25,37 +24,21 @@ export function DatasetList() {
     {
       key: 'name',
       header: t('datasets.name'),
-      render: (d) => <Link to={`/datensaetze/${d.id}`}>{d.name}</Link>,
-    },
-    { key: 'slug', header: t('datasets.slug'), className: 'mono', render: (d) => d.slug },
-    {
-      key: 'category',
-      header: t('datasets.category'),
       render: (d) => (
-        <div className="badges">
-          <CategoryBadge category={d.category} />
+        <span className="row">
+          <Link to={`/datensaetze/${d.id}`}>{d.name}</Link>
           <SpecialCategoryBadge show={d.specialCategory} />
-        </div>
+          {d.shareability === 'internal' && <ShareabilityBadge value={d.shareability} />}
+        </span>
       ),
     },
-    {
-      key: 'share',
-      header: t('datasets.shareability'),
-      render: (d) => <ShareabilityBadge value={d.shareability} />,
-    },
-    { key: 'version', header: t('datasets.version'), className: 'num', render: (d) => d.version },
+    { key: 'category', header: t('datasets.category'), render: (d) => t(`categories.${d.category}`) },
     { key: 'fields', header: t('datasets.fieldsCount'), className: 'num', render: (d) => d.fields.length },
     {
       key: 'records',
       header: t('datasets.recordCount'),
       className: 'num',
       render: (d) => fmt.number(d.recordCount),
-    },
-    {
-      key: 'updated',
-      header: t('datasets.updatedAt'),
-      className: 'nowrap',
-      render: (d) => <DateTime value={d.updatedAt} />,
     },
   ];
 

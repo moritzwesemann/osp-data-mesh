@@ -16,6 +16,7 @@ import {
 } from '../components/datasets/FieldEditor.tsx';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { Checkbox, Fieldset, FormActions, FormField } from '../components/FormField.tsx';
+import { Details, useOpenWhen } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { QueryView } from '../components/QueryState.tsx';
 import { useToast } from '../components/Toast.tsx';
@@ -165,6 +166,14 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
     }
   };
 
+  const labelOf = (name: string) => form.fields.find((f) => f.name.trim() === name)?.label.trim() || name;
+  // Schlüssel und Beobachtungsdatum: aufgeklappt, wenn gesetzt (Bearbeiten) oder dort ein Fehler steht
+  const advancedOpen = useOpenWhen(
+    initial.keyFields.length > 0 ||
+      initial.observedAtField !== '' ||
+      Boolean(fe('keyFields') ?? fe('observedAtField')),
+  );
+
   const back = id
     ? { to: `/datensaetze/${id}`, label: t('datasets.backToDetail') }
     : { to: '/datensaetze', label: t('datasets.backToList') };
@@ -186,6 +195,16 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
 
         <Section title={t('datasets.general')}>
           <div className="form-grid">
+            <FormField label={t('datasets.name')} required error={fe('name')}>
+              {(a) => (
+                <input
+                  {...a}
+                  className="input"
+                  value={form.name}
+                  onChange={(e) => set('name', e.target.value)}
+                />
+              )}
+            </FormField>
             {!id && (
               <FormField label={t('datasets.slug')} required hint={t('datasets.slugHint')} error={fe('slug')}>
                 {(a) => (
@@ -200,16 +219,6 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
                 )}
               </FormField>
             )}
-            <FormField label={t('datasets.name')} required error={fe('name')}>
-              {(a) => (
-                <input
-                  {...a}
-                  className="input"
-                  value={form.name}
-                  onChange={(e) => set('name', e.target.value)}
-                />
-              )}
-            </FormField>
             <FormField label={t('datasets.description')} error={fe('description')} className="span-2">
               {(a) => (
                 <textarea
@@ -296,7 +305,7 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
           <FieldEditor value={form.fields} onChange={(fields) => set('fields', fields)} fieldError={fe} />
         </Section>
 
-        <Section title={t('datasets.metadata')}>
+        <Details summary={t('datasets.advanced')} defaultOpen={advancedOpen}>
           <Fieldset
             legend={t('datasets.keyFields')}
             hint={t('datasets.keyFieldsHint')}
@@ -309,7 +318,11 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
                 {uniqueNames.map((name) => (
                   <Checkbox
                     key={name}
-                    label={<span className="mono">{name}</span>}
+                    label={
+                      <>
+                        {labelOf(name)} <span className="small muted mono">({name})</span>
+                      </>
+                    }
                     checked={form.keyFields.includes(name)}
                     onChange={(checked) =>
                       set(
@@ -345,7 +358,7 @@ function DatasetFormBody({ id, initial, subtitle }: { id?: string; initial: Form
               </select>
             )}
           </FormField>
-        </Section>
+        </Details>
 
         {error && <ErrorMessage error={error} />}
         <FormActions>

@@ -1,8 +1,7 @@
 /** Athleten: Liste, Formular, Detail, Einwilligungen, Löschung. */
 export const athletes = {
   title: 'Athleten',
-  intro:
-    'Athletinnen und Athleten dieses Stützpunkts mit Stammdaten, Kennungen und dokumentierten Einwilligungen.',
+  intro: 'Athletinnen und Athleten dieses Stützpunkts.',
   create: 'Athlet anlegen',
   createTitle: 'Athlet anlegen',
   editTitle: 'Stammdaten bearbeiten',
@@ -23,12 +22,12 @@ export const athletes = {
   sexNone: 'Nicht angegeben',
   club: 'Verein',
   discipline: 'Disziplin',
+  sportDiscipline: 'Sportart und Disziplin',
   updatedAt: 'Geändert',
   createdAt: 'Angelegt',
   listCaption: 'Liste der Athleten',
   empty: 'Es sind noch keine Athleten erfasst.',
   emptyFiltered: 'Keine Athleten passen zu den gewählten Filtern.',
-  sportHint: 'Bereits vorhandene Sportarten werden vorgeschlagen.',
   created: 'Athlet angelegt.',
   saved: 'Stammdaten gespeichert.',
   masterData: 'Stammdaten',
@@ -43,9 +42,11 @@ export const athletes = {
   consents: {
     title: 'Einwilligungen',
     intro:
-      'Einwilligungen werden außerhalb des Systems eingeholt (z. B. schriftlich) und hier nur dokumentiert. Freigaben mit Einwilligungspflicht liefern nur Daten von Personen mit passender, gültiger Einwilligung.',
+      'Einwilligungen werden außerhalb des Systems eingeholt (z. B. schriftlich) und hier dokumentiert. Freigaben mit Einwilligungspflicht liefern nur Daten mit passender, gültiger Einwilligung.',
     empty: 'Für diese Person ist keine Einwilligung dokumentiert.',
     caption: 'Dokumentierte Einwilligungen',
+    noneValid: 'Für diese Person ist keine gültige Einwilligung dokumentiert.',
+    withdrawnList: 'Widerrufene Einwilligungen ({count})',
     add: 'Einwilligung dokumentieren',
     dialogTitle: 'Einwilligung dokumentieren',
     purpose: 'Zweck',
@@ -54,7 +55,9 @@ export const athletes = {
     validFrom: 'Gültig ab',
     validUntil: 'Gültig bis',
     validUntilHint: 'Leer lassen, wenn die Einwilligung unbefristet gilt.',
-    openEnded: 'unbefristet',
+    validity: 'Gültigkeit',
+    validRange: '{from} – {until}',
+    validOpenEnded: 'ab {from}, unbefristet',
     evidenceNote: 'Nachweis',
     evidenceHint: 'z. B. „Formular vom 12.03., Ablage Ordner 4“ – keine Gesundheitsangaben eintragen.',
     recordedAt: 'Erfasst',

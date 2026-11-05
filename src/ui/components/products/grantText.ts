@@ -18,3 +18,11 @@ export function dataWindowText(i: Tr, g: Pick<AccessGrant, 'dataFrom' | 'dataUnt
   if (g.dataUntil) return i.t('myData.dataUntil', { until: i.fmt.date(g.dataUntil) });
   return i.t('myData.dataAll');
 }
+
+/** Gültigkeit kurz für Karten: „gültig ab …“ (beginnt später), „gültig bis …“ oder „unbefristet gültig“. */
+export function validityShort(i: Tr, g: Pick<AccessGrant, 'validFrom' | 'validUntil'>): string {
+  if (Date.parse(g.validFrom) > Date.now())
+    return i.t('myData.validFromShort', { from: i.fmt.date(g.validFrom) });
+  if (g.validUntil) return i.t('myData.validUntilShort', { until: i.fmt.date(g.validUntil) });
+  return i.t('myData.validOpenShort');
+}

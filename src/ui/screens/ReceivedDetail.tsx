@@ -4,7 +4,7 @@ import type { ColumnDef, ExportFormat, Scalar } from '../../shared/contract/inde
 import { ConfirmDialog } from '../components/Dialog.tsx';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { shortHash } from '../components/federation/fingerprint.ts';
-import { DateTime, DescriptionList } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details, MetaLine } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { QueryView, Skeleton } from '../components/QueryState.tsx';
 import { ResultTable } from '../components/ResultTable.tsx';
@@ -55,7 +55,7 @@ function ReceivedView({ detail: d }: { detail: Detail }) {
     invalidate: ['received.list'],
     onSuccess: () => {
       toast.success(t('received.deleted'));
-      navigate('/empfangen', { replace: true });
+      navigate('/katalog?wo=empfangen', { replace: true });
     },
   });
 
@@ -66,12 +66,14 @@ function ReceivedView({ detail: d }: { detail: Detail }) {
     <>
       <PageHeader
         title={d.title}
-        back={{ to: '/empfangen', label: t('received.backToList') }}
+        back={{ to: '/katalog?wo=empfangen', label: t('received.backToList') }}
         meta={
-          <>
-            <StatusBadge group="receivedStatus" value={d.status} />
-            <SpecialCategoryBadge show={d.specialCategory} />
-          </>
+          d.status !== 'active' || d.specialCategory ? (
+            <>
+              {d.status !== 'active' && <StatusBadge group="receivedStatus" value={d.status} />}
+              <SpecialCategoryBadge show={d.specialCategory} />
+            </>
+          ) : undefined
         }
         description={d.description || undefined}
         actions={
@@ -113,68 +115,87 @@ function ReceivedView({ detail: d }: { detail: Detail }) {
         </div>
       )}
 
-      <Section title={t('received.provenance')} description={t('received.provenanceIntro')}>
-        <DescriptionList
+      <Section>
+        <MetaLine
           items={[
-            [
-              t('received.sourceNode'),
-              <span key="node">
-                {p.sourceNodeName} <span className="mono small muted">{p.sourceNodeId}</span>
-              </span>,
-            ],
-            [
-              t('received.sourceFingerprint'),
-              <span key="fp" className="mono break">
-                {p.sourceFingerprint}
-              </span>,
-            ],
-            [
-              t('received.remoteRelease'),
-              <span key="rel" className="mono break">
-                {p.remoteReleaseId}
-              </span>,
-            ],
-            [
-              t('received.remoteProduct'),
-              <span key="prod">
-                <span className="mono break">{p.remoteProductId}</span>{' '}
-                <span className="mono small muted">({d.remoteProductSlug})</span>
-              </span>,
-            ],
-            [t('received.productVersion'), p.productVersion],
-            [t('common.purpose'), purposeLabel(p.purpose)],
-            [t('received.pulledAt'), <DateTime key="pulled" value={p.pulledAt} />],
-            [
-              t('received.payloadSha'),
-              p.payloadSha256 ? (
-                <span key="sha" className="mono break">
-                  {p.payloadSha256}
-                </span>
-              ) : (
-                t('common.empty')
-              ),
-            ],
-            [
-              t('received.signature'),
-              p.responseSignature ? (
-                <span key="sig" className="mono break small">
-                  {p.responseSignature}
-                </span>
-              ) : (
-                t('common.empty')
-              ),
-            ],
-            [t('common.status'), <StatusBadge key="status" group="receivedStatus" value={d.status} />],
-            [
-              t('received.validUntil'),
-              d.releaseValidUntil ? (
-                <DateTime key="valid" value={d.releaseValidUntil} />
-              ) : (
-                t('received.unlimited')
-              ),
-            ],
+            t('received.fromPartner', { name: p.sourceNodeName }),
+            t('received.purposeIs', { purpose: purposeLabel(p.purpose) }),
+            p.pulledAt ? t('received.pulledOn', { time: i.fmt.dateTime(p.pulledAt) }) : null,
+            d.releaseValidUntil
+              ? t('received.validUntilText', { time: i.fmt.dateTime(d.releaseValidUntil) })
+              : t('received.validUnlimitedText'),
           ]}
         />
+        {p.responseSignature && (
+          <p className="small">
+            <span className="status-dot ok" aria-hidden="true" />
+            {t('received.signedNote')}
+          </p>
+        )}
+        <Details summary={t('received.provenance')}>
+          <p className="small muted">{t('received.provenanceIntro')}</p>
+          <DescriptionList
+            items={[
+              [
+                t('received.sourceNode'),
+                <span key="node">
+                  {p.sourceNodeName} <span className="mono small muted">{p.sourceNodeId}</span>
+                </span>,
+              ],
+              [
+                t('received.sourceFingerprint'),
+                <span key="fp" className="mono break">
+                  {p.sourceFingerprint}
+                </span>,
+              ],
+              [
+                t('received.remoteRelease'),
+                <span key="rel" className="mono break">
+                  {p.remoteReleaseId}
+                </span>,
+              ],
+              [
+                t('received.remoteProduct'),
+                <span key="prod">
+                  <span className="mono break">{p.remoteProductId}</span>{' '}
+                  <span className="mono small muted">({d.remoteProductSlug})</span>
+                </span>,
+              ],
+              [t('received.productVersion'), p.productVersion],
+              [t('common.purpose'), purposeLabel(p.purpose)],
+              [t('received.pulledAt'), <DateTime key="pulled" value={p.pulledAt} />],
+              [
+                t('received.payloadSha'),
+                p.payloadSha256 ? (
+                  <span key="sha" className="mono break">
+                    {p.payloadSha256}
+                  </span>
+                ) : (
+                  t('common.empty')
+                ),
+              ],
+              [
+                t('received.signature'),
+                p.responseSignature ? (
+                  <span key="sig" className="mono break small">
+                    {p.responseSignature}
+                  </span>
+                ) : (
+                  t('common.empty')
+                ),
+              ],
+              [t('common.status'), <StatusBadge key="status" group="receivedStatus" value={d.status} />],
+              [
+                t('received.validUntil'),
+                d.releaseValidUntil ? (
+                  <DateTime key="valid" value={d.releaseValidUntil} />
+                ) : (
+                  t('received.unlimited')
+                ),
+              ],
+            ]}
+          />
+        </Details>
       </Section>
 
       <RowsSection detail={d} />
@@ -329,7 +350,7 @@ function HistorySection({ history }: { history: readonly HistoryEntry[] }) {
     },
   ];
   return (
-    <Section title={t('received.history')}>
+    <Section title={t('received.historyCount', { count: history.length })} collapsible>
       <Table
         columns={columns}
         rows={history}

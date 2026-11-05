@@ -22,6 +22,13 @@ interface NavGroup {
 export const NAV: readonly NavGroup[] = [
   { label: null, items: [{ to: '/', label: 'nav.overview', routes: [], end: true }] },
   {
+    label: 'nav.groupUse',
+    items: [
+      { to: '/meine-daten', label: 'nav.myData', routes: ['access.list'] },
+      { to: '/katalog', label: 'nav.catalog', routes: ['catalog.local'] },
+    ],
+  },
+  {
     label: 'nav.groupData',
     items: [
       { to: '/athleten', label: 'nav.athletes', routes: ['athletes.list'] },
@@ -32,20 +39,9 @@ export const NAV: readonly NavGroup[] = [
     ],
   },
   {
-    label: 'nav.groupUse',
-    items: [
-      { to: '/meine-daten', label: 'nav.myData', routes: ['access.list'] },
-      { to: '/katalog', label: 'nav.catalog', routes: ['catalog.local'] },
-      { to: '/empfangen', label: 'nav.received', routes: ['received.list'] },
-    ],
-  },
-  {
-    label: 'nav.groupNetwork',
-    items: [{ to: '/partner', label: 'nav.partners', routes: ['peers.list'] }],
-  },
-  {
     label: 'nav.groupAdmin',
     items: [
+      { to: '/partner', label: 'nav.partners', routes: ['peers.list'] },
       { to: '/audit', label: 'nav.audit', routes: ['audit.list', 'exchange.log'] },
       { to: '/benutzer', label: 'nav.users', routes: ['users.list'] },
       { to: '/system', label: 'nav.system', routes: ['system.status'] },
@@ -159,7 +155,6 @@ export function AppShell() {
               </a>
             </li>
           </ul>
-          <p className="nav-node-id mono">{session.node.nodeId}</p>
         </div>
       </nav>
       <main id="main" className="main" tabIndex={-1}>

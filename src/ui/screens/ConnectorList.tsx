@@ -65,10 +65,10 @@ export function ConnectorList() {
       key: 'name',
       header: t('connectors.colName'),
       render: (c) => (
-        <div className="stack-sm">
+        <span className="row">
           <Link to={`/quellen/${c.id}`}>{c.name}</Link>
-          <span className="small muted mono">{c.slug}</span>
-        </div>
+          {!c.active && <StatusBadge group="activeState" value="inactive" />}
+        </span>
       ),
     },
     {
@@ -82,37 +82,24 @@ export function ConnectorList() {
       header: t('connectors.colTarget'),
       render: (c) =>
         c.targetType === 'dataset' ? (
-          <span>
-            {t('targetType.dataset')}
-            {c.targetDatasetName && (
-              <>
-                : <span className="break">{c.targetDatasetName}</span>
-              </>
-            )}
-          </span>
+          <span className="break">{c.targetDatasetName ?? t('targetType.dataset')}</span>
         ) : (
           t('targetType.athletes')
         ),
-    },
-    { key: 'version', header: t('connectors.colVersion'), className: 'num', render: (c) => c.version },
-    {
-      key: 'status',
-      header: t('connectors.colStatus'),
-      render: (c) => <StatusBadge group="activeState" value={c.active ? 'active' : 'inactive'} />,
     },
     {
       key: 'lastRun',
       header: t('connectors.colLastRun'),
       render: (c) =>
         c.lastRun ? (
-          <div className="stack-sm">
-            <span>
-              <StatusBadge group="importStatus" value={c.lastRun.status} />
-            </span>
-            <Link to={`/importe/${c.lastRun.id}`} className="small">
+          <span className="row">
+            <Link to={`/importe/${c.lastRun.id}`} className="nowrap">
               <DateTime value={c.lastRun.createdAt} />
             </Link>
-          </div>
+            {c.lastRun.status !== 'committed' && (
+              <StatusBadge group="importStatus" value={c.lastRun.status} />
+            )}
+          </span>
         ) : (
           <span className="muted small">{t('connectors.noRun')}</span>
         ),
@@ -120,9 +107,10 @@ export function ConnectorList() {
     {
       key: 'actions',
       header: <span className="sr-only">{t('common.actions')}</span>,
+      className: 'num',
       render: (c) =>
         session.can('connectors.export') ? (
-          <button type="button" className="btn btn-sm" onClick={() => void exportConnector(c)}>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void exportConnector(c)}>
             {t('connectors.exportAction')}
           </button>
         ) : null,
@@ -191,7 +179,9 @@ export function ConnectorList() {
         )}
       </QueryView>
 
-      {session.can('connectors.templates') && <TemplateGallery canImport={canImport} />}
+      {session.can('connectors.templates') && (
+        <TemplateGallery canImport={canImport} open={list.isSuccess && list.data.items.length === 0} />
+      )}
 
       <Dialog
         open={pending !== null}
@@ -275,7 +265,7 @@ export function ConnectorList() {
   );
 }
 
-function TemplateGallery({ canImport }: { canImport: boolean }) {
+function TemplateGallery({ canImport, open }: { canImport: boolean; open: boolean }) {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
@@ -290,7 +280,12 @@ function TemplateGallery({ canImport }: { canImport: boolean }) {
   });
 
   return (
-    <Section title={t('connectors.templatesTitle')} description={t('connectors.templatesIntro')}>
+    <Section
+      title={t('connectors.templatesTitle')}
+      description={t('connectors.templatesIntro')}
+      collapsible
+      defaultOpen={open}
+    >
       {apply.error && <ErrorMessage error={apply.error} />}
       <QueryView query={templates}>
         {(data) =>

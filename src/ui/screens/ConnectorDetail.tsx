@@ -10,16 +10,16 @@ import {
   targetLabel,
   useConnectorExport,
 } from '../components/connectors/shared.ts';
-import { DateTime, DescriptionList } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
-import { QueryView } from '../components/QueryState.tsx';
+import { EmptyState, QueryView } from '../components/QueryState.tsx';
 import { Badge, StatusBadge } from '../components/StatusBadge.tsx';
 import { type Column, Table } from '../components/Table.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import { useApiQuery } from '../lib/query.ts';
 import { useSession } from '../lib/session.tsx';
 
-/** /quellen/:id – Quelle mit Konfiguration, Zuordnung, Import starten und Laufhistorie. */
+/** /quellen/:id – Quelle: Import starten, kurzer Überblick, Feldzuordnung, Laufhistorie, technische Details. */
 export function ConnectorDetail() {
   const { id = '' } = useParams();
   const { t } = useI18n();
@@ -52,14 +52,11 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
     { enabled: c.targetType === 'dataset' && Boolean(c.targetDatasetId) },
   );
   const fields = dataset.data ?? null;
+  const cfg = c.config;
 
-  const configItems: [ReactNode, ReactNode][] = [
-    [
-      t('connectors.slug'),
-      <span key="k57" className="mono">
-        {c.slug}
-      </span>,
-    ],
+  // Überblick: was die Quelle ist, wohin die Daten gehen, wie Personen erkannt werden, letzter Lauf
+  const summary: [ReactNode, ReactNode][] = [
+    [t('connectors.kind'), t(`connectorKind.${c.kind}`)],
     [
       t('connectors.targetType'),
       c.targetType === 'dataset' ? (
@@ -75,10 +72,53 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
         t('targetType.athletes')
       ),
     ],
+    [
+      t('connectors.matchStrategy'),
+      c.athleteMatch.strategy === 'external_id' ? (
+        <>
+          {t('matchStrategy.external_id')}: <span className="mono">{c.athleteMatch.system}</span>
+        </>
+      ) : (
+        t('matchStrategy.natural_key')
+      ),
+    ],
   ];
-  const cfg = c.config;
+  if (cfg.type === 'http_api') {
+    summary.push([
+      t('connectors.url'),
+      <span key="url" className="mono break">
+        {cfg.url}
+      </span>,
+    ]);
+  }
+  summary.push([
+    t('connectors.colLastRun'),
+    c.lastRun ? (
+      <span key="last" className="row">
+        <Link to={`/importe/${c.lastRun.id}`}>
+          <DateTime value={c.lastRun.createdAt} />
+        </Link>
+        <StatusBadge group="importStatus" value={c.lastRun.status} />
+      </span>
+    ) : (
+      <span key="none" className="muted">
+        {t('connectors.noRun')}
+      </span>
+    ),
+  ]);
+
+  // Technische Details: Kennung, Version, Formatangaben, Fehlerbehandlung, Zeitstempel
+  const technical: [ReactNode, ReactNode][] = [
+    [
+      t('connectors.slug'),
+      <span key="slug" className="mono">
+        {c.slug}
+      </span>,
+    ],
+    [t('common.version'), c.version],
+  ];
   if (cfg.type === 'csv') {
-    configItems.push(
+    technical.push(
       [t('connectors.delimiter'), delimiterLabel(i, cfg.delimiter)],
       [t('connectors.encoding'), ENCODING_LABELS[cfg.encoding]],
       [
@@ -90,17 +130,11 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
   } else {
     const p = cfg.pagination;
     const query = Object.entries(cfg.query);
-    configItems.push(
-      [
-        t('connectors.url'),
-        <span key="k89" className="mono break">
-          {cfg.url}
-        </span>,
-      ],
+    technical.push(
       [
         t('connectors.itemsPath'),
         cfg.itemsPath ? (
-          <span key="k92" className="mono">
+          <span key="items" className="mono">
             {cfg.itemsPath}
           </span>
         ) : (
@@ -145,7 +179,7 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
         query.length === 0 ? (
           t('connectors.queryParamsNone')
         ) : (
-          <span key="k132" className="mono break">
+          <span key="query" className="mono break">
             {query.map(([k, v]) => `${k}=${v}`).join(' · ')}
           </span>
         ),
@@ -154,52 +188,45 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
       [t('connectors.timeoutMs'), i.fmt.number(cfg.timeoutMs)],
     );
     if (needsSecret(c)) {
-      configItems.push([
+      technical.push([
         t('connectors.secretState'),
         c.hasSecret ? (
-          <Badge key="k142" tone="success">
+          <Badge key="secret" tone="success">
             {t('connectors.secretYes')}
           </Badge>
         ) : (
-          <Badge key="k144" tone="warning">
+          <Badge key="secret" tone="warning">
             {t('connectors.secretNo')}
           </Badge>
         ),
       ]);
     }
   }
-  configItems.push(
-    [
-      t('connectors.matchStrategy'),
-      c.athleteMatch.strategy === 'external_id' ? (
-        <>
-          {t('matchStrategy.external_id')}: <span className="mono">{c.athleteMatch.system}</span>
-        </>
-      ) : (
-        t('matchStrategy.natural_key')
-      ),
-    ],
+  technical.push(
     [t('connectors.onError'), t(`onError.${c.onError}`)],
-    [t('common.createdAt'), <DateTime key="k161" value={c.createdAt} />],
-    [t('common.updatedAt'), <DateTime key="k162" value={c.updatedAt} />],
+    [t('common.createdAt'), <DateTime key="created" value={c.createdAt} />],
+    [t('common.updatedAt'), <DateTime key="updated" value={c.updatedAt} />],
   );
 
+  // Feldzuordnung: auf einen Blick nur „Quellspalte → Zielfeld“, Pfade und Umwandlungen aufklappbar
   const mappingColumns: Column<FieldMapping>[] = [
     {
       key: 'source',
       header: t('connectors.sourceField'),
-      className: 'nowrap',
-      render: (m) => <span className="mono">{m.source}</span>,
+      // CSV: Spaltennamen der Datei; API: Punkt-Pfade im JSON (technisch, daher Monospace)
+      className: c.kind === 'http_api' ? 'mono break' : undefined,
+      render: (m) => m.source,
     },
+    { key: 'target', header: t('connectors.targetField'), render: (m) => targetLabel(i, m.target, fields) },
+  ];
+  const mappingTechColumns: Column<FieldMapping>[] = [
     {
-      key: 'target',
-      header: t('connectors.targetField'),
-      render: (m) => (
-        <span>
-          {targetLabel(i, m.target, fields)} <span className="small muted mono">{m.target}</span>
-        </span>
-      ),
+      key: 'source',
+      header: t('connectors.sourceField'),
+      className: 'mono break',
+      render: (m) => m.source,
     },
+    { key: 'path', header: t('connectors.targetPath'), className: 'mono', render: (m) => m.target },
     { key: 'transform', header: t('connectors.transform'), render: (m) => t(`transform.${m.transform}`) },
     {
       key: 'default',
@@ -212,11 +239,7 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
       render: (m) => {
         const entries = Object.entries(m.valueMap ?? {});
         if (entries.length === 0) return t('common.empty');
-        return (
-          <span title={entries.map(([k, v]) => `${k}=${v}`).join('\n')}>
-            {t('connectors.valueMapCount', { count: entries.length })}
-          </span>
-        );
+        return <span className="mono break">{entries.map(([k, v]) => `${k}=${v}`).join(' · ')}</span>;
       },
     },
   ];
@@ -227,24 +250,18 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
         title={c.name}
         back={{ to: '/quellen', label: t('connectors.backToList') }}
         description={c.description || undefined}
-        meta={
-          <>
-            <Badge tone="info">{t(`connectorKind.${c.kind}`)}</Badge>
-            <StatusBadge group="activeState" value={c.active ? 'active' : 'inactive'} />
-            <Badge>{t('common.versionN', { version: c.version })}</Badge>
-          </>
-        }
+        meta={c.active ? undefined : <StatusBadge group="activeState" value="inactive" />}
         actions={
           <>
+            {session.can('connectors.update') && (
+              <Link to={`/quellen/${c.id}/bearbeiten`} className="btn">
+                {t('common.edit')}
+              </Link>
+            )}
             {session.can('connectors.export') && (
               <button type="button" className="btn" onClick={() => void exportConnector(c)}>
                 {t('connectors.exportAction')}
               </button>
-            )}
-            {session.can('connectors.update') && (
-              <Link to={`/quellen/${c.id}/bearbeiten`} className="btn btn-primary">
-                {t('common.edit')}
-              </Link>
             )}
           </>
         }
@@ -253,29 +270,64 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
       <ImportStarter connector={c} />
 
       <div className="grid-2">
-        <Section title={t('connectors.configTitle')}>
-          <DescriptionList items={configItems} />
+        <Section title={t('connectors.summaryTitle')}>
+          <DescriptionList items={summary} />
+          <Details>
+            <DescriptionList items={technical} />
+          </Details>
         </Section>
         <Section title={t('connectors.mappingTitle')}>
-          <Table
-            caption={t('connectors.mappingTitle')}
-            columns={mappingColumns}
-            rows={c.mapping}
-            rowKey={(m) => `${m.source}→${m.target}`}
-            empty={t('connectors.mappingEmpty')}
-          />
+          {c.mapping.length === 0 ? (
+            <EmptyState message={t('connectors.mappingEmpty')} />
+          ) : (
+            <>
+              <Table
+                caption={t('connectors.mappingTitle')}
+                columns={mappingColumns}
+                rows={c.mapping}
+                rowKey={(m) => `${m.source}→${m.target}`}
+              />
+              <Details summary={t('connectors.mappingDetails')}>
+                <Table
+                  caption={t('connectors.mappingDetails')}
+                  columns={mappingTechColumns}
+                  rows={c.mapping}
+                  rowKey={(m) => `${m.source}→${m.target}`}
+                />
+              </Details>
+            </>
+          )}
         </Section>
       </div>
 
       <SecretSection connector={c} />
 
-      <RunHistory connectorId={c.id} />
+      <RunHistory connectorId={c.id} open={c.lastRun?.status === 'previewed'} />
     </>
   );
 }
 
-function RunHistory({ connectorId }: { connectorId: string }) {
-  const { t, fmt } = useI18n();
+/** Ergebnis eines Laufs in einer Zeile, z. B. „78 von 80 übernommen · 2 Fehler“. */
+function RunResult({ run: r }: { run: ImportRun }) {
+  const { t } = useI18n();
+  if (r.status === 'failed') return <span className="muted">{t('common.empty')}</span>;
+  return (
+    <span>
+      {r.status === 'committed'
+        ? t('connectors.resultCommitted', { done: r.insertedRows + r.updatedRows, total: r.totalRows })
+        : t('connectors.resultChecked', { valid: r.validRows, total: r.totalRows })}
+      {r.errorRows > 0 && (
+        <>
+          {' · '}
+          <span className="text-danger">{t('connectors.resultErrors', { count: r.errorRows })}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function RunHistory({ connectorId, open }: { connectorId: string; open: boolean }) {
+  const { t } = useI18n();
   const runs = useApiQuery('imports.list', { params: { id: connectorId } });
   const columns: Column<ImportRun>[] = [
     {
@@ -298,39 +350,10 @@ function RunHistory({ connectorId }: { connectorId: string }) {
       header: t('connectors.colSourceName'),
       render: (r) => <span className="break">{r.sourceName}</span>,
     },
-    {
-      key: 'total',
-      header: t('connectors.colRows'),
-      className: 'num',
-      render: (r) => fmt.number(r.totalRows),
-    },
-    {
-      key: 'valid',
-      header: t('connectors.colValid'),
-      className: 'num',
-      render: (r) => fmt.number(r.validRows),
-    },
-    {
-      key: 'errors',
-      header: t('connectors.colErrors'),
-      className: 'num',
-      render: (r) => (r.errorRows > 0 ? <span className="text-danger">{fmt.number(r.errorRows)}</span> : '0'),
-    },
-    {
-      key: 'inserted',
-      header: t('connectors.colInserted'),
-      className: 'num',
-      render: (r) => fmt.number(r.insertedRows),
-    },
-    {
-      key: 'updated',
-      header: t('connectors.colUpdated'),
-      className: 'num',
-      render: (r) => fmt.number(r.updatedRows),
-    },
+    { key: 'result', header: t('connectors.colResult'), render: (r) => <RunResult run={r} /> },
   ];
   return (
-    <Section title={t('connectors.historyTitle')}>
+    <Section title={t('connectors.historyTitle')} collapsible defaultOpen={open}>
       <QueryView query={runs}>
         {(data) => (
           <Table

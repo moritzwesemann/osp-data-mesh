@@ -84,12 +84,6 @@ export function AthleteList() {
     { key: 'sport', header: t('athletes.sport'), render: (a) => a.sport },
     { key: 'squad', header: t('athletes.squad'), render: (a) => t(`squad.${a.squadStatus}`) },
     { key: 'club', header: t('athletes.club'), render: (a) => a.club ?? t('common.empty') },
-    {
-      key: 'updated',
-      header: t('athletes.updatedAt'),
-      className: 'nowrap',
-      render: (a) => <DateTime value={a.updatedAt} />,
-    },
   ];
 
   return (

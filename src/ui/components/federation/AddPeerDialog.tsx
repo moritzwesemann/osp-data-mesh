@@ -5,7 +5,7 @@ import { useApiMutation } from '../../lib/query.ts';
 import { Dialog } from '../Dialog.tsx';
 import { ErrorMessage } from '../ErrorMessage.tsx';
 import { FormField } from '../FormField.tsx';
-import { DescriptionList } from '../Misc.tsx';
+import { DescriptionList, Details } from '../Misc.tsx';
 import { useToast } from '../Toast.tsx';
 
 function parseCard(text: string): NodeCard | null {
@@ -18,7 +18,7 @@ function parseCard(text: string): NodeCard | null {
   }
 }
 
-/** Partner aus Knotenkarte aufnehmen (peers.add): Einfügen oder Datei hochladen. */
+/** Partner aus Knotenkarte aufnehmen (peers.add): Datei hochladen oder (aufklappbar) als Text einfügen. */
 export function AddPeerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -72,18 +72,20 @@ export function AddPeerDialog({ open, onClose }: { open: boolean; onClose: () =>
           <input {...a} className="input" type="file" accept=".json,application/json" onChange={onFile} />
         )}
       </FormField>
-      <FormField label={t('partners.cardJson')} error={invalid ? t('partners.cardInvalid') : undefined}>
-        {(a) => (
-          <textarea
-            {...a}
-            className="input mono"
-            rows={8}
-            spellCheck={false}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-        )}
-      </FormField>
+      <Details summary={t('partners.cardPaste')} defaultOpen={invalid}>
+        <FormField label={t('partners.cardJson')} error={invalid ? t('partners.cardInvalid') : undefined}>
+          {(a) => (
+            <textarea
+              {...a}
+              className="input mono"
+              rows={8}
+              spellCheck={false}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          )}
+        </FormField>
+      </Details>
       {card && (
         <div className="stack-sm">
           <h3>{t('partners.cardSummary')}</h3>

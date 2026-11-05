@@ -180,7 +180,7 @@ function AthleteFormBody({ id, initial, title }: { id?: string; initial: FormSta
               </select>
             )}
           </FormField>
-          <FormField label={t('athletes.sport')} required hint={t('athletes.sportHint')} error={fe('sport')}>
+          <FormField label={t('athletes.sport')} required error={fe('sport')}>
             {(a) => (
               <>
                 <input

@@ -1,4 +1,12 @@
-import { type KeyboardEvent, type ReactNode, useRef } from 'react';
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type SyntheticEvent,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useI18n } from '../i18n/index.tsx';
 import { cx } from '../lib/util.ts';
 import { useToast } from './Toast.tsx';
@@ -121,6 +129,89 @@ export function CodeBlock({ code, copy = true, label }: { code: string; copy?: b
       </pre>
       {copy && <CopyButton text={code} className="code-block-copy" />}
     </div>
+  );
+}
+
+/**
+ * Aufklappbarer Bereich für Nebensächliches (technische Angaben, Kennungen, Prüfsummen, Verläufe).
+ * Standard: zugeklappt, Beschriftung „Technische Details“. Nichts geht verloren, es steht nur nicht im Weg.
+ */
+export function Details({
+  summary,
+  children,
+  defaultOpen = false,
+  className,
+}: {
+  summary?: ReactNode;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const { t } = useI18n();
+  const d = useDisclosure<HTMLDetailsElement>(defaultOpen);
+  return (
+    <details ref={d.ref} className={cx('details', className)} open={d.open} onToggle={d.onToggle}>
+      <summary className="details-summary">{summary ?? t('common.technicalDetails')}</summary>
+      <div className="details-body">{children}</div>
+    </details>
+  );
+}
+
+/** Feldfehler im Inhalt eines aufklappbaren Bereichs (FormField setzt aria-invalid und .field-error) */
+const ERROR_SELECTOR = '[aria-invalid="true"], .field-error, .alert-error';
+
+/**
+ * Zustand eines aufklappbaren Bereichs (<Details>, <Section collapsible>):
+ * - öffnet, sobald wantOpen true wird (abweichender Wert, Feldfehler, Handlungsbedarf), und klappt nie von
+ *   selbst wieder zu – auch nicht, wenn die Bedingung beim Tippen wegfällt;
+ * - öffnet erneut, sobald im (zugeklappten) Inhalt neue Fehler erscheinen, z. B. nach dem Speichern;
+ * - sonst entscheidet die Person (auf- und zuklappen).
+ */
+export function useDisclosure<E extends HTMLElement>(wantOpen: boolean) {
+  const ref = useRef<E>(null);
+  const [open, setOpen] = useState(wantOpen);
+  const [prevWant, setPrevWant] = useState(wantOpen);
+  if (wantOpen !== prevWant) {
+    setPrevWant(wantOpen);
+    if (wantOpen) setOpen(true);
+  }
+  const lastErrors = useRef('');
+  // Nach jedem Rendern: neue Fehler im Inhalt? Dann aufklappen (Inhalt ist auch zugeklappt im DOM).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const found = [...el.querySelectorAll(ERROR_SELECTOR)].map((n) => n.textContent ?? '').join('|');
+    if (found && found !== lastErrors.current) setOpen(true);
+    lastErrors.current = found;
+  });
+  const onToggle = useCallback((e: SyntheticEvent<E>) => {
+    const target = e.currentTarget as unknown as { open?: boolean };
+    if (typeof target.open === 'boolean') setOpen(target.open);
+  }, []);
+  return { ref, open, setOpen, onToggle };
+}
+
+/**
+ * Öffnungszustand für aufklappbare Formularteile (<Details defaultOpen>, <Section collapsible>):
+ * wird true, sobald cond einmal true war (abweichender Wert, Feldfehler), und klappt nie von selbst zu.
+ */
+export function useOpenWhen(cond: boolean): boolean {
+  const [open, setOpen] = useState(cond);
+  if (cond && !open) setOpen(true);
+  return open || cond;
+}
+
+/** Kurze Angaben in einer Zeile, getrennt durch „·“ (leere Einträge entfallen). */
+export function MetaLine({ items, className }: { items: ReactNode[]; className?: string }) {
+  const shown = items.filter((x) => x !== null && x !== undefined && x !== false && x !== '');
+  if (shown.length === 0) return null;
+  return (
+    <p className={cx('meta-line', className)}>
+      {shown.map((x, n) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: statische Liste
+        <span key={n}>{x}</span>
+      ))}
+    </p>
   );
 }
 

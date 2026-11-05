@@ -2,18 +2,12 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import type { Product } from '../../shared/contract/index.ts';
 import { ConfirmDialog } from '../components/Dialog.tsx';
-import { DateTime, DescriptionList } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { conditionText, sourceText } from '../components/products/sources.ts';
 import { QueryView } from '../components/QueryState.tsx';
 import { ResultTable } from '../components/ResultTable.tsx';
-import {
-  Badge,
-  CategoryBadge,
-  ShareabilityBadge,
-  SpecialCategoryBadge,
-  StatusBadge,
-} from '../components/StatusBadge.tsx';
+import { ShareabilityBadge, SpecialCategoryBadge, StatusBadge } from '../components/StatusBadge.tsx';
 import { type Column, Table } from '../components/Table.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
@@ -22,7 +16,7 @@ import { useSession } from '../lib/session.tsx';
 
 type ProductColumn = Product['columns'][number];
 
-/** /produkte/:id – Datenprodukt mit Spalten, Basisfilter, Vorschau und Stilllegung. */
+/** /produkte/:id – Datenprodukt: Überblick, Spalten mit Basisfilter, Vorschau; Kennungen aufklappbar. */
 export function ProductDetail() {
   const { id = '' } = useParams();
   const { t } = useI18n();
@@ -42,7 +36,7 @@ export function ProductDetail() {
 
 function ProductView({ product: p }: { product: Product }) {
   const i = useI18n();
-  const { t, fmt } = i;
+  const { t } = i;
   const session = useSession();
   const toast = useToast();
   const [retireOpen, setRetireOpen] = useState(false);
@@ -63,38 +57,28 @@ function ProductView({ product: p }: { product: Product }) {
     { enabled: previewOn, staleTime: 0 },
   );
 
+  // Auf einen Blick: Bezeichnung, Typ, Einheit; Spaltenschlüssel und Feldpfade aufklappbar
   const columns: Column<ProductColumn>[] = [
-    { key: 'key', header: t('products.columnKey'), className: 'mono', render: (c) => c.key },
     { key: 'label', header: t('products.columnLabel'), render: (c) => c.label },
-    {
-      key: 'source',
-      header: t('products.columnField'),
-      render: (c) => (
-        <div className="stack-sm">
-          <span>{sourceText(i, c.source, c.label)}</span>
-          <span className="muted small mono">{c.source}</span>
-        </div>
-      ),
-    },
     { key: 'type', header: t('common.type'), render: (c) => t(`fieldTypes.${c.type}`) },
     { key: 'unit', header: t('common.unit'), render: (c) => c.unit ?? t('common.empty') },
+  ];
+  const techColumns: Column<ProductColumn>[] = [
+    { key: 'key', header: t('products.columnKey'), className: 'mono', render: (c) => c.key },
+    { key: 'field', header: t('products.columnField'), render: (c) => sourceText(i, c.source, c.label) },
+    { key: 'source', header: t('products.columnPath'), className: 'mono', render: (c) => c.source },
   ];
 
   const actions = (
     <>
-      {active && session.can('products.update') && (
-        <Link to={`/produkte/${p.id}/bearbeiten`} className="btn">
-          {t('products.edit')}
-        </Link>
-      )}
-      {session.can('releases.list') && (
-        <Link to={`/freigaben?produkt=${p.id}`} className="btn">
-          {t('products.viewReleases')}
-        </Link>
-      )}
       {active && session.can('releases.create') && (
         <Link to={`/freigaben/neu?produkt=${p.id}`} className="btn btn-primary">
           {t('products.release')}
+        </Link>
+      )}
+      {active && session.can('products.update') && (
+        <Link to={`/produkte/${p.id}/bearbeiten`} className="btn">
+          {t('products.edit')}
         </Link>
       )}
       {active && session.can('products.retire') && (
@@ -105,6 +89,16 @@ function ProductView({ product: p }: { product: Product }) {
     </>
   );
 
+  const source =
+    p.sourceType === 'athletes' ? (
+      t('products.sourceAthletes')
+    ) : p.datasetId && session.can('datasets.get') ? (
+      <Link to={`/datensaetze/${p.datasetId}`}>{p.datasetName ?? p.datasetId}</Link>
+    ) : (
+      (p.datasetName ?? t('common.empty'))
+    );
+  const releaseCount = t('products.activeReleasesN', { count: p.activeReleaseCount });
+
   return (
     <>
       <PageHeader
@@ -113,13 +107,13 @@ function ProductView({ product: p }: { product: Product }) {
         description={p.description || undefined}
         actions={actions}
         meta={
-          <>
-            <StatusBadge group="productStatus" value={p.status} />
-            <CategoryBadge category={p.category} />
-            <SpecialCategoryBadge show={p.specialCategory} />
-            <ShareabilityBadge value={p.shareability} />
-            <Badge>{t('common.versionN', { version: p.version })}</Badge>
-          </>
+          !active || p.specialCategory || p.shareability === 'internal' ? (
+            <>
+              {!active && <StatusBadge group="productStatus" value={p.status} />}
+              <SpecialCategoryBadge show={p.specialCategory} />
+              {p.shareability === 'internal' && <ShareabilityBadge value={p.shareability} />}
+            </>
+          ) : undefined
         }
       />
 
@@ -129,30 +123,21 @@ function ProductView({ product: p }: { product: Product }) {
         </div>
       )}
 
-      <Section title={t('products.details')}>
+      <Section>
         <DescriptionList
           items={[
+            [t('products.colSource'), source],
+            [t('common.category'), t(`categories.${p.category}`)],
             [
-              t('products.slug'),
-              <span key="slug" className="mono">
-                {p.slug}
-              </span>,
-            ],
-            [
-              t('products.colSource'),
-              p.sourceType === 'athletes' ? (
-                t('products.sourceAthletes')
-              ) : p.datasetId && session.can('datasets.get') ? (
-                <Link key="ds" to={`/datensaetze/${p.datasetId}`}>
-                  {p.datasetName ?? p.datasetId}
+              t('nav.releases'),
+              session.can('releases.list') ? (
+                <Link key="rel" to={`/freigaben?produkt=${p.id}`}>
+                  {releaseCount}
                 </Link>
               ) : (
-                (p.datasetName ?? t('common.empty'))
+                releaseCount
               ),
             ],
-            [t('products.activeReleases'), fmt.number(p.activeReleaseCount)],
-            [t('common.createdAt'), <DateTime key="c" value={p.createdAt} />],
-            [t('common.updatedAt'), <DateTime key="u" value={p.updatedAt} />],
           ]}
         />
         {p.specialCategory && <p className="field-hint">{t('products.specialHint')}</p>}
@@ -165,18 +150,19 @@ function ProductView({ product: p }: { product: Product }) {
           rowKey={(c) => c.key}
           caption={t('products.columnsTable')}
         />
-      </Section>
-
-      <Section title={t('products.filtersTitle')} description={t('products.filtersIntro')}>
         {p.filters.length === 0 ? (
-          <p className="muted">{t('products.filtersNone')}</p>
+          <p className="small muted">{t('products.filtersNone')}</p>
         ) : (
-          <ul>
-            {p.filters.map((c) => {
-              const text = conditionText(i, c, p.columns);
-              return <li key={`${c.column}-${c.op}-${JSON.stringify(c.value ?? null)}`}>{text}</li>;
-            })}
-          </ul>
+          <div className="stack-sm">
+            <h3>{t('products.filtersTitle')}</h3>
+            <p className="small muted">{t('products.filtersIntro')}</p>
+            <ul>
+              {p.filters.map((c) => {
+                const text = conditionText(i, c, p.columns);
+                return <li key={`${c.column}-${c.op}-${JSON.stringify(c.value ?? null)}`}>{text}</li>;
+              })}
+            </ul>
+          </div>
         )}
       </Section>
 
@@ -220,6 +206,29 @@ function ProductView({ product: p }: { product: Product }) {
           </p>
         )}
       </Section>
+
+      <Details>
+        <DescriptionList
+          items={[
+            [
+              t('products.slug'),
+              <span key="slug" className="mono">
+                {p.slug}
+              </span>,
+            ],
+            [t('common.version'), p.version],
+            [t('common.shareability'), t(`shareability.${p.shareability}`)],
+            [t('common.createdAt'), <DateTime key="c" value={p.createdAt} />],
+            [t('common.updatedAt'), <DateTime key="u" value={p.updatedAt} />],
+          ]}
+        />
+        <Table
+          columns={techColumns}
+          rows={p.columns}
+          rowKey={(c) => c.key}
+          caption={t('products.columnsTechnical')}
+        />
+      </Details>
 
       <ConfirmDialog
         open={retireOpen}

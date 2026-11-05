@@ -46,19 +46,26 @@ function PullForm({ target, onClose }: { target: PullTarget; onClose: () => void
 
   return (
     <div className="stack">
-      <p>{t('catalog.pullIntro')}</p>
-      <FormField label={t('common.purpose')} required>
-        {(a) => (
-          <select {...a} className="input" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-            <option value="">{t('common.select')}</option>
-            {target.purposes.map((p) => (
-              <option key={p} value={p}>
-                {purposeLabel(p)}
-              </option>
-            ))}
-          </select>
-        )}
-      </FormField>
+      <p className="muted">{t('catalog.pullIntro')}</p>
+      {target.purposes.length === 1 ? (
+        // Nur ein freigegebener Zweck: vorausgewählt, keine Auswahl nötig
+        <p>
+          <strong>{t('common.purpose')}:</strong> {purposeLabel(purpose)}
+        </p>
+      ) : (
+        <FormField label={t('common.purpose')} required>
+          {(a) => (
+            <select {...a} className="input" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+              <option value="">{t('common.select')}</option>
+              {target.purposes.map((p) => (
+                <option key={p} value={p}>
+                  {purposeLabel(p)}
+                </option>
+              ))}
+            </select>
+          )}
+        </FormField>
+      )}
       {pull.error && <ErrorMessage error={pull.error} />}
       <div className="form-actions">
         <button

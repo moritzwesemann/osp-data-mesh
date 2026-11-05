@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CodeBlock, DateTime, DescriptionList } from '../components/Misc.tsx';
+import { type ReactNode, useState } from 'react';
+import { CodeBlock, DateTime, DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
 import { StatusBadge } from '../components/StatusBadge.tsx';
@@ -12,8 +12,12 @@ import { useApiMutation, useApiQuery } from '../lib/query.ts';
 import { useSession } from '../lib/session.tsx';
 
 type Status = ApiOutput<'system.status'>;
+type Health = 'ok' | 'warn' | 'bad';
 
-/** /system – Status, Sicherungen, Fehler, BI-Schnittstelle, Dokumentation. */
+/**
+ * /system – vorn eine Zustandsübersicht (Ampelpunkte), darunter Sicherungen; BI-Schnittstelle und Fehlerliste
+ * zugeklappt (offen bei Fehlern), technische Angaben zum Knoten in Details.
+ */
 export function System() {
   const { t } = useI18n();
   const s = useSession();
@@ -21,10 +25,10 @@ export function System() {
   return (
     <div className="page">
       <PageHeader title={t('system.title')} description={t('system.intro')} />
-      <QueryView query={status}>{(st) => <StatusCards st={st} />}</QueryView>
+      <QueryView query={status}>{(st) => <HealthSummary st={st} />}</QueryView>
       <BackupsSection />
       {s.can('bi.views') && <BiSection />}
-      <ErrorsSection />
+      <ErrorsSection defaultOpen={(status.data?.errors24h ?? 0) > 0} />
       <Section title={t('system.linksTitle')}>
         <ul className="list-plain list-divided">
           <li>
@@ -44,90 +48,122 @@ export function System() {
   );
 }
 
-function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
+function Dot({ state }: { state: Health }) {
+  return <span className={`status-dot ${state}`} aria-hidden="true" />;
+}
+
+function HealthItem({ label, state, children }: { label: string; state: Health; children: ReactNode }) {
+  const { t } = useI18n();
+  const stateText =
+    state === 'ok' ? t('system.stateOk') : state === 'warn' ? t('system.stateWarn') : t('system.stateBad');
   return (
-    <span className={ok ? 'status-dot ok' : warn ? 'status-dot warn' : 'status-dot bad'} aria-hidden="true" />
+    <li className="health-item">
+      <span className="health-label">{label}</span>
+      <span>
+        <Dot state={state} />
+        {/* Zustand nicht nur als Farbe: für Screenreader als Text */}
+        <span className="sr-only">{stateText}: </span>
+        {children}
+      </span>
+    </li>
   );
 }
 
-function StatusCards({ st }: { st: Status }) {
+/** Zustand auf einen Blick: Datenbank, Audit-Kette, letzte Sicherung, Ausgangspostfach, BI, Fehler (24 Std.). */
+function HealthSummary({ st }: { st: Status }) {
   const { t, fmt } = useI18n();
   const last = st.backups.last;
+  const items: { key: string; label: string; state: Health; value: ReactNode }[] = [
+    {
+      key: 'db',
+      label: t('system.database'),
+      state: st.db.ok ? 'ok' : 'bad',
+      value: st.db.ok ? t('system.dbOk') : t('system.dbFailed'),
+    },
+    {
+      key: 'audit',
+      label: t('system.auditChain'),
+      state: st.audit.ok ? 'ok' : 'bad',
+      value: st.audit.ok
+        ? t('system.auditOk', { checked: st.audit.checked })
+        : t('system.auditBroken', { seq: st.audit.firstBrokenSeq ?? '?' }),
+    },
+    {
+      key: 'backup',
+      label: t('system.lastBackup'),
+      state: !last ? 'warn' : last.status === 'ok' ? 'ok' : last.status === 'running' ? 'warn' : 'bad',
+      value: last ? (
+        <>
+          <DateTime value={last.startedAt} />
+          {last.status !== 'ok' && ` · ${t(`backupStatus.${last.status}`)}`}
+          {!st.backups.encrypted && ` · ${t('system.notEncrypted')}`}
+        </>
+      ) : (
+        t('system.noBackup')
+      ),
+    },
+    {
+      key: 'outbox',
+      label: t('system.outbox'),
+      state: st.outbox.failed === 0 ? 'ok' : st.outbox.pending > 0 ? 'warn' : 'bad',
+      value:
+        st.outbox.pending === 0 && st.outbox.failed === 0
+          ? t('system.outboxAllDelivered')
+          : t('system.outboxValue', { pending: st.outbox.pending, failed: st.outbox.failed }),
+    },
+    {
+      key: 'bi',
+      label: t('system.bi'),
+      state: st.bi.errors === 0 ? 'ok' : 'bad',
+      value: t('system.biValue', { views: st.bi.views, errors: st.bi.errors }),
+    },
+    {
+      key: 'errors',
+      label: t('system.errors24h'),
+      state: st.errors24h === 0 ? 'ok' : 'warn',
+      value: st.errors24h === 0 ? t('system.errorsNone') : fmt.number(st.errors24h),
+    },
+  ];
+  const allOk = items.every((x) => x.state === 'ok');
+
   return (
-    <>
-      <div className="stat-grid">
-        <div className="stat">
-          <span className="stat-label">{t('system.version')}</span>
-          <span className="stat-value mono">{st.version}</span>
-          <span className="stat-note">
-            {t('system.uptime')}: {fmt.duration(st.uptimeSeconds)}
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">{t('system.database')}</span>
-          <span>
-            <Dot ok={st.db.ok} />
-            {st.db.ok ? t('system.dbOk') : t('system.dbFailed')}
-          </span>
-          <span className="stat-note">
-            {t('system.migrations', { count: st.db.migrations, name: st.db.latestMigration ?? '–' })}
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">{t('system.auditChain')}</span>
-          <span>
-            <Dot ok={st.audit.ok} />
-            {st.audit.ok
-              ? t('system.auditOk', { checked: st.audit.checked })
-              : t('system.auditBroken', { seq: st.audit.firstBrokenSeq ?? '?' })}
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">{t('system.lastBackup')}</span>
-          {last ? (
-            <>
-              <span>
-                <Dot ok={last.status === 'ok'} warn={last.status === 'running'} />
-                <DateTime value={last.startedAt} />
-              </span>
-              <span className="stat-note">
-                {t(`backupStatus.${last.status}`)} ·{' '}
-                {st.backups.encrypted ? t('system.encrypted') : t('system.notEncrypted')}
-              </span>
-            </>
-          ) : (
-            <span>
-              <Dot ok={false} warn />
-              {t('system.noBackup')}
-            </span>
-          )}
-          <span className="stat-note">{t('system.backupInterval', { hours: st.backups.intervalHours })}</span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">{t('system.outbox')}</span>
-          <span>
-            <Dot ok={st.outbox.failed === 0} warn={st.outbox.pending > 0} />
-            {t('system.outboxValue', { pending: st.outbox.pending, failed: st.outbox.failed })}
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">{t('system.bi')}</span>
-          <span>
-            <Dot ok={st.bi.errors === 0} />
-            {t('system.biValue', { views: st.bi.views, errors: st.bi.errors })}
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-label">{t('system.errors24h')}</span>
-          <span className="stat-value">{fmt.number(st.errors24h)}</span>
-        </div>
-      </div>
-      <Section title={t('system.node')}>
+    <Section title={t('system.statusTitle')}>
+      <p className={allOk ? 'text-success' : undefined}>
+        <strong>{allOk ? t('system.allOk') : t('system.needsAttention')}</strong>
+      </p>
+      <ul className="health-list">
+        {items.map((x) => (
+          <HealthItem key={x.key} label={x.label} state={x.state}>
+            {x.value}
+          </HealthItem>
+        ))}
+      </ul>
+      <Details>
         <DescriptionList
           items={[
-            [t('common.name'), st.node.displayName],
             [
-              t('overview.nodeId'),
+              t('system.version'),
+              <span key="v" className="mono">
+                {st.version}
+              </span>,
+            ],
+            [t('system.uptime'), fmt.duration(st.uptimeSeconds)],
+            [t('system.serverTime'), <DateTime key="time" value={st.time} />],
+            [
+              t('system.dbSchema'),
+              <span key="mig" className="break">
+                {t('system.migrations', { count: st.db.migrations, name: st.db.latestMigration ?? '–' })}
+              </span>,
+            ],
+            [
+              t('system.backupsTitle'),
+              `${t('system.backupInterval', { hours: st.backups.intervalHours })} · ${
+                st.backups.encrypted ? t('system.encrypted') : t('system.notEncrypted')
+              }`,
+            ],
+            [t('system.node'), st.node.displayName],
+            [
+              t('partners.nodeId'),
               <span key="id" className="mono">
                 {st.node.nodeId}
               </span>,
@@ -144,11 +180,20 @@ function StatusCards({ st }: { st: Status }) {
                 {st.node.fingerprint}
               </span>,
             ],
-            [t('system.serverTime'), <DateTime key="time" value={st.time} />],
           ]}
         />
-      </Section>
-    </>
+      </Details>
+    </Section>
+  );
+}
+
+/** Auf-/Zuklappen der Zeilendetails */
+function DetailsToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { t } = useI18n();
+  return (
+    <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={onToggle}>
+      {open ? t('common.hideDetails') : t('common.details')}
+    </button>
   );
 }
 
@@ -156,6 +201,7 @@ function BackupsSection() {
   const i = useI18n();
   const { t, fmt } = i;
   const toast = useToast();
+  const [open, setOpen] = useState<string | null>(null);
   const backups = useApiQuery('system.backups', {});
   const backupNow = useApiMutation('system.backupNow', {
     invalidate: ['system.backups', 'system.status'],
@@ -191,6 +237,27 @@ function BackupsSection() {
             rows={data.items}
             rowKey={(b) => b.id}
             empty={t('system.backupsEmpty')}
+            expanded={(b) =>
+              open === b.id ? (
+                <DescriptionList
+                  items={[
+                    [
+                      t('system.fileName'),
+                      <span key="file" className="mono small break">
+                        {b.fileName ?? '–'}
+                      </span>,
+                    ],
+                    [
+                      t('system.checksum'),
+                      <span key="sha" className="mono small break">
+                        {b.sha256 ?? '–'}
+                      </span>,
+                    ],
+                    [t('system.finished'), <DateTime key="fin" value={b.finishedAt} />],
+                  ]}
+                />
+              ) : null
+            }
             columns={[
               {
                 key: 'started',
@@ -203,18 +270,14 @@ function BackupsSection() {
                 header: t('common.status'),
                 render: (b) => (
                   <span className="stack-sm">
-                    <StatusBadge group="backupStatus" value={b.status} />
+                    <span>
+                      <StatusBadge group="backupStatus" value={b.status} />
+                    </span>
                     {b.errorCode && <span className="small">{codeText(i, b.errorCode)}</span>}
                   </span>
                 ),
               },
               { key: 'trigger', header: t('system.trigger'), render: (b) => t(`backupTrigger.${b.trigger}`) },
-              {
-                key: 'file',
-                header: t('system.fileName'),
-                className: 'mono small',
-                render: (b) => b.fileName ?? '–',
-              },
               {
                 key: 'size',
                 header: t('system.size'),
@@ -222,16 +285,11 @@ function BackupsSection() {
                 render: (b) => fmt.bytes(b.sizeBytes),
               },
               {
-                key: 'sha',
-                header: t('system.checksum'),
-                className: 'mono small',
-                render: (b) => (b.sha256 ? <span title={b.sha256}>{b.sha256.slice(0, 16)}…</span> : '–'),
-              },
-              {
-                key: 'finished',
-                header: t('system.finished'),
-                className: 'nowrap',
-                render: (b) => <DateTime value={b.finishedAt} />,
+                key: 'more',
+                header: <span className="sr-only">{t('common.details')}</span>,
+                render: (b) => (
+                  <DetailsToggle open={open === b.id} onToggle={() => setOpen(open === b.id ? null : b.id)} />
+                ),
               },
             ]}
           />
@@ -241,13 +299,18 @@ function BackupsSection() {
   );
 }
 
-function ErrorsSection() {
+function ErrorsSection({ defaultOpen }: { defaultOpen: boolean }) {
   const i = useI18n();
   const { t } = i;
   const [page, setPage] = useState(1);
   const errors = useApiQuery('system.errors', { query: { page, pageSize: 25 } }, { keepPrevious: true });
   return (
-    <Section title={t('system.errorsTitle')} description={t('system.errorsIntro')}>
+    <Section
+      title={t('system.errorsTitle')}
+      description={t('system.errorsIntro')}
+      collapsible
+      defaultOpen={defaultOpen}
+    >
       <QueryView query={errors}>
         {(data) => (
           <div className="stack">
@@ -263,10 +326,9 @@ function ErrorsSection() {
                   className: 'nowrap',
                   render: (e) => <DateTime value={e.at} />,
                 },
-                { key: 'status', header: t('system.httpStatus'), className: 'num', render: (e) => e.status },
                 {
                   key: 'code',
-                  header: t('system.code'),
+                  header: t('system.errorColumn'),
                   render: (e) => (
                     <span className="stack-sm">
                       <span>{codeText(i, e.code)}</span>
@@ -277,8 +339,16 @@ function ErrorsSection() {
                 {
                   key: 'request',
                   header: t('system.request'),
-                  className: 'mono small break',
-                  render: (e) => `${e.method ?? ''} ${e.path ?? ''}`.trim() || '–',
+                  render: (e) => (
+                    <span className="stack-sm">
+                      <span className="mono small break">
+                        {`${e.method ?? ''} ${e.path ?? ''}`.trim() || '–'}
+                      </span>
+                      <span className="small muted">
+                        {t('system.httpStatus')} {e.status}
+                      </span>
+                    </span>
+                  ),
                 },
                 {
                   key: 'rid',
@@ -305,10 +375,13 @@ function BiSection() {
     invalidate: ['bi.views', 'system.status'],
     onSuccess: (r) => toast.success(t('system.biRefreshed', { refreshed: r.refreshed, errors: r.errors })),
   });
+  const hasErrors = (views.data?.items ?? []).some((v) => v.status === 'error');
   return (
     <Section
       title={t('system.biTitle')}
       description={t('system.biIntro')}
+      collapsible
+      defaultOpen={hasErrors || refresh.isError}
       actions={
         <button
           type="button"
@@ -340,7 +413,7 @@ function BiSection() {
             `df = pd.read_sql('SELECT * FROM ${c.schema}."${firstView}"', engine)`,
           ].join('\n');
           return (
-            <div className="stack-lg">
+            <div className="stack">
               {data.items.length === 0 ? (
                 <EmptyState message={t('system.biEmpty')} />
               ) : (
@@ -361,7 +434,9 @@ function BiSection() {
                       header: t('common.status'),
                       render: (v) => (
                         <span className="stack-sm">
-                          <StatusBadge group="biViewStatus" value={v.status} />
+                          <span>
+                            <StatusBadge group="biViewStatus" value={v.status} />
+                          </span>
                           {v.errorCode && <span className="small">{codeText(i, v.errorCode)}</span>}
                         </span>
                       ),
@@ -381,8 +456,7 @@ function BiSection() {
                   ]}
                 />
               )}
-              <div className="stack">
-                <h3>{t('system.connectionTitle')}</h3>
+              <Details summary={t('system.connectionTitle')}>
                 <DescriptionList
                   items={[
                     [
@@ -437,7 +511,7 @@ function BiSection() {
                   </div>
                 </div>
                 <CodeBlock label={t('system.toolPython')} code={python} />
-              </div>
+              </Details>
             </div>
           );
         }}

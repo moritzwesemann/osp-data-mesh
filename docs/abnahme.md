@@ -55,7 +55,7 @@ Nachweis: `bun run demo` – Knoten `osp-nord`, `osp-mitte`, `osp-sued` auf `htt
 | 2.3 | *Discovery* auf einem Knoten | Kataloge der Partner mit Status *ok*, nur Metadaten | | |
 | 2.4 | Abruf eines freigegebenen Produkts bei einem Partner | Daten mit Pseudonymen, nur freigegebene Spalten; Herkunftsnachweis | | |
 | 2.5 | Abruf ohne passende Freigabe bzw. mit falschem Zweck | abgelehnt: der abrufende Knoten meldet `peer_rejected` mit Grund `purpose_not_allowed` bzw. ohne passende Freigabe `not_found`; der Datenhalter protokolliert `exchange.pull.denied`, beide Seiten im Austauschprotokoll | | |
-| 2.6 | Freigabe widerrufen | Mitteilung zugestellt, Kopie beim Empfänger gelöscht (*Empfangene Daten*: *widerrufen*) | | |
+| 2.6 | Freigabe widerrufen | Mitteilung zugestellt, Kopie beim Empfänger gelöscht (*Katalog → Empfangen*: *widerrufen*) | | |
 | 2.7 | Einwilligung einer Person widerrufen bzw. Person löschen | `subjects_withdrawn` zugestellt, Zeilen beim Empfänger entfernt | | |
 
 ## AK3 – Neuinstallation in leerer Umgebung nur nach Dokumentation

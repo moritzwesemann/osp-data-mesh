@@ -21,7 +21,11 @@ function isLocked(u: User): boolean {
   return u.lockedUntil !== null && new Date(u.lockedUntil).getTime() > Date.now();
 }
 
-/** /benutzer – Benutzer anlegen, Rollen ändern, aktivieren/deaktivieren, entsperren, Passwort zurücksetzen. */
+/**
+ * /benutzer – Benutzer anlegen, Rollen ändern, aktivieren/deaktivieren, entsperren, Passwort zurücksetzen.
+ * Je Zeile nur „Bearbeiten“ (plus Aktivieren/Sperre aufheben im Ausnahmefall); Passwort zurücksetzen und
+ * Deaktivieren stehen im Bearbeiten-Dialog.
+ */
 export function Users() {
   const { t, fmt } = useI18n();
   const s = useSession();
@@ -78,9 +82,21 @@ export function Users() {
                 header: t('users.name'),
                 render: (u) => (
                   <span className="stack-sm">
-                    <span>
-                      {u.displayName}
-                      {u.id === s.user.id && <span className="muted"> ({t('users.you')})</span>}
+                    <span className="row">
+                      <span>
+                        {u.displayName}
+                        {u.id === s.user.id && <span className="muted"> ({t('users.you')})</span>}
+                      </span>
+                      {!u.active && <StatusBadge group="activeState" value="inactive" />}
+                      {isLocked(u) && (
+                        <Badge
+                          tone="warning"
+                          title={t('users.lockedUntil', { time: fmt.dateTime(u.lockedUntil) })}
+                        >
+                          {t('activeState.locked')}
+                        </Badge>
+                      )}
+                      {u.mustChangePassword && <Badge tone="info">{t('users.mustChange')}</Badge>}
                     </span>
                     <span className="small muted break">{u.email}</span>
                   </span>
@@ -98,24 +114,6 @@ export function Users() {
                 ),
               },
               {
-                key: 'status',
-                header: t('users.status'),
-                render: (u) => (
-                  <div className="badges">
-                    <StatusBadge group="activeState" value={u.active ? 'active' : 'inactive'} />
-                    {isLocked(u) && (
-                      <Badge
-                        tone="warning"
-                        title={t('users.lockedUntil', { time: fmt.dateTime(u.lockedUntil) })}
-                      >
-                        {t('activeState.locked')}
-                      </Badge>
-                    )}
-                    {u.mustChangePassword && <Badge tone="info">{t('users.mustChange')}</Badge>}
-                  </div>
-                ),
-              },
-              {
                 key: 'login',
                 header: t('users.lastLogin'),
                 className: 'nowrap',
@@ -126,14 +124,6 @@ export function Users() {
                 header: <span className="sr-only">{t('common.actions')}</span>,
                 render: (u) => (
                   <div className="row">
-                    <button type="button" className="btn btn-sm" onClick={() => setEditing(u)}>
-                      {t('users.edit')}
-                    </button>
-                    {s.can('users.resetPassword') && (
-                      <button type="button" className="btn btn-sm" onClick={() => setResetting(u)}>
-                        {t('users.resetPassword')}
-                      </button>
-                    )}
                     {isLocked(u) && (
                       <button
                         type="button"
@@ -144,20 +134,7 @@ export function Users() {
                         {t('users.unlock')}
                       </button>
                     )}
-                    {u.active ? (
-                      u.id !== s.user.id && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger-outline"
-                          onClick={() => {
-                            update.reset();
-                            setDeactivating(u);
-                          }}
-                        >
-                          {t('users.deactivate')}
-                        </button>
-                      )
-                    ) : (
+                    {!u.active && (
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -167,6 +144,9 @@ export function Users() {
                         {t('users.activate')}
                       </button>
                     )}
+                    <button type="button" className="btn btn-sm" onClick={() => setEditing(u)}>
+                      {t('users.edit')}
+                    </button>
                   </div>
                 ),
               },
@@ -187,14 +167,51 @@ export function Users() {
 
       <Dialog open={editing !== null} onClose={() => setEditing(null)} title={t('users.editTitle')} size="lg">
         {editing && (
-          <UserForm
-            user={editing}
-            onCancel={() => setEditing(null)}
-            onSaved={() => {
-              setEditing(null);
-              toast.success(t('users.saved'));
-            }}
-          />
+          <div className="stack">
+            <UserForm
+              user={editing}
+              onCancel={() => setEditing(null)}
+              onSaved={() => {
+                setEditing(null);
+                toast.success(t('users.saved'));
+              }}
+            />
+            {(s.can('users.resetPassword') || (editing.active && editing.id !== s.user.id)) && (
+              <>
+                <hr className="divider" />
+                <div className="stack-sm">
+                  <h3>{t('users.moreActions')}</h3>
+                  <div className="row">
+                    {s.can('users.resetPassword') && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => {
+                          setEditing(null);
+                          setResetting(editing);
+                        }}
+                      >
+                        {t('users.resetPassword')}
+                      </button>
+                    )}
+                    {editing.active && editing.id !== s.user.id && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger-outline"
+                        onClick={() => {
+                          setEditing(null);
+                          update.reset();
+                          setDeactivating(editing);
+                        }}
+                      >
+                        {t('users.deactivate')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </Dialog>
 

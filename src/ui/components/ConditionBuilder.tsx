@@ -5,7 +5,6 @@
 import type { Condition, ConditionOp, FieldType } from '../../shared/contract/index.ts';
 import { useI18n } from '../i18n/index.tsx';
 import { isoToLocalInput, uid } from '../lib/util.ts';
-import { EmptyState } from './QueryState.tsx';
 
 export interface FilterColumn {
   key: string;
@@ -134,7 +133,7 @@ export function ConditionBuilder({ columns, value, onChange, invalid = [], disab
   return (
     <div className="conditions">
       {value.length === 0 ? (
-        <EmptyState message={t('conditions.none')} />
+        <p className="muted">{t('conditions.none')}</p>
       ) : (
         <>
           <p className="field-hint">{t('conditions.allMustMatch')}</p>

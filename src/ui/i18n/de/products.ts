@@ -1,8 +1,7 @@
 /** Datenprodukte: Liste, Formular, Detail. */
 export const products = {
   listTitle: 'Datenprodukte',
-  listIntro:
-    'Datenprodukte sind Sichten auf den Athletenkern oder einen Datensatz mit ausgewählten Spalten und Basisfilter. Jede Freigabe bezieht sich auf ein Datenprodukt.',
+  listIntro: 'Ausgewählte Spalten aus Athletenkern oder Datensatz – die Grundlage jeder Freigabe.',
   create: 'Datenprodukt anlegen',
   empty: 'Es gibt noch keine Datenprodukte.',
   emptyNoRights: 'Es gibt noch keine Datenprodukte; Anlegen dürfen nur Datenverantwortliche.',
@@ -32,8 +31,7 @@ export const products = {
   specialHint:
     'Gesundheitsdaten und andere besondere Kategorien (Art. 9 DSGVO) dürfen nur mit Einwilligungspflicht freigegeben werden.',
   columnsTitle: 'Spalten',
-  columnsIntro:
-    'Wählen Sie die Felder, die das Produkt enthält. Freigaben können später nur Teilmengen davon freigeben; neue Spalten sind nie automatisch freigegeben.',
+  columnsIntro: 'Freigaben geben später nur Teile davon frei; neue Spalten sind nie automatisch freigegeben.',
   availableFields: 'Verfügbare Felder',
   groupAthlete: 'Athletenkern',
   groupRecord: 'Eintrag',
@@ -48,6 +46,8 @@ export const products = {
   columnLabelFor: 'Bezeichnung für {field}',
   columnKeyHint:
     'Spaltenschlüssel erscheinen in Exporten und Schnittstellen: Kleinbuchstaben, Ziffern und Unterstrich.',
+  showKeys: 'Spaltenschlüssel anzeigen',
+  hideKeys: 'Spaltenschlüssel ausblenden',
   moveUp: 'Nach oben',
   moveDown: 'Nach unten',
   moveUpFor: '{field} nach oben verschieben',
@@ -69,20 +69,19 @@ export const products = {
   saved: 'Datenprodukt gespeichert.',
   edit: 'Bearbeiten',
   release: 'Freigabe erteilen',
-  viewReleases: 'Freigaben ansehen',
   retire: 'Stilllegen',
   retireTitle: 'Datenprodukt stilllegen',
   retireConfirm:
     '„{name}“ stilllegen? Alle Zugriffe über Freigaben enden sofort, BI-Sichten werden entfernt und Partnerknoten erhalten eine Widerrufsmitteilung. Das lässt sich nicht rückgängig machen.',
   retired: 'Datenprodukt stillgelegt.',
   retiredNotice: 'Dieses Datenprodukt ist stillgelegt und liefert keine Daten mehr.',
-  details: 'Angaben',
-  activeReleases: 'Aktive Freigaben',
+  activeReleasesN: '{count} {count|aktive Freigabe|aktive Freigaben}',
+  columnPath: 'Feldpfad',
+  columnsTechnical: 'Spaltenschlüssel und Feldpfade',
   columnsTable: 'Spalten des Produkts',
   filtersNone: 'Keine Basisfilter – alle Zeilen der Quelle gehören zum Produkt.',
   previewTitle: 'Vorschau',
-  previewIntro:
-    'Zeigt bis zu 50 Zeilen des Produkts ohne Freigabebeschränkungen (Spalten, Zeilen, Einwilligung). Der Zugriff wird protokolliert.',
+  previewIntro: 'Bis zu 50 Zeilen ohne Freigabebeschränkungen. Der Zugriff wird protokolliert.',
   loadPreview: 'Vorschau laden',
   refreshPreview: 'Vorschau aktualisieren',
   previewStats: '{returned} von {total} Zeilen angezeigt.',

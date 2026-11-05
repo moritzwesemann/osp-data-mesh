@@ -1,9 +1,13 @@
 import { Link, useSearchParams } from 'react-router';
 import { type Release, ReleaseStatus } from '../../shared/contract/index.ts';
-import { DateTime } from '../components/Misc.tsx';
 import { PageHeader } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
-import { PurposeList, RecipientLabel, validityText } from '../components/releases/ReleaseParts.tsx';
+import {
+  PurposeList,
+  RecipientLabel,
+  validityShort,
+  validityText,
+} from '../components/releases/ReleaseParts.tsx';
 import { StatusBadge } from '../components/StatusBadge.tsx';
 import { type Column, Table } from '../components/Table.tsx';
 import { useI18n } from '../i18n/index.tsx';
@@ -53,11 +57,17 @@ export function ReleaseList() {
   const createHref = productId ? `/freigaben/neu?produkt=${productId}` : '/freigaben/neu';
   const filtered = Boolean(status || productId);
 
+  // Höchstens fünf Spalten; Status nur als Ausnahme-Badge neben dem Namen (aktiv ist der Normalfall)
   const columns: Column<Release>[] = [
     {
       key: 'product',
       header: t('releases.colProduct'),
-      render: (r) => <Link to={`/freigaben/${r.id}`}>{r.productName}</Link>,
+      render: (r) => (
+        <span className="row">
+          <Link to={`/freigaben/${r.id}`}>{r.productName}</Link>
+          {r.status !== 'active' && <StatusBadge group="releaseStatus" value={r.status} />}
+        </span>
+      ),
     },
     {
       key: 'recipient',
@@ -78,24 +88,12 @@ export function ReleaseList() {
     {
       key: 'validity',
       header: t('releases.colValidity'),
-      render: (r) => <span className="small">{validityText(i, r.validFrom, r.validUntil)}</span>,
-    },
-    {
-      key: 'consent',
-      header: t('releases.colConsent'),
       className: 'nowrap',
-      render: (r) => (r.requiresConsent ? t('releases.consentRequired') : t('releases.consentNotRequired')),
-    },
-    {
-      key: 'status',
-      header: t('releases.colStatus'),
-      render: (r) => <StatusBadge group="releaseStatus" value={r.status} />,
-    },
-    {
-      key: 'created',
-      header: t('releases.colCreated'),
-      className: 'nowrap',
-      render: (r) => <DateTime value={r.createdAt} />,
+      render: (r) => (
+        <span title={validityText(i, r.validFrom, r.validUntil)}>
+          {validityShort(i, r.validFrom, r.validUntil)}
+        </span>
+      ),
     },
   ];
 
@@ -116,11 +114,9 @@ export function ReleaseList() {
 
       <div className="toolbar">
         <div className="field">
-          <label className="field-label" htmlFor="release-filter-status">
-            {t('releases.filterStatus')}
-          </label>
           <select
             id="release-filter-status"
+            aria-label={t('releases.filterStatus')}
             className="input"
             value={status ?? ''}
             onChange={(e) => setFilter('status', e.target.value)}
@@ -134,11 +130,9 @@ export function ReleaseList() {
           </select>
         </div>
         <div className="field field-grow">
-          <label className="field-label" htmlFor="release-filter-product">
-            {t('releases.filterProduct')}
-          </label>
           <select
             id="release-filter-product"
+            aria-label={t('releases.filterProduct')}
             className="input"
             value={productId ?? ''}
             onChange={(e) => setFilter('produkt', e.target.value)}

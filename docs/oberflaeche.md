@@ -10,6 +10,13 @@ Die Oberfläche ist auf Deutsch (umschaltbar auf Englisch unter *Konto*), funkti
 Smartphone-Breite und ist per Tastatur bedienbar. Die Hilfe (diese Dokumentation) ist über *Hilfe* in der
 Navigation erreichbar.
 
+Jede Seite zeigt zuerst das, was für die Aufgabe nötig ist. Technische Angaben – Kennungen, Feldpfade,
+Prüfsummen, Signaturen, Versionen, Zeitstempel – stehen in aufklappbaren Bereichen (*Technische Details*,
+*Herkunftsnachweis*, zugeklappte Abschnitte wie *Abrufverlauf*). Abschnitte mit Handlungsbedarf (etwa
+fehlgeschlagene Mitteilungen) oder mit Eingabefehlern öffnen sich von selbst. Hinweise wie *Aktiv* oder
+*Teilbar auf Anfrage* erscheinen nur, wenn sie vom Normalfall abweichen (*Inaktiv*, *Nur intern*,
+*Besondere Kategorie (Art. 9)*).
+
 ## Anmelden
 
 ![Anmeldeseite mit E-Mail-Adresse und Passwort](screenshots/01-anmeldung.png)
@@ -22,13 +29,19 @@ erzeugten Initialpasswort angemeldet ist, muss zuerst ein eigenes Passwort festl
 
 ## Übersicht
 
-![Übersicht mit Knotenangaben, Fingerprint, Rollen und Schnellzugriffen](screenshots/02-uebersicht.png)
+![Übersicht mit freigegebenen Daten und Kennzahlen](screenshots/02-uebersicht.png)
 
-Die Startseite zeigt den Knoten (Name, Knoten-ID, Fingerprint), die eigenen Rollen und – je nach Rolle –
-Schnellzugriffe, die für die Person freigegebenen Datenprodukte, Kennzahlen der Datenpflege (Athleten,
-Quellen, aktive Freigaben, letzte Importe) und den Systemstatus (Datenbank, Audit-Kette, letzte
-Sicherung, ausstehende Mitteilungen). Links steht die Navigation, gruppiert nach *Datenpflege*,
-*Nutzung*, *Netzwerk* und *Verwaltung*.
+Die Startseite zeigt oben **Zu erledigen** – nur wenn es etwas zu tun gibt: ein Import, der auf Prüfung
+wartet, Partner, die auf Bestätigung warten, eine fehlende, fehlgeschlagene oder zu alte Sicherung, nicht
+zugestellte Mitteilungen an Partner oder Fehler der letzten 24 Stunden. Darunter stehen die für die Person
+freigegebenen Datenprodukte und **Auf einen Blick** Kennzahlen je nach Rolle (Athleten, Quellen, aktive
+Freigaben, empfangene Daten, Partner, letzte Sicherung, Audit-Log); jede Kachel führt zur passenden Seite.
+*Dieser Knoten* (aufklappbar) zeigt Name, Knoten-ID und Fingerprint; die eigenen Rollen mit Beschreibung
+stehen unter *Konto*.
+
+Links steht die Navigation in drei Gruppen: *Daten finden* (Meine Daten, Katalog), *Daten pflegen*
+(Athleten, Quellen, Datensätze, Datenprodukte, Freigaben) und *Verwaltung* (Partner, Audit, Benutzer,
+System). Jede Person sieht nur die Punkte ihrer Rollen.
 
 ## Athleten und Einwilligungen
 
@@ -37,8 +50,8 @@ Sicherung, ausstehende Mitteilungen). Links steht die Navigation, gruppiert nach
 *Athleten* (Rolle `data_steward`) listet den Athletenkern mit Suche und Filtern nach Sportart und
 Kaderstatus. Jeder Lesezugriff auf Personendaten wird protokolliert.
 
-Im Personendetail stehen Stammdaten, Kennungen in Quellsystemen und die **Einwilligungen** (Zweck,
-Datenkategorie, Gültigkeit, Nachweis). *Widerruf erfassen* beendet eine Einwilligung sofort: Die Person
+Im Personendetail stehen Stammdaten und die **Einwilligungen** (Zweck, Datenkategorie, Gültigkeit,
+Nachweis); widerrufene Einwilligungen und die Kennungen in Quellsystemen sind aufklappbar. *Widerruf erfassen* beendet eine Einwilligung sofort: Die Person
 entfällt aus allen Freigaben mit Einwilligungsprüfung, BI-Tabellen werden bereinigt, und Partner, die
 Daten der Person erhalten haben, bekommen eine Löschmitteilung
 ([Widerruf und Weitergabe](widerruf-und-weitergabe.md)). *Person endgültig löschen* setzt das Recht auf
@@ -47,15 +60,21 @@ Löschung um.
 ## Quellen und Importe
 
 *Quellen* verwaltet Connectoren für CSV-Uploads und HTTP-APIs (Messsysteme): Konfiguration,
-Feldzuordnung, Zuordnung zu Personen und das Ziel (Athletenkern oder Datensatz). Vorlagen erleichtern
-den Einstieg; Definitionen lassen sich als JSON exportieren und in anderen Knoten importieren (ohne
-Zugangsgeheimnisse). *Beispiel abrufen* zeigt die ersten Zeilen einer Quelle für die Zuordnung.
+Feldzuordnung, Zuordnung zu Personen und das Ziel (Athletenkern oder Datensatz). Die Detailseite einer
+Quelle beginnt mit *Import starten*; darunter stehen ein kurzer Überblick und die Zuordnung „Quellspalte →
+Zielfeld“. Feldpfade, Umwandlungen, Trennzeichen, Zeichenkodierung und ähnliche Einstellungen sind
+aufklappbar, ebenso die bisherigen Läufe. Vorlagen erleichtern den Einstieg; Definitionen lassen sich als
+JSON exportieren und in anderen Knoten importieren (ohne Zugangsgeheimnisse). *Beispiel abrufen* zeigt die
+ersten Zeilen einer Quelle für die Zuordnung. Im Formular stehen die üblichen Angaben vorn; selten
+geänderte Optionen liegen unter *Erweiterte Einstellungen* und öffnen sich, wenn sie vom Standard
+abweichen oder einen Fehler enthalten.
 
-![Importlauf als Vorschau mit Zählern, Fehlerübersicht, Vorschauzeilen und Fehlerprotokoll](screenshots/04-quelle-import-vorschau.png)
+![Importlauf als Vorschau mit Zählern, Fehlern und Vorschauzeilen](screenshots/04-quelle-import-vorschau.png)
 
-Jeder Import beginnt als **Vorschau**: Zähler (gesamt, gültig, mit Warnung, fehlerhaft), Angaben zum Lauf
-(Datei, Größe, SHA-256), die Fehlerübersicht je Prüfung und Feld, die ersten Zeilen mit Rohwerten und
-zugeordneten Werten sowie das Fehlerprotokoll je Zeile und Feld mit Prüfcode, Grenzwerten und Rohwert.
+Jeder Import beginnt als **Vorschau**: Zähler (gesamt, gültig, fehlerhaft; Warnungen nur, wenn es welche
+gibt), **Fehler und Warnungen** – zuerst je Prüfung und Spalte zusammengefasst, dann je Zeile mit
+Grenzwerten, Feld und Rohwert – und die ersten Zeilen mit Rohwerten und zugeordneten Werten. Angaben zum
+Lauf (Quellversion, Datei, Größe, SHA-256, Zeitpunkte) stehen unter *Technische Details*.
 Erst *Übernehmen* speichert die Daten; *Verwerfen* löscht die Vorschau. Rohwerte gibt es nur, solange der
 Lauf in der Vorschau ist; nicht übernommene Vorschauen verfallen nach 7 Tagen
 ([Datenmodell](datenmodell.md#datensätze-quellen-importe)).
@@ -67,28 +86,34 @@ fachlicher Schlüssel, Beobachtungsdatum) und ihre Einstufung (Kategorie, besond
 Art. 9 DSGVO, Teilbarkeit). Eine Änderung der Einstufung wirkt auf alle darauf aufbauenden Produkte und
 Freigaben ([Freigaberegeln](freigaberegeln.md#erteilen-ändern-widerrufen)).
 
-![Datenprodukt „Leistungsdiagnostik“ mit Angaben und Spalten](screenshots/05-datenprodukt.png)
+![Datenprodukt „Leistungsdiagnostik“ mit Überblick und Spalten](screenshots/05-datenprodukt.png)
 
 Ein **Datenprodukt** ist eine definierte Sicht auf einen Datensatz oder den Athletenkern: ausgewählte
-Spalten (auch abgeleitete wie *Geburtsjahr*) und ein Basisfilter. Die Vorschau zeigt, welche Zeilen das
-Produkt enthält. Jede Änderung von Spalten oder Filtern erhöht die Version; bestehende Freigaben werden
+Spalten (auch abgeleitete wie *Geburtsjahr*) und ein Basisfilter. Die Detailseite zeigt Quelle, Kategorie
+und die Zahl aktiver Freigaben (als Link zur Freigabenliste), die Spalten mit Typ und Einheit
+(Spaltenschlüssel und Feldpfade unter *Technische Details*) und die Vorschau, welche Zeilen das Produkt
+enthält; *Freigabe erteilen* ist die Hauptaktion. Jede Änderung von Spalten oder Filtern erhöht die Version; bestehende Freigaben werden
 dadurch *veraltet* und müssen neu erteilt werden.
 
 ## Freigaben
 
-![Formular „Freigabe erteilen“ mit Zeilen-, Zeit- und Zweckbeschränkung und Prüfung der Wirkung](screenshots/06-freigabe-erstellen.png)
+![Formular „Freigabe erteilen“ mit Spalten, Einschränkungen und Prüfung der Wirkung](screenshots/06-freigabe-erstellen.png)
 
-*Freigabe erteilen* verbindet ein Datenprodukt mit genau einem Empfänger – einer Rolle dieses Knotens,
-der BI-Schnittstelle oder einem Partnerknoten – und beschränkt Spalten, Zeilen, Datenzeitraum,
-Gültigkeit und Zwecke, optional mit Einwilligungspflicht (bei Art.-9-Daten Pflicht). **Wirkung prüfen**
-zeigt vor dem Erteilen, welche Daten der Empfänger für einen Zweck erhielte und wie viele Zeilen durch
-Zeilenbeschränkung, Zeitraum oder fehlende Einwilligung entfallen.
+*Freigabe erteilen* führt in sieben nummerierten Schritten durch das Formular: Datenprodukt, Empfänger –
+eine Rolle dieses Knotens, die BI-Schnittstelle oder ein Partnerknoten –, Zwecke, Spalten, Einschränkungen,
+Dokumentation und Wirkung. Die **Einschränkungen** (Zeilenbedingungen, Datenzeitraum, Gültigkeit,
+Einwilligungspflicht; bei Art.-9-Daten Pflicht) sind optional und zugeklappt; die Kopfzeile zeigt, was
+gesetzt ist, und der Bereich öffnet sich bei Werten (etwa aus einer Vorlage) oder Fehlern. **Wirkung
+prüfen** zeigt vor dem Erteilen, welche Daten der Empfänger für einen Zweck erhielte und wie viele Zeilen
+durch Zeilenbeschränkung, Zeitraum oder fehlende Einwilligung entfallen.
 
 ![Liste der Freigaben mit Empfänger, Zwecken, Gültigkeit und Status](screenshots/07-freigaben-liste.png)
 
-Die Liste zeigt jede Freigabe mit Empfänger, Zwecken, Gültigkeit und Status (*aktiv*, *geplant*,
-*abgelaufen*, *veraltet*, *widerrufen*). Freigaben sind unveränderlich; *Freigabe widerrufen* (in der
-Detailansicht, mit Begründung) wirkt sofort, Partner erhalten eine signierte Widerrufsmitteilung. Die
+Die Liste zeigt jede Freigabe mit Empfänger, Zwecken, Spalten und Gültigkeit; der Status erscheint nur,
+wenn eine Freigabe nicht aktiv ist (*geplant*, *abgelaufen*, *veraltet*, *widerrufen*). Die Detailansicht
+fasst Zwecke, freigegebene Spalten, Einschränkungen und Gültigkeit zusammen; Rechtsgrundlage, Notiz und
+technische Angaben sowie die Austauschhistorie sind aufklappbar. Freigaben sind unveränderlich; *Freigabe
+widerrufen* (mit Begründung) wirkt sofort, Partner erhalten eine signierte Widerrufsmitteilung. Die
 Rolle `auditor` sieht Freigaben nur lesend.
 
 ## Meine Daten
@@ -96,58 +121,87 @@ Rolle `auditor` sieht Freigaben nur lesend.
 ![„Meine Daten“: Zweckwahl, freigegebene Daten und Downloads als CSV, JSON und XML](screenshots/08-meine-daten.png)
 
 *Meine Daten* listet die Datenprodukte, die für die eigenen Rollen freigegeben sind. Nach Wahl des
-**Zwecks** (Zweckbindung) werden die freigegebenen Zeilen angezeigt und lassen sich als CSV, JSON oder
-XML herunterladen. Angezeigt wird nur die Zahl der gelieferten Zeilen – nichts über Zeilen außerhalb der
-Freigabe. Unter *Zugriff aus Werkzeugen* stehen fertige Aufrufe für curl, Python und Power BI/Excel; das
-nötige API-Token entsteht unter *Konto* ([REST-API](api.md)).
+**Zwecks** (Zweckbindung; gibt es nur einen, ist er vorausgewählt) werden die freigegebenen Zeilen
+angezeigt und lassen sich als CSV, JSON oder XML herunterladen. Angezeigt wird nur die Zahl der
+gelieferten Zeilen – nichts über Zeilen außerhalb der Freigabe. *Details zur Freigabe* zeigt Gültigkeit,
+Datenzeitraum und Spalten; unter *Zugriff aus Excel, Power BI oder Python* stehen fertige Aufrufe für
+curl, Python und Power BI/Excel; das nötige API-Token entsteht unter *Konto* ([REST-API](api.md)).
 
-## Partner, Katalog und empfangene Daten
+## Katalog: Daten finden
 
-![Partnerverwaltung mit Anleitung zur Aufnahme und eigener Knotenkarte mit Fingerprint](screenshots/09-partner-knotenkarte.png)
+![Katalog bei osp-mitte mit Angeboten von osp-nord zum Abrufen](screenshots/10-katalog-discovery.png)
 
-*Partner* (Rollen `admin`, `data_steward`; aufnehmen, vertrauen und sperren nur `admin`) zeigt die
-Schritte der Partneraufnahme, die eigene **Knotenkarte** mit Fingerprint (herunterladen oder als JSON
-kopieren), darunter die Partnerknoten mit Status (*ausstehend*, *vertrauenswürdig*, *gesperrt*) und –
-für `admin` – das **Ausgangspostfach** mit Widerrufs- und Löschmitteilungen. Die Aufnahme erfolgt in
-vier Schritten: Karten austauschen, *Partner aufnehmen*, Fingerprint telefonisch abgleichen, *Vertrauen
-bestätigen* ([Installation](installation.md#vertrauen-mit-einem-partnerknoten-herstellen)). *Jetzt
-zustellen* stellt ausstehende und fehlgeschlagene Mitteilungen sofort zu.
+Der **Katalog** ist die eine Stelle, um Daten zu finden: ein Suchfeld und vier Bereiche.
 
-![Partnerkatalog bei osp-mitte mit Angeboten von osp-nord zum Abrufen](screenshots/10-katalog-discovery.png)
+- **Bei uns** – die Datenprodukte dieses Knotens (über *Zeigen* auch Datensätze und Quellen), nur
+  Metadaten. Ist ein Produkt für die eigene Rolle freigegeben, steht dort *Für Sie freigegeben* mit
+  *Daten öffnen*.
+- **Bei Partnern** (Rollen `data_steward`, `analyst`) – die Angebote aller vertrauenswürdigen Partner,
+  live abgefragt, ohne zentrale Stelle (das Ergebnis wird fünf Minuten wiederverwendet, *Neu abfragen*
+  fragt sofort). Jedes Angebot zeigt, ob es *für uns freigegeben* ist (dann *Abrufen*, Rolle
+  `data_steward`), ob schon eine Kopie da ist (*Abgerufen*, *Öffnen*) oder ob es *nicht für uns
+  freigegeben* ist. *Details* zeigt Zwecke, freigegebene Spalten, Gültigkeit und Datenzeitraum der
+  Freigabe; Spalten mit Typ, Kennungen und Version stehen unter *Technische Details*. Nicht erreichbare
+  Partner werden oben genannt.
+- **Empfangen** – alle abgerufenen Kopien mit Status, auch widerrufene und abgelaufene.
+- **Alle** – alles zusammen; Kopien, deren Angebot gerade nicht erscheint, stehen unter *Weitere
+  empfangene Daten*.
 
-Der **Katalog** zeigt die Metadaten dieses Knotens; der **Partnerkatalog** (Discovery, Rollen
-`data_steward`, `analyst`) fragt alle vertrauenswürdigen Partner nach Angeboten, die für diesen Knoten
-freigegeben sind – nur Metadaten, keine Personendaten. *Abrufen* (Rolle `data_steward`) holt die Daten
-signiert und pseudonymisiert ab.
+*Abrufen* holt die Daten signiert und pseudonymisiert ab; der Partner prüft den Zweck, der Abruf wird auf
+beiden Seiten protokolliert. Die früheren Adressen `/katalog/partner` und `/empfangen` führen in die
+passenden Bereiche.
 
 ![Empfangene Daten bei osp-mitte mit Herkunftsnachweis](screenshots/11-empfangene-daten-herkunft.png)
 
-*Empfangene Daten* zeigt abgerufene Kopien mit **Herkunftsnachweis** (Quellknoten, Fingerprint des
-Datenhalters, Freigabe, Zweck, Zeitpunkt, Prüfsumme und Signatur der Antwort). Kopien werden bei
+Eine empfangene Kopie zeigt in einer Zeile, von wem die Daten stammen, für welchen Zweck, wann sie
+abgerufen wurden und wie lange die Freigabe gilt, dazu den Hinweis auf die Signatur des Partners. Der
+vollständige **Herkunftsnachweis** (Quellknoten, Fingerprint des Datenhalters, Freigabe, Produkt und
+Version, Prüfsumme und Signatur der Antwort) und der *Abrufverlauf* sind aufklappbar. Kopien werden bei
 Widerruf, Ablauf der Freigabe oder Löschmitteilung automatisch gelöscht; empfangene Daten können nicht
 weitergegeben werden.
+
+## Partner
+
+![Partnerverwaltung mit Partnerknoten und eigener Knotenkarte mit Fingerprint](screenshots/09-partner-knotenkarte.png)
+
+*Partner* (Rollen `admin`, `data_steward`; aufnehmen, vertrauen und sperren nur `admin`) zeigt die
+Partnerknoten mit Status (*ausstehend*, *vertrauenswürdig*, *gesperrt*) und dem jeweils nächsten Schritt
+(*Vertrauen bestätigen* bzw. *Verbindung prüfen*); Knoten-ID, Adresse, Fingerprint, *Bearbeiten* und
+*Sperren* stehen unter *Details* in der Zeile. Darunter die Anleitung zur Partneraufnahme (aufklappbar,
+ohne Partner geöffnet), die eigene **Knotenkarte** mit Fingerprint und *Karte herunterladen* (Kennungen,
+öffentlicher Schlüssel und Kopierfunktionen unter *Technische Details*) und – für `admin` – das
+**Ausgangspostfach** mit Widerrufs- und Löschmitteilungen (zugeklappt, öffnet sich bei ausstehenden oder
+fehlgeschlagenen Mitteilungen). Die Aufnahme erfolgt in vier Schritten: Karten austauschen, *Partner
+aufnehmen*, Fingerprint telefonisch abgleichen, *Vertrauen bestätigen*
+([Installation](installation.md#vertrauen-mit-einem-partnerknoten-herstellen)). *Jetzt zustellen* stellt
+ausstehende und fehlgeschlagene Mitteilungen sofort zu.
 
 ## Audit, System und Benutzer
 
 ![Audit-Log nach erfolgreicher Prüfung der Hash-Kette, mit Filtern und Export](screenshots/12-audit.png)
 
-*Audit* (Rollen `auditor`, `admin`) durchsucht das Audit-Log nach Zeitraum, Vorgang, Ergebnis und
-Person, prüft die **Integrität** der Hash-Kette und exportiert als CSV oder JSON (nur `auditor`). Der
-Reiter *Austauschprotokoll* zeigt jede Lieferung an und von Partnern mit Spalten, Zeilenzahl und
-Prüfsumme.
+*Audit* (Rollen `auditor`, `admin`) durchsucht das Audit-Log nach Objektart, Ergebnis und Zeitraum
+(Vorgang und Objekt-ID unter *Weitere Filter*), prüft die **Integrität** der Hash-Kette und exportiert den
+gewählten Zeitraum als CSV oder JSON (nur `auditor`). Jede Zeile lässt sich aufklappen (Ergebnis,
+Akteursart, Objekt-ID, Sequenz, IP, Request-ID, Hash, Details). Der Reiter *Austauschprotokoll* zeigt jede
+Lieferung an und von Partnern; Spalten, Zeilenzahl und Prüfsumme stehen in den aufklappbaren Details.
 
-![Systemstatus mit Version, Datenbank, Audit-Kette, Sicherung, Ausgangspostfach und BI-Schnittstelle](screenshots/13-system.png)
+![Systemstatus „Alles in Ordnung“ mit Zustandspunkten und Sicherungen](screenshots/13-system.png)
 
-*System* (Rolle `admin`) zeigt Version, Datenbank- und Migrationsstand, Audit-Kette, die letzte
-Sicherung, das Ausgangspostfach (ausstehend/fehlgeschlagen), die BI-Schnittstelle und die Fehler der
-letzten 24 Stunden; darunter Knotenangaben, die Sicherungen (*Sicherung erstellen*), die letzten Fehler
-mit Request-ID sowie die BI-Views mit Verbindungsdaten ([Betrieb](betrieb.md#überwachung)).
+*System* (Rolle `admin`) beginnt mit dem **Zustand**: „Alles in Ordnung“ oder ein Hinweis, dazu je ein
+Punkt für Datenbank, Audit-Kette, letzte Sicherung, Ausgangspostfach, BI-Schnittstelle und Fehler der
+letzten 24 Stunden. Version, Laufzeit, Migrationsstand und Knotenangaben stehen unter *Technische
+Details*. Darunter die Sicherungen (*Sicherung erstellen*), die BI-Schnittstelle mit Views und
+Verbindungsdaten und die letzten Fehler mit Request-ID; die beiden letzten sind zugeklappt und öffnen
+sich bei Fehlern ([Betrieb](betrieb.md#überwachung)).
 
 ![Benutzerverwaltung mit Rollen, Status und letzter Anmeldung](screenshots/14-benutzer.png)
 
 *Benutzer* (Rolle `admin`) legt Konten an, ändert Rollen, deaktiviert Konten, setzt Passwörter zurück und
-hebt Sperren auf; Deaktivieren und Zurücksetzen beenden die Sitzungen und widerrufen die API-Tokens der
-Person. Unter *Konto* ändert jede Person ihr Passwort und verwaltet eigene API-Tokens.
+hebt Sperren auf (*Passwort zurücksetzen* und *Deaktivieren* im Bearbeiten-Dialog unter *Weitere
+Aktionen*); Deaktivieren und Zurücksetzen beenden die Sitzungen und widerrufen die API-Tokens der Person.
+Unter *Konto* sieht jede Person ihre Rollen mit Beschreibung, ändert ihr Passwort und die Sprache und
+verwaltet eigene API-Tokens.
 
 ## Mobil
 

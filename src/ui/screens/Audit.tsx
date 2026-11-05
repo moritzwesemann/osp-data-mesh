@@ -2,7 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { FormField } from '../components/FormField.tsx';
-import { DateTime, DescriptionList, Tabs } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details, Tabs } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { QueryView } from '../components/QueryState.tsx';
 import { StatusBadge } from '../components/StatusBadge.tsx';
@@ -48,7 +48,10 @@ const OBJECT_TYPES = [
   'user',
 ] as const;
 
-/** /audit – Audit-Log (Filter, Details, Integritätsprüfung, Export) und Austauschprotokoll. */
+/**
+ * /audit – Audit-Log (kompakte Filter, weitere Filter aufklappbar, Integritätsprüfung, Export, Einzelheiten je
+ * Eintrag aufklappbar) und Austauschprotokoll.
+ */
 export function Audit() {
   const { t } = useI18n();
   const s = useSession();
@@ -140,162 +143,156 @@ function AuditLog() {
   };
 
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setDraft((d) => ({ ...d, [k]: v }));
+  const reset = () => {
+    setDraft(EMPTY_FILTERS);
+    setFilters(EMPTY_FILTERS);
+    setPage(1);
+  };
 
   return (
     <>
-      <Section
-        title={t('audit.verify')}
-        description={t('audit.verifyHint')}
-        actions={
+      <Section>
+        <form className="stack" onSubmit={apply}>
+          <div className="toolbar">
+            <FormField label={t('audit.filterObjectType')}>
+              {(a) => (
+                <select
+                  {...a}
+                  className="input"
+                  value={draft.objectType}
+                  onChange={(e) => set('objectType', e.target.value)}
+                >
+                  <option value="">{t('audit.allObjectTypes')}</option>
+                  {OBJECT_TYPES.map((o) => (
+                    <option key={o} value={o}>
+                      {t(`audit.objectTypes.${o}`)}
+                    </option>
+                  ))}
+                  {draft.objectType && !(OBJECT_TYPES as readonly string[]).includes(draft.objectType) && (
+                    <option value={draft.objectType}>{draft.objectType}</option>
+                  )}
+                </select>
+              )}
+            </FormField>
+            <FormField label={t('audit.filterOutcome')}>
+              {(a) => (
+                <select
+                  {...a}
+                  className="input"
+                  value={draft.outcome}
+                  onChange={(e) => set('outcome', e.target.value as Filters['outcome'])}
+                >
+                  <option value="">{t('common.all')}</option>
+                  {(['success', 'denied', 'error'] as const).map((o) => (
+                    <option key={o} value={o}>
+                      {t(`auditOutcome.${o}`)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
+            <FormField label={t('audit.filterFrom')}>
+              {(a) => (
+                <input
+                  {...a}
+                  className="input"
+                  type="datetime-local"
+                  value={draft.from}
+                  onChange={(e) => set('from', e.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField label={t('audit.filterTo')}>
+              {(a) => (
+                <input
+                  {...a}
+                  className="input"
+                  type="datetime-local"
+                  value={draft.to}
+                  onChange={(e) => set('to', e.target.value)}
+                />
+              )}
+            </FormField>
+            <div className="row">
+              <button type="submit" className="btn btn-primary">
+                {t('audit.applyFilters')}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={reset}>
+                {t('common.resetFilters')}
+              </button>
+            </div>
+          </div>
+          <Details
+            summary={t('audit.moreFilters')}
+            defaultOpen={draft.action.trim() !== '' || draft.objectId.trim() !== ''}
+          >
+            <div className="toolbar">
+              {/* Beispiel als Platzhalter: ein Hinweis unter dem Feld würde die Filterzeile verschieben */}
+              <FormField label={t('audit.filterAction')}>
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input"
+                    placeholder={t('audit.filterActionHint')}
+                    value={draft.action}
+                    onChange={(e) => set('action', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('audit.filterObjectId')}>
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={draft.objectId}
+                    onChange={(e) => set('objectId', e.target.value)}
+                  />
+                )}
+              </FormField>
+            </div>
+          </Details>
+        </form>
+      </Section>
+
+      <div className="row-between">
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={verify.isFetching}
+          onClick={() => (verifyOn ? void verify.refetch() : setVerifyOn(true))}
+        >
+          {verify.isFetching ? t('audit.verifying') : t('audit.verify')}
+        </button>
+        {s.can('audit.export') && (
           <div className="row">
+            <span className="small muted">{t('audit.exportHint')}</span>
+            <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => exportAs('csv')}>
+              {t('audit.exportCsv')}
+            </button>
             <button
               type="button"
               className="btn btn-sm"
-              disabled={verify.isFetching}
-              onClick={() => (verifyOn ? void verify.refetch() : setVerifyOn(true))}
+              disabled={exporting}
+              onClick={() => exportAs('json')}
             >
-              {verify.isFetching ? t('audit.verifying') : t('audit.verify')}
+              {t('audit.exportJson')}
             </button>
-            {s.can('audit.export') && (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={exporting}
-                  onClick={() => exportAs('csv')}
-                >
-                  {t('audit.exportCsv')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={exporting}
-                  onClick={() => exportAs('json')}
-                >
-                  {t('audit.exportJson')}
-                </button>
-              </>
-            )}
-          </div>
-        }
-      >
-        {verify.isError && <ErrorMessage error={verify.error} onRetry={() => void verify.refetch()} />}
-        {verify.data && !verify.isFetching && (
-          <div className={verify.data.ok ? 'alert alert-success' : 'alert alert-error'} role="status">
-            <p className="alert-title">
-              {verify.data.ok
-                ? t('audit.verifyOk', { checked: verify.data.checked })
-                : t('audit.verifyBroken', {
-                    seq: verify.data.firstBrokenSeq ?? '?',
-                    checked: verify.data.checked,
-                  })}
-            </p>
           </div>
         )}
-        {s.can('audit.export') && <p className="field-hint">{t('audit.exportHint')}</p>}
-      </Section>
-
-      <Section title={t('common.filter')}>
-        <form className="toolbar" onSubmit={apply}>
-          {/* Beispiel als Platzhalter: ein Hinweis unter dem Feld würde die Filterzeile verschieben */}
-          <FormField label={t('audit.filterAction')}>
-            {(a) => (
-              <input
-                {...a}
-                className="input"
-                placeholder={t('audit.filterActionHint')}
-                value={draft.action}
-                onChange={(e) => set('action', e.target.value)}
-              />
-            )}
-          </FormField>
-          <FormField label={t('audit.filterOutcome')}>
-            {(a) => (
-              <select
-                {...a}
-                className="input"
-                value={draft.outcome}
-                onChange={(e) => set('outcome', e.target.value as Filters['outcome'])}
-              >
-                <option value="">{t('common.all')}</option>
-                {(['success', 'denied', 'error'] as const).map((o) => (
-                  <option key={o} value={o}>
-                    {t(`auditOutcome.${o}`)}
-                  </option>
-                ))}
-              </select>
-            )}
-          </FormField>
-          <FormField label={t('audit.filterObjectType')}>
-            {(a) => (
-              <select
-                {...a}
-                className="input"
-                value={draft.objectType}
-                onChange={(e) => set('objectType', e.target.value)}
-              >
-                <option value="">{t('audit.allObjectTypes')}</option>
-                {OBJECT_TYPES.map((o) => (
-                  <option key={o} value={o}>
-                    {t(`audit.objectTypes.${o}`)}
-                  </option>
-                ))}
-                {draft.objectType && !(OBJECT_TYPES as readonly string[]).includes(draft.objectType) && (
-                  <option value={draft.objectType}>{draft.objectType}</option>
-                )}
-              </select>
-            )}
-          </FormField>
-          <FormField label={t('audit.filterObjectId')}>
-            {(a) => (
-              <input
-                {...a}
-                className="input mono"
-                value={draft.objectId}
-                onChange={(e) => set('objectId', e.target.value)}
-              />
-            )}
-          </FormField>
-          <FormField label={t('audit.filterFrom')}>
-            {(a) => (
-              <input
-                {...a}
-                className="input"
-                type="datetime-local"
-                value={draft.from}
-                onChange={(e) => set('from', e.target.value)}
-              />
-            )}
-          </FormField>
-          <FormField label={t('audit.filterTo')}>
-            {(a) => (
-              <input
-                {...a}
-                className="input"
-                type="datetime-local"
-                value={draft.to}
-                onChange={(e) => set('to', e.target.value)}
-              />
-            )}
-          </FormField>
-          <div className="row">
-            <button type="submit" className="btn btn-primary">
-              {t('audit.applyFilters')}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => {
-                setDraft(EMPTY_FILTERS);
-                setFilters(EMPTY_FILTERS);
-                setPage(1);
-              }}
-            >
-              {t('common.resetFilters')}
-            </button>
-          </div>
-        </form>
-      </Section>
+      </div>
+      {verify.isError && <ErrorMessage error={verify.error} onRetry={() => void verify.refetch()} />}
+      {verify.data && !verify.isFetching && (
+        <div className={verify.data.ok ? 'alert alert-success' : 'alert alert-error'} role="status">
+          <p className="alert-title">
+            {verify.data.ok
+              ? t('audit.verifyOk', { checked: verify.data.checked })
+              : t('audit.verifyBroken', {
+                  seq: verify.data.firstBrokenSeq ?? '?',
+                  checked: verify.data.checked,
+                })}
+          </p>
+        </div>
+      )}
 
       <QueryView query={list}>
         {(data) => (
@@ -306,6 +303,16 @@ function AuditLog() {
         )}
       </QueryView>
     </>
+  );
+}
+
+/** Auf-/Zuklappen der Zeilendetails */
+function DetailsToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { t } = useI18n();
+  return (
+    <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={onToggle}>
+      {open ? t('common.hideDetails') : t('common.details')}
+    </button>
   );
 }
 
@@ -331,45 +338,28 @@ function AuditTable({
         {
           key: 'actor',
           header: t('audit.actor'),
+          render: (r) => r.actorLabel ?? r.actorId ?? t('common.empty'),
+        },
+        {
+          key: 'action',
+          header: t('audit.action'),
           render: (r) => (
-            <span className="stack-sm">
-              <span>{r.actorLabel ?? r.actorId ?? t('common.empty')}</span>
-              <span className="small muted">{t(`actorType.${r.actorType}`)}</span>
+            <span className="row">
+              <span className="mono">{r.action}</span>
+              {r.outcome !== 'success' && <StatusBadge group="auditOutcome" value={r.outcome} />}
             </span>
           ),
         },
-        { key: 'action', header: t('audit.action'), className: 'mono nowrap', render: (r) => r.action },
         {
           key: 'object',
           header: t('audit.object'),
           render: (r) =>
-            r.objectType ? (
-              <span className="stack-sm">
-                <span>{tx(`audit.objectTypes.${r.objectType}`) ?? r.objectType}</span>
-                {r.objectId && <span className="mono small muted break">{r.objectId}</span>}
-              </span>
-            ) : (
-              t('common.empty')
-            ),
-        },
-        {
-          key: 'outcome',
-          header: t('audit.outcome'),
-          render: (r) => <StatusBadge group="auditOutcome" value={r.outcome} />,
+            r.objectType ? (tx(`audit.objectTypes.${r.objectType}`) ?? r.objectType) : t('common.empty'),
         },
         {
           key: 'more',
           header: <span className="sr-only">{t('audit.details')}</span>,
-          render: (r) => (
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              aria-expanded={open === r.id}
-              onClick={() => onToggle(r.id)}
-            >
-              {open === r.id ? t('common.hideDetails') : t('common.showDetails')}
-            </button>
-          ),
+          render: (r) => <DetailsToggle open={open === r.id} onToggle={() => onToggle(r.id)} />,
         },
       ]}
     />
@@ -383,6 +373,14 @@ function AuditDetails({ entry }: { entry: AuditEntry }) {
     <div className="stack">
       <DescriptionList
         items={[
+          [t('audit.outcome'), <StatusBadge key="outcome" group="auditOutcome" value={entry.outcome} />],
+          [t('audit.actorType'), t(`actorType.${entry.actorType}`)],
+          [
+            t('audit.filterObjectId'),
+            <span key="oid" className="mono break">
+              {entry.objectId ?? t('common.empty')}
+            </span>,
+          ],
           [
             t('audit.seq'),
             <span key="seq" className="mono">
@@ -420,33 +418,55 @@ function ExchangeLog() {
   const purposeLabel = usePurposeLabel();
   const [direction, setDirection] = useState<'' | 'outgoing' | 'incoming'>('');
   const [page, setPage] = useState(1);
+  const [open, setOpen] = useState<string | null>(null);
   const q = useApiQuery(
     'exchange.log',
     { query: { page, pageSize: PAGE_SIZE, direction: direction || undefined } },
     { keepPrevious: true },
   );
 
+  const productLabel = (r: ExchangeEntry) => {
+    if (!r.productRef) return t('common.empty');
+    // Mitteilungen (Widerruf, Löschmitteilung) stehen als "notice:<art>" im Protokoll
+    const notice = /^notice:(\w+)$/.exec(r.productRef)?.[1];
+    const label = notice ? i.tx(`partners.messageTypes.${notice}`) : undefined;
+    return label ?? <span className="mono small">{r.productRef}</span>;
+  };
+
+  const releaseRef = (r: ExchangeEntry) =>
+    r.releaseId && s.can('releases.get') ? (
+      <Link to={`/freigaben/${r.releaseId}`} className="mono small">
+        {r.releaseId.slice(0, 8)}…
+      </Link>
+    ) : (
+      <span className="mono small">
+        {(r.releaseId ?? r.remoteReleaseId)?.slice(0, 8) ?? t('common.empty')}
+      </span>
+    );
+
   return (
-    <Section title={t('audit.tabExchange')} description={t('audit.exchangeIntro')}>
-      <div className="toolbar">
-        <FormField label={t('audit.direction')}>
-          {(a) => (
-            <select
-              {...a}
-              className="input"
-              value={direction}
-              onChange={(e) => {
-                setDirection(e.target.value as typeof direction);
-                setPage(1);
-              }}
-            >
-              <option value="">{t('audit.allDirections')}</option>
-              <option value="outgoing">{t('exchangeDirection.outgoing')}</option>
-              <option value="incoming">{t('exchangeDirection.incoming')}</option>
-            </select>
-          )}
-        </FormField>
-      </div>
+    <>
+      <Section>
+        <div className="toolbar">
+          <FormField label={t('audit.direction')}>
+            {(a) => (
+              <select
+                {...a}
+                className="input"
+                value={direction}
+                onChange={(e) => {
+                  setDirection(e.target.value as typeof direction);
+                  setPage(1);
+                }}
+              >
+                <option value="">{t('audit.allDirections')}</option>
+                <option value="outgoing">{t('exchangeDirection.outgoing')}</option>
+                <option value="incoming">{t('exchangeDirection.incoming')}</option>
+              </select>
+            )}
+          </FormField>
+        </div>
+      </Section>
       <QueryView query={q}>
         {(data) => (
           <div className="stack">
@@ -455,6 +475,22 @@ function ExchangeLog() {
               rows={data.items}
               rowKey={(r) => r.id}
               empty={t('audit.exchangeEmpty')}
+              expanded={(r) =>
+                open === r.id ? (
+                  <DescriptionList
+                    items={[
+                      [t('audit.release'), releaseRef(r)],
+                      [t('audit.rows'), i.fmt.number(r.rowCount)],
+                      [
+                        t('audit.payload'),
+                        <span key="sha" className="mono small break">
+                          {r.payloadSha256 ?? t('common.empty')}
+                        </span>,
+                      ],
+                    ]}
+                  />
+                ) : null
+              }
               columns={[
                 {
                   key: 'at',
@@ -463,67 +499,49 @@ function ExchangeLog() {
                   render: (r) => <DateTime value={r.at} />,
                 },
                 {
-                  key: 'direction',
-                  header: t('audit.direction'),
-                  render: (r) => t(`exchangeDirection.${r.direction}`),
-                },
-                { key: 'peer', header: t('audit.peer'), className: 'mono', render: (r) => r.peerNodeId },
-                {
-                  key: 'release',
-                  header: t('audit.release'),
-                  render: (r) =>
-                    r.releaseId && s.can('releases.get') ? (
-                      <Link to={`/freigaben/${r.releaseId}`} className="mono small">
-                        {r.releaseId.slice(0, 8)}…
-                      </Link>
-                    ) : (
-                      <span className="mono small">
-                        {(r.releaseId ?? r.remoteReleaseId)?.slice(0, 8) ?? t('common.empty')}
-                      </span>
-                    ),
+                  key: 'peer',
+                  header: t('audit.peer'),
+                  render: (r) => (
+                    <span className="stack-sm">
+                      <span className="mono">{r.peerNodeId}</span>
+                      <span className="small muted">{t(`exchangeDirection.${r.direction}`)}</span>
+                    </span>
+                  ),
                 },
                 {
                   key: 'product',
                   header: t('audit.product'),
-                  render: (r) => {
-                    if (!r.productRef) return t('common.empty');
-                    // Mitteilungen (Widerruf, Löschmitteilung) stehen als "notice:<art>" im Protokoll
-                    const notice = /^notice:(\w+)$/.exec(r.productRef)?.[1];
-                    const label = notice ? i.tx(`partners.messageTypes.${notice}`) : undefined;
-                    return label ?? <span className="mono small">{r.productRef}</span>;
-                  },
-                },
-                {
-                  key: 'purpose',
-                  header: t('common.purpose'),
-                  render: (r) => (r.purpose ? purposeLabel(r.purpose) : t('common.empty')),
+                  render: (r) => (
+                    <span className="stack-sm">
+                      <span>{productLabel(r)}</span>
+                      {r.purpose && <span className="small muted">{purposeLabel(r.purpose)}</span>}
+                    </span>
+                  ),
                 },
                 {
                   key: 'outcome',
                   header: t('audit.outcome'),
                   render: (r) => (
                     <span className="stack-sm">
-                      <StatusBadge group="exchangeOutcome" value={r.outcome} />
+                      <span>
+                        <StatusBadge group="exchangeOutcome" value={r.outcome} />
+                      </span>
                       {r.denyReason && <span className="small">{codeText(i, r.denyReason)}</span>}
+                      {r.outcome === 'delivered' && (
+                        <span className="small muted">{t('common.rows', { count: r.rowCount })}</span>
+                      )}
                     </span>
                   ),
                 },
                 {
-                  key: 'rows',
-                  header: t('audit.rows'),
-                  className: 'num',
-                  render: (r) => i.fmt.number(r.rowCount),
-                },
-                {
-                  key: 'sha',
-                  header: t('audit.payload'),
-                  className: 'mono small',
-                  render: (r) =>
-                    r.payloadSha256 ? (
-                      <span title={r.payloadSha256}>{r.payloadSha256.slice(0, 12)}…</span>
-                    ) : (
-                      '–'
-                    ),
+                  key: 'more',
+                  header: <span className="sr-only">{t('audit.details')}</span>,
+                  render: (r) => (
+                    <DetailsToggle
+                      open={open === r.id}
+                      onToggle={() => setOpen(open === r.id ? null : r.id)}
+                    />
+                  ),
                 },
               ]}
             />
@@ -531,6 +549,6 @@ function ExchangeLog() {
           </div>
         )}
       </QueryView>
-    </Section>
+    </>
   );
 }

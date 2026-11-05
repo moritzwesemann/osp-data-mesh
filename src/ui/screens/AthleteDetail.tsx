@@ -3,10 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router';
 import type { Consent } from '../../shared/contract/index.ts';
 import { ConsentDialog } from '../components/athletes/ConsentDialog.tsx';
 import { ConfirmDialog } from '../components/Dialog.tsx';
-import { DateTime, DescriptionList } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
-import { Badge, CategoryBadge, StatusBadge } from '../components/StatusBadge.tsx';
+import { CategoryBadge, StatusBadge } from '../components/StatusBadge.tsx';
 import { type Column, Table } from '../components/Table.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
@@ -19,7 +19,7 @@ type Detail = ApiOutput<'athletes.get'>;
 type Identifier = Detail['identifiers'][number];
 type RecordCount = Detail['recordCounts'][number];
 
-/** /athleten/:id – Stammdaten, Kennungen, Datenbestand, Einwilligungen, Löschung. */
+/** /athleten/:id – Stammdaten, Datenbestand, Einwilligungen, Löschung; Kennungen und Zeitstempel aufklappbar. */
 export function AthleteDetail() {
   const { id = '' } = useParams();
   const athlete = useApiQuery('athletes.get', { params: { id } });
@@ -77,61 +77,36 @@ function AthleteDetailBody({ athlete: a }: { athlete: Detail }) {
     { key: 'count', header: t('athletes.recordCount'), className: 'num', render: (r) => r.count },
   ];
 
-  const consentColumns: Column<Consent>[] = [
+  // Einwilligungen: gültige zuerst (mit Widerruf), widerrufene als aufklappbarer Verlauf
+  const validity = (c: Consent) =>
+    c.validUntil
+      ? t('athletes.consents.validRange', { from: fmt.date(c.validFrom), until: fmt.date(c.validUntil) })
+      : t('athletes.consents.validOpenEnded', { from: fmt.date(c.validFrom) });
+  const evidence = (c: Consent) => (
+    <span className="stack-sm">
+      {c.evidenceNote ? <span>{c.evidenceNote}</span> : <span className="muted">{t('common.empty')}</span>}
+      <span className="small muted">
+        {t('athletes.consents.recordedAt')}: <DateTime value={c.recordedAt} />
+      </span>
+    </span>
+  );
+  const baseColumns: Column<Consent>[] = [
     { key: 'purpose', header: t('athletes.consents.purpose'), render: (c) => purposeLabel(c.purpose) },
     {
       key: 'category',
       header: t('athletes.consents.category'),
       render: (c) => <CategoryBadge category={c.dataCategory} />,
     },
-    {
-      key: 'status',
-      header: t('athletes.consents.status'),
-      render: (c) => (
-        <div className="stack-sm">
-          <StatusBadge group="consentStatus" value={c.status} />
-          {c.withdrawnAt && (
-            <span className="small muted">
-              {t('athletes.consents.withdrawnAt', { date: fmt.dateTime(c.withdrawnAt) })}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'from',
-      header: t('athletes.consents.validFrom'),
-      className: 'nowrap',
-      render: (c) => <DateTime value={c.validFrom} mode="date" />,
-    },
-    {
-      key: 'until',
-      header: t('athletes.consents.validUntil'),
-      className: 'nowrap',
-      render: (c) =>
-        c.validUntil ? (
-          <DateTime value={c.validUntil} mode="date" />
-        ) : (
-          <span className="muted">{t('athletes.consents.openEnded')}</span>
-        ),
-    },
-    {
-      key: 'evidence',
-      header: t('athletes.consents.evidenceNote'),
-      className: 'break',
-      render: (c) => c.evidenceNote || <span className="muted">{t('common.empty')}</span>,
-    },
-    {
-      key: 'recorded',
-      header: t('athletes.consents.recordedAt'),
-      className: 'nowrap',
-      render: (c) => <DateTime value={c.recordedAt} />,
-    },
+    { key: 'validity', header: t('athletes.consents.validity'), render: validity },
+  ];
+  const grantedColumns: Column<Consent>[] = [
+    ...baseColumns,
+    { key: 'evidence', header: t('athletes.consents.evidenceNote'), render: evidence },
     {
       key: 'actions',
       header: <span className="sr-only">{t('common.actions')}</span>,
       render: (c) =>
-        canWithdraw && c.status === 'granted' ? (
+        canWithdraw ? (
           <button
             type="button"
             className="btn btn-sm btn-danger-outline"
@@ -146,18 +121,33 @@ function AthleteDetailBody({ athlete: a }: { athlete: Detail }) {
         ) : null,
     },
   ];
+  const withdrawnColumns: Column<Consent>[] = [
+    ...baseColumns,
+    {
+      key: 'status',
+      header: t('athletes.consents.status'),
+      render: (c) =>
+        c.withdrawnAt ? (
+          t('athletes.consents.withdrawnAt', { date: fmt.dateTime(c.withdrawnAt) })
+        ) : (
+          <StatusBadge group="consentStatus" value={c.status} />
+        ),
+    },
+    { key: 'evidence', header: t('athletes.consents.evidenceNote'), render: evidence },
+  ];
+  const granted = a.consents.filter((c) => c.status === 'granted');
+  const withdrawn = a.consents.filter((c) => c.status !== 'granted');
+  const addConsent = canAddConsent ? (
+    <button type="button" className="btn btn-primary" onClick={() => setConsentOpen(true)}>
+      {t('athletes.consents.add')}
+    </button>
+  ) : null;
 
   return (
     <>
       <PageHeader
         title={fullName}
         back={{ to: '/athleten', label: t('athletes.backToList') }}
-        meta={
-          <>
-            <Badge tone="accent">{t(`squad.${a.squadStatus}`)}</Badge>
-            <Badge>{a.sport}</Badge>
-          </>
-        }
         actions={
           <>
             {canEdit && (
@@ -185,72 +175,73 @@ function AthleteDetailBody({ athlete: a }: { athlete: Detail }) {
         <Section title={t('athletes.masterData')}>
           <DescriptionList
             items={[
-              [t('athletes.lastName'), a.lastName],
-              [t('athletes.firstName'), a.firstName],
               [t('athletes.dateOfBirth'), <DateTime key="dob" value={a.dateOfBirth} mode="date" />],
               [t('athletes.sex'), a.sex ? t(`sex.${a.sex}`) : t('sex.unknown')],
-              [t('athletes.sport'), a.sport],
+              [t('athletes.sportDiscipline'), a.discipline ? `${a.sport} · ${a.discipline}` : a.sport],
               [t('athletes.squad'), t(`squad.${a.squadStatus}`)],
               [t('athletes.club'), a.club ?? t('common.empty')],
-              [t('athletes.discipline'), a.discipline ?? t('common.empty')],
-              [t('athletes.createdAt'), <DateTime key="created" value={a.createdAt} />],
-              [t('athletes.updatedAt'), <DateTime key="updated" value={a.updatedAt} />],
             ]}
           />
         </Section>
-        <div className="stack-lg">
-          <Section title={t('athletes.identifiers')}>
-            <Table
-              columns={identifierColumns}
-              rows={a.identifiers}
-              rowKey={(x) => `${x.system}:${x.value}`}
-              caption={t('athletes.identifiers')}
-              empty={t('athletes.identifiersEmpty')}
-            />
-          </Section>
-          <Section title={t('athletes.records')}>
-            <Table
-              columns={recordColumns}
-              rows={a.recordCounts}
-              rowKey={(r) => r.datasetId}
-              caption={t('athletes.records')}
-              empty={t('athletes.recordsEmpty')}
-            />
-          </Section>
-        </div>
+        <Section title={t('athletes.records')}>
+          <Table
+            columns={recordColumns}
+            rows={a.recordCounts}
+            rowKey={(r) => r.datasetId}
+            caption={t('athletes.records')}
+            empty={t('athletes.recordsEmpty')}
+          />
+        </Section>
       </div>
 
       <Section
         title={t('athletes.consents.title')}
         description={t('athletes.consents.intro')}
-        actions={
-          canAddConsent ? (
-            <button type="button" className="btn btn-primary" onClick={() => setConsentOpen(true)}>
-              {t('athletes.consents.add')}
-            </button>
-          ) : null
-        }
+        actions={granted.length > 0 ? addConsent : null}
       >
-        {a.consents.length === 0 ? (
+        {granted.length === 0 ? (
           <EmptyState
-            message={t('athletes.consents.empty')}
-            action={
-              canAddConsent ? (
-                <button type="button" className="btn btn-primary" onClick={() => setConsentOpen(true)}>
-                  {t('athletes.consents.add')}
-                </button>
-              ) : undefined
-            }
+            message={withdrawn.length > 0 ? t('athletes.consents.noneValid') : t('athletes.consents.empty')}
+            action={addConsent ?? undefined}
           />
         ) : (
           <Table
-            columns={consentColumns}
-            rows={a.consents}
+            columns={grantedColumns}
+            rows={granted}
             rowKey={(c) => c.id}
             caption={t('athletes.consents.caption')}
           />
         )}
+        {withdrawn.length > 0 && (
+          <Details summary={t('athletes.consents.withdrawnList', { count: withdrawn.length })}>
+            <Table
+              columns={withdrawnColumns}
+              rows={withdrawn}
+              rowKey={(c) => c.id}
+              caption={t('athletes.consents.withdrawnList', { count: withdrawn.length })}
+            />
+          </Details>
+        )}
       </Section>
+
+      <Details>
+        <DescriptionList
+          items={[
+            [t('athletes.lastName'), a.lastName],
+            [t('athletes.firstName'), a.firstName],
+            [t('athletes.createdAt'), <DateTime key="created" value={a.createdAt} />],
+            [t('athletes.updatedAt'), <DateTime key="updated" value={a.updatedAt} />],
+          ]}
+        />
+        <h3>{t('athletes.identifiers')}</h3>
+        <Table
+          columns={identifierColumns}
+          rows={a.identifiers}
+          rowKey={(x) => `${x.system}:${x.value}`}
+          caption={t('athletes.identifiers')}
+          empty={t('athletes.identifiersEmpty')}
+        />
+      </Details>
 
       <ConsentDialog athleteId={a.id} open={consentOpen} onClose={() => setConsentOpen(false)} />
 

@@ -61,7 +61,7 @@ export function ResultTable({ columns, rows, caption, numbered, offset = 0 }: Pr
               {numbered && <td className="num muted">{offset + n + 1}</td>}
               {columns.map((c) => (
                 <td key={c.key} className={isNumeric(c.type) ? 'num' : undefined}>
-                  {formatScalar(i, row[c.key], c.type)}
+                  {codedLabel(i, c.key, row[c.key]) ?? formatScalar(i, row[c.key], c.type)}
                 </td>
               ))}
             </tr>
@@ -70,6 +70,17 @@ export function ResultTable({ columns, rows, caption, numbered, offset = 0 }: Pr
       </table>
     </div>
   );
+}
+
+/**
+ * Kodierte Werte des Athletenkerns lesbar anzeigen (nur Anzeige; Exporte behalten die Codes):
+ * Kaderstatus „none“ → „Kein Kader“ (Kaderkürzel wie NK2 bleiben), Geschlecht „f“ → „weiblich“.
+ */
+function codedLabel(i: Pick<I18n, 't' | 'tx'>, key: string, value: Scalar | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (key === 'squad_status' && value === 'none') return i.t('squad.none');
+  if (key === 'sex') return i.tx(`sex.${value}`);
+  return undefined;
 }
 
 function isNumeric(type: FieldType): boolean {

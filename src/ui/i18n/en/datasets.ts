@@ -2,8 +2,7 @@ import type { Messages } from '../de.ts';
 
 export const datasets: Messages['datasets'] = {
   title: 'Datasets',
-  intro:
-    'Structures for performance, training, health and competition data with format and plausibility rules.',
+  intro: 'How performance, training, health and competition data is structured and checked.',
   create: 'Create dataset',
   createTitle: 'Create dataset',
   editTitle: 'Edit dataset',
@@ -19,12 +18,10 @@ export const datasets: Messages['datasets'] = {
   description: 'Description',
   category: 'Category',
   specialCategory: 'Special category of personal data (Art. 9 GDPR)',
-  specialShort: 'Art. 9',
   specialHint:
-    'Health data and other special categories may only be released with the documented consent of the person. For the category “Health” this flag is always set.',
+    'Can only be released with the documented consent of the person. Always set for the category “Health”.',
   shareability: 'Shareability',
-  shareabilityHint:
-    '“Internal only” prevents any release to partner nodes; “Shareable on request” allows releases case by case.',
+  shareabilityHint: '“Internal only” prevents any release to partner nodes.',
   reclassifyWarning:
     'A changed classification counts as a change of the data products built on this dataset: they get a new version when you save; existing releases become outdated and must be granted again.',
   reclassifyPeerWarning:
@@ -36,11 +33,13 @@ export const datasets: Messages['datasets'] = {
   version: 'Version',
   updatedAt: 'Changed',
   createdAt: 'Created',
+  summaryTitle: 'Overview',
+  advanced: 'Advanced settings',
   general: 'General',
-  metadata: 'Metadata',
   fields: {
     title: 'Fields',
-    intro: 'Each field defines type and validation rules; imports check every row against them.',
+    intro:
+      'Imports check every row against the type and rules of the fields; a row missing a required field is invalid.',
     caption: 'Fields of the dataset',
     empty: 'No fields yet – add at least one field.',
     add: 'Add field',
@@ -52,7 +51,6 @@ export const datasets: Messages['datasets'] = {
     unit: 'Unit',
     unitHint: 'e.g. cm, s, kg',
     required: 'Required',
-    requiredHint: 'Rows without a value are marked as errors during import.',
     min: 'Minimum',
     max: 'Maximum',
     rangeHint: 'Plausibility limits (inclusive); values outside are reported during import.',
@@ -63,15 +61,16 @@ export const datasets: Messages['datasets'] = {
     moveUp: 'Move up',
     moveDown: 'Move down',
     remove: 'Remove field',
+    more: 'More details',
+    rulesTitle: 'Field names and validation rules',
   },
   keyFields: 'Business key',
   keyFieldsHint:
-    'Fields that, together with the person, identify an entry; a repeated import then updates existing entries instead of duplicating them.',
+    'Together with the person, they identify an entry – a repeated import then updates instead of duplicating.',
   keyFieldsNone: 'Add fields with field names first.',
   noKeyFields: 'No business key',
   observedAtField: 'Observation date',
-  observedAtHint:
-    'Date or point-in-time field with the measurement or observation time; required for time-restricted releases.',
+  observedAtHint: 'Measurement time of the entries; required for time-restricted releases.',
   observedAtNone: 'No observation date',
   versionWarning:
     'Changes to fields increase the version. Data products based on this dataset may change as a result, and their releases must then be granted again.',

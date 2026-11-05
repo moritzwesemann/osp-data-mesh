@@ -184,6 +184,41 @@ export function MappingEditor({
     }
   };
 
+  // Umwandlung, Ersatzwert und Wertübersetzung nur bei Bedarf: eingeblendet, sobald eine Zeile vom Standard
+  // abweicht oder dort ein Fehler steht; sonst über den Schalter
+  const advancedNeeded = value.some(
+    (d) =>
+      d.transform !== 'trim' ||
+      d.defaultValue !== '' ||
+      d.valueMapText !== '' ||
+      invalidValueMaps.includes(d.uid) ||
+      Boolean(rowError(d.uid, 'transform') ?? rowError(d.uid, 'defaultValue') ?? rowError(d.uid, 'valueMap')),
+  );
+  const [showAdvanced, setShowAdvanced] = useState(advancedNeeded);
+  const [lastNeeded, setLastNeeded] = useState(advancedNeeded);
+  if (advancedNeeded !== lastNeeded) {
+    setLastNeeded(advancedNeeded);
+    if (advancedNeeded) setShowAdvanced(true);
+  }
+  // Neue Fehler in diesen Spalten blenden sie wieder ein, auch wenn sie zuvor ausgeblendet wurden
+  const advancedErrors = value
+    .map((d) =>
+      [
+        rowError(d.uid, 'transform'),
+        rowError(d.uid, 'defaultValue'),
+        rowError(d.uid, 'valueMap'),
+        invalidValueMaps.includes(d.uid) ? 'invalid' : '',
+      ]
+        .filter(Boolean)
+        .join(','),
+    )
+    .join('|');
+  const [lastErrors, setLastErrors] = useState(advancedErrors);
+  if (advancedErrors !== lastErrors) {
+    setLastErrors(advancedErrors);
+    if (advancedErrors.replaceAll('|', '') !== '') setShowAdvanced(true);
+  }
+
   const targetCounts = new Map<string, number>();
   for (const d of value) if (d.target) targetCounts.set(d.target, (targetCounts.get(d.target) ?? 0) + 1);
   const mappedCount = value.filter((d) => d.target).length;
@@ -257,9 +292,19 @@ export function MappingEditor({
         <EmptyState message={t('connectors.mappingEmpty')} />
       ) : (
         <>
-          <p className="small muted">
-            {t('connectors.mappedCount', { count: mappedCount, total: value.length })}
-          </p>
+          <div className="row-between">
+            <p className="small muted">
+              {t('connectors.mappedCount', { count: mappedCount, total: value.length })}
+            </p>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              aria-expanded={showAdvanced}
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              {showAdvanced ? t('connectors.hideTransforms') : t('connectors.showTransforms')}
+            </button>
+          </div>
           <div className="table-wrap">
             <table className="table">
               <caption className="sr-only">{t('connectors.sectionMapping')}</caption>
@@ -267,9 +312,13 @@ export function MappingEditor({
                 <tr>
                   <th scope="col">{t('connectors.sourceField')}</th>
                   <th scope="col">{t('connectors.targetField')}</th>
-                  <th scope="col">{t('connectors.transform')}</th>
-                  <th scope="col">{t('connectors.defaultValue')}</th>
-                  <th scope="col">{t('connectors.valueMap')}</th>
+                  {showAdvanced && (
+                    <>
+                      <th scope="col">{t('connectors.transform')}</th>
+                      <th scope="col">{t('connectors.defaultValue')}</th>
+                      <th scope="col">{t('connectors.valueMap')}</th>
+                    </>
+                  )}
                   <th scope="col">
                     <span className="sr-only">{t('common.actions')}</span>
                   </th>
@@ -329,45 +378,49 @@ export function MappingEditor({
                         </select>
                         {targetErr && <p className="field-error">{targetErr}</p>}
                       </td>
-                      <td>
-                        <select
-                          className="input input-cell-md"
-                          aria-label={label(t('connectors.transform'))}
-                          value={d.transform}
-                          disabled={!d.target}
-                          onChange={(e) => update(d.uid, { transform: e.target.value as Transform })}
-                        >
-                          {TRANSFORMS.map((tr) => (
-                            <option key={tr} value={tr}>
-                              {t(`transform.${tr}`)}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          className="input input-cell-sm"
-                          aria-label={label(t('connectors.defaultValue'))}
-                          aria-invalid={defaultErr ? true : undefined}
-                          value={d.defaultValue}
-                          disabled={!d.target}
-                          onChange={(e) => update(d.uid, { defaultValue: e.target.value })}
-                        />
-                        {defaultErr && <p className="field-error">{defaultErr}</p>}
-                      </td>
-                      <td>
-                        <textarea
-                          className="input mono input-cell-lg input-cell-area"
-                          rows={1}
-                          aria-label={label(t('connectors.valueMap'))}
-                          aria-invalid={vmErr ? true : undefined}
-                          placeholder={t('connectors.valueMapHint')}
-                          value={d.valueMapText}
-                          disabled={!d.target}
-                          onChange={(e) => update(d.uid, { valueMapText: e.target.value })}
-                        />
-                        {vmErr && <p className="field-error">{vmErr}</p>}
-                      </td>
+                      {showAdvanced && (
+                        <>
+                          <td>
+                            <select
+                              className="input input-cell-md"
+                              aria-label={label(t('connectors.transform'))}
+                              value={d.transform}
+                              disabled={!d.target}
+                              onChange={(e) => update(d.uid, { transform: e.target.value as Transform })}
+                            >
+                              {TRANSFORMS.map((tr) => (
+                                <option key={tr} value={tr}>
+                                  {t(`transform.${tr}`)}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              className="input input-cell-sm"
+                              aria-label={label(t('connectors.defaultValue'))}
+                              aria-invalid={defaultErr ? true : undefined}
+                              value={d.defaultValue}
+                              disabled={!d.target}
+                              onChange={(e) => update(d.uid, { defaultValue: e.target.value })}
+                            />
+                            {defaultErr && <p className="field-error">{defaultErr}</p>}
+                          </td>
+                          <td>
+                            <textarea
+                              className="input mono input-cell-lg input-cell-area"
+                              rows={1}
+                              aria-label={label(t('connectors.valueMap'))}
+                              aria-invalid={vmErr ? true : undefined}
+                              placeholder={t('connectors.valueMapHint')}
+                              value={d.valueMapText}
+                              disabled={!d.target}
+                              onChange={(e) => update(d.uid, { valueMapText: e.target.value })}
+                            />
+                            {vmErr && <p className="field-error">{vmErr}</p>}
+                          </td>
+                        </>
+                      )}
                       <td>
                         <button
                           type="button"
@@ -383,7 +436,7 @@ export function MappingEditor({
               </tbody>
             </table>
           </div>
-          <p className="field-hint">{t('connectors.valueMapHint')}</p>
+          {showAdvanced && <p className="field-hint">{t('connectors.valueMapHint')}</p>}
         </>
       )}
       {error && <p className="field-error">{error}</p>}

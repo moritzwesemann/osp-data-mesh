@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import type { AccessGrant, ExportFormat } from '../../shared/contract/index.ts';
 import { FormField } from '../components/FormField.tsx';
-import { DescriptionList } from '../components/Misc.tsx';
+import { DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
-import { dataWindowText, validityText } from '../components/products/grantText.ts';
+import { dataWindowText, validityShort, validityText } from '../components/products/grantText.ts';
 import { ToolAccessBox } from '../components/products/ToolAccessBox.tsx';
 import { EmptyState, QueryView, Skeleton } from '../components/QueryState.tsx';
 import { ResultTable } from '../components/ResultTable.tsx';
-import { Badge, CategoryBadge, SpecialCategoryBadge } from '../components/StatusBadge.tsx';
+import { SpecialCategoryBadge } from '../components/StatusBadge.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import { absoluteUrl, downloadFile } from '../lib/api.ts';
@@ -98,6 +98,30 @@ function GrantView({ grant }: { grant: AccessGrant }) {
 
   const toolPurpose = purpose || grant.purposes[0] || '';
 
+  const purposeField =
+    grant.purposes.length === 1 ? (
+      // Nur ein Zweck: als Text, bereits ausgewählt
+      <div className="stack-sm">
+        <p>
+          <span className="muted">{t('myData.purposeLabel')}:</span> <strong>{purposeLabel(purpose)}</strong>
+        </p>
+        <p className="field-hint">{t('myData.purposeHint')}</p>
+      </div>
+    ) : (
+      <FormField label={t('myData.purposeLabel')} required hint={t('myData.purposeHint')}>
+        {(a) => (
+          <select {...a} className="input" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+            <option value="">{t('common.select')}</option>
+            {grant.purposes.map((p) => (
+              <option key={p} value={p}>
+                {purposeLabel(p)}
+              </option>
+            ))}
+          </select>
+        )}
+      </FormField>
+    );
+
   return (
     <>
       <PageHeader
@@ -106,42 +130,23 @@ function GrantView({ grant }: { grant: AccessGrant }) {
         description={grant.product.description || undefined}
         meta={
           <>
-            <CategoryBadge category={grant.product.category} />
             <SpecialCategoryBadge show={grant.product.specialCategory} />
-            <Badge tone="accent">{t(`recipientRoles.${grant.recipientRole}`)}</Badge>
+            <span className="muted small">{validityShort(i, grant)}</span>
           </>
         }
       />
 
-      <Section>
-        <div className="form-grid">
-          <FormField label={t('myData.purposeLabel')} required hint={t('myData.purposeHint')}>
-            {(a) => (
-              <select {...a} className="input" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-                <option value="">{t('common.select')}</option>
-                {grant.purposes.map((p) => (
-                  <option key={p} value={p}>
-                    {purposeLabel(p)}
-                  </option>
-                ))}
-              </select>
-            )}
-          </FormField>
-          <DescriptionList
-            items={[
-              [t('myData.validity'), validityText(i, grant)],
-              [t('myData.dataWindow'), dataWindowText(i, grant)],
-              ...(grant.requiresConsent
-                ? ([[t('myData.consentLabel'), t('myData.consentRequired')]] as [string, string][])
-                : []),
-            ]}
-          />
-        </div>
-      </Section>
-
-      <Section
-        title={t('myData.dataTitle')}
-        actions={
+      <Section title={t('myData.dataTitle')}>
+        <div className="mydata-purpose">{purposeField}</div>
+        {/* Zeilenzahl und Exporte direkt über der Tabelle */}
+        <div className="row-between">
+          <p aria-live="polite">
+            {!purpose ? (
+              <span className="muted">{t('myData.choosePurpose')}</span>
+            ) : data.data ? (
+              t('myData.statsReturned', { count: data.data.stats.returned })
+            ) : null}
+          </p>
           <div className="row">
             {FORMATS.map((f) => (
               <button
@@ -156,18 +161,14 @@ function GrantView({ grant }: { grant: AccessGrant }) {
               </button>
             ))}
           </div>
-        }
-      >
-        {!purpose ? (
-          <p className="muted">{t('myData.choosePurpose')}</p>
-        ) : (
+        </div>
+        {purpose && (
           <QueryView query={data}>
             {(result) => {
               // Empfänger erhalten nur die Zahl gelieferter Zeilen (keine Angaben über ausgeschlossene Zeilen)
               const shown = result.rows.slice(0, MAX_SHOWN);
               return (
                 <div className="stack">
-                  <p aria-live="polite">{t('myData.statsReturned', { count: result.stats.returned })}</p>
                   <ResultTable columns={result.columns} rows={shown} caption={grant.product.name} numbered />
                   {result.rows.length > MAX_SHOWN && (
                     <p className="small muted">
@@ -181,18 +182,24 @@ function GrantView({ grant }: { grant: AccessGrant }) {
         )}
       </Section>
 
-      <Section title={t('myData.columnsTitle')}>
-        <ul className="badges list-plain">
-          {grant.columns.map((c) => (
-            <li key={c.key}>
-              <Badge>
-                {c.label}
-                {c.unit ? ` (${c.unit})` : ''}
-              </Badge>
-            </li>
-          ))}
-        </ul>
-      </Section>
+      <Details summary={t('myData.aboutRelease')}>
+        <DescriptionList
+          items={[
+            [t('myData.recipient'), t(`recipientRoles.${grant.recipientRole}`)],
+            [t('myData.category'), t(`categories.${grant.product.category}`)],
+            [t('myData.validity'), validityText(i, grant)],
+            [t('myData.dataWindow'), dataWindowText(i, grant)],
+            [
+              t('myData.consentLabel'),
+              grant.requiresConsent ? t('myData.consentRequired') : t('myData.consentNotRequired'),
+            ],
+            [
+              t('myData.columnsTitle'),
+              grant.columns.map((c) => (c.unit ? `${c.label} (${c.unit})` : c.label)).join(', '),
+            ],
+          ]}
+        />
+      </Details>
 
       {toolPurpose && (
         <ToolAccessBox

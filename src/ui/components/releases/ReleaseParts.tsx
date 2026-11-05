@@ -7,15 +7,11 @@ import { usePurposeLabel } from '../../lib/purposes.ts';
 
 type Recipient = Release['recipient'];
 
-/** Empfänger: Rolle (übersetzt) oder Partnerknoten (Name + Knoten-ID). */
+/** Empfänger: Rolle (übersetzt) oder Partnerknoten (Anzeigename; Knoten-ID nur als Tooltip). */
 export function RecipientLabel({ recipient }: { recipient: Recipient }) {
   const { t } = useI18n();
   if (recipient.type === 'role') return <>{t(`recipientRoles.${recipient.role}`)}</>;
-  return (
-    <span>
-      {recipient.peerName} <span className="muted small mono">{recipient.peerNodeId}</span>
-    </span>
-  );
+  return <span title={recipient.peerNodeId}>{recipient.peerName}</span>;
 }
 
 /** Zwecke als Text in der aktuellen Sprache. */
@@ -32,33 +28,26 @@ function valueText(i: Pick<I18n, 't' | 'fmt'>, v: Condition['value']): string {
   return v;
 }
 
-/** Bedingungen als lesbare Sätze: Spalte – Bedingung – Wert. */
-export function ConditionSummary({
-  conditions,
+/** Eine Bedingung als lesbarer Satz: Spalte – Bedingung – Wert. */
+export function ConditionText({
+  condition: c,
   labels,
-  emptyText,
 }: {
-  conditions: readonly Condition[];
+  condition: Condition;
   /** Spaltenschlüssel → Bezeichnung (falls bekannt) */
   labels?: ReadonlyMap<string, string>;
-  emptyText: string;
 }) {
   const i = useI18n();
-  if (conditions.length === 0) return <span className="muted">{emptyText}</span>;
   return (
-    <ul className="list-plain stack-sm">
-      {conditions.map((c) => (
-        <li key={JSON.stringify(c)}>
-          <strong>{labels?.get(c.column) ?? c.column}</strong> {i.t(`conditionOps.${c.op}`)}
-          {c.op !== 'is_null' && c.op !== 'not_null' && (
-            <>
-              {' '}
-              <span className="mono">{valueText(i, c.value)}</span>
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
+    <>
+      <strong>{labels?.get(c.column) ?? c.column}</strong> {i.t(`conditionOps.${c.op}`)}
+      {c.op !== 'is_null' && c.op !== 'not_null' && (
+        <>
+          {' '}
+          <span className="mono">{valueText(i, c.value)}</span>
+        </>
+      )}
+    </>
   );
 }
 
@@ -89,4 +78,15 @@ export function validityText(
     });
   }
   return `${i.t('releases.rangeFrom', { from: i.fmt.dateTime(validFrom) })}, ${i.t('releases.openEnded')}`;
+}
+
+/** Gültigkeit kurz für Listen: „ab …“ (beginnt später), „bis …“ oder „unbefristet“. */
+export function validityShort(
+  i: Pick<I18n, 't' | 'fmt'>,
+  validFrom: string,
+  validUntil: string | null,
+): string {
+  if (Date.parse(validFrom) > Date.now()) return i.t('releases.rangeFrom', { from: i.fmt.date(validFrom) });
+  if (validUntil) return i.t('releases.rangeUntil', { until: i.fmt.date(validUntil) });
+  return i.t('releases.openEnded');
 }

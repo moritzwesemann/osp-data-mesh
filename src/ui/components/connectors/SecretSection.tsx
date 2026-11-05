@@ -14,7 +14,7 @@ export function needsSecret(c: Pick<Connector, 'config'>): boolean {
   return c.config.type === 'http_api' && c.config.auth.type !== 'none';
 }
 
-/** Zugangsgeheimnis setzen oder entfernen (connectors.setSecret); wird nie angezeigt. */
+/** Zugangsgeheimnis setzen oder entfernen (connectors.setSecret); wird nie angezeigt. Zugeklappt, solange eines hinterlegt ist. */
 export function SecretSection({ connector }: { connector: Connector }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -42,6 +42,8 @@ export function SecretSection({ connector }: { connector: Connector }) {
     <Section
       title={t('connectors.sectionSecret')}
       description={connector.hasSecret ? t('connectors.secretStored') : t('connectors.secretMissing')}
+      collapsible
+      defaultOpen={!connector.hasSecret}
     >
       <form className="form" onSubmit={submit} noValidate>
         <FormField label={t('connectors.secret')} hint={t('connectors.secretHint')}>

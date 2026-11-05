@@ -2,7 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { ConfirmDialog, Dialog } from '../components/Dialog.tsx';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { FormField } from '../components/FormField.tsx';
-import { CodeBlock, DateTime, DescriptionList } from '../components/Misc.tsx';
+import { CodeBlock, DateTime, DescriptionList, MetaLine } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { PasswordChangeForm } from '../components/PasswordChangeForm.tsx';
 import { QueryView } from '../components/QueryState.tsx';
@@ -17,7 +17,7 @@ import { useSession } from '../lib/session.tsx';
 
 type Token = ApiOutput<'tokens.list'>['items'][number];
 
-/** /konto – Profil, Sprache, Passwort, API-Tokens. */
+/** /konto – Profil mit Rollen (und deren Kurzbeschreibung), Sprache, Passwort (zugeklappt), API-Tokens. */
 export function Account() {
   const { t, lang, setLang } = useI18n();
   const s = useSession();
@@ -25,23 +25,33 @@ export function Account() {
 
   return (
     <div className="page">
-      <PageHeader title={t('account.title')} description={t('account.intro')} />
+      <PageHeader title={t('account.title')} />
       <div className="grid-2">
         <Section title={t('account.profile')}>
           <DescriptionList
             items={[
               [t('account.displayName'), s.user.displayName],
-              [t('account.email'), s.user.email],
               [
-                t('account.roles'),
-                <div key="roles" className="badges">
-                  {s.roles.map((r) => (
-                    <RoleBadge key={r} role={r} />
-                  ))}
-                </div>,
+                t('account.email'),
+                <span key="email" className="break">
+                  {s.user.email}
+                </span>,
               ],
             ]}
           />
+          <div className="stack-sm">
+            <h3>{t('account.roles')}</h3>
+            <ul className="list-plain stack-sm">
+              {s.roles.map((r) => (
+                <li key={r} className="stack-sm">
+                  <span>
+                    <RoleBadge role={r} />
+                  </span>
+                  <span className="small muted">{t(`roleDescriptions.${r}`)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </Section>
         <Section title={t('account.language')}>
           <fieldset className="fieldset">
@@ -64,7 +74,7 @@ export function Account() {
           </fieldset>
         </Section>
       </div>
-      <Section title={t('auth.changeTitle')}>
+      <Section title={t('auth.changeTitle')} collapsible>
         <PasswordChangeForm onDone={() => toast.success(t('auth.passwordChanged'))} />
       </Section>
       <TokensSection />
@@ -79,7 +89,7 @@ function tokenState(tok: Token): 'active' | 'revoked' | 'expired' {
 }
 
 function TokensSection() {
-  const { t } = useI18n();
+  const { t, fmt } = useI18n();
   const toast = useToast();
   const tokens = useApiQuery('tokens.list', {});
   const [creating, setCreating] = useState(false);
@@ -112,18 +122,28 @@ function TokensSection() {
             rowKey={(r) => r.id}
             empty={t('account.tokensEmpty')}
             columns={[
-              { key: 'name', header: t('account.tokenName'), render: (r) => r.name },
               {
-                key: 'prefix',
-                header: t('account.prefix'),
-                className: 'mono nowrap',
-                render: (r) => `${r.prefix}…`,
-              },
-              {
-                key: 'created',
-                header: t('common.createdAt'),
-                className: 'nowrap',
-                render: (r) => <DateTime value={r.createdAt} />,
+                key: 'name',
+                header: t('account.tokenName'),
+                render: (r) => {
+                  const st = tokenState(r);
+                  return (
+                    <div className="stack-sm">
+                      <span className="row">
+                        <span>{r.name}</span>
+                        {st === 'revoked' && <Badge tone="neutral">{t('account.tokenStatusRevoked')}</Badge>}
+                        {st === 'expired' && <Badge tone="neutral">{t('account.tokenStatusExpired')}</Badge>}
+                      </span>
+                      <MetaLine
+                        className="small"
+                        items={[
+                          <span key="prefix" className="mono">{`${r.prefix}…`}</span>,
+                          t('account.createdOn', { date: fmt.dateTime(r.createdAt) }),
+                        ]}
+                      />
+                    </div>
+                  );
+                },
               },
               {
                 key: 'expires',
@@ -136,18 +156,6 @@ function TokensSection() {
                 header: t('account.lastUsed'),
                 className: 'nowrap',
                 render: (r) => (r.lastUsedAt ? <DateTime value={r.lastUsedAt} /> : t('account.neverUsed')),
-              },
-              {
-                key: 'state',
-                header: t('common.status'),
-                render: (r) => {
-                  const st = tokenState(r);
-                  if (st === 'revoked')
-                    return <Badge tone="neutral">{t('account.tokenStatusRevoked')}</Badge>;
-                  if (st === 'expired')
-                    return <Badge tone="neutral">{t('account.tokenStatusExpired')}</Badge>;
-                  return <Badge tone="success">{t('account.tokenStatusActive')}</Badge>;
-                },
               },
               {
                 key: 'actions',

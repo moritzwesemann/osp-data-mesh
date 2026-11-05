@@ -1,14 +1,12 @@
 export const users = {
   title: 'Benutzer',
-  intro:
-    'Konten dieses Knotens, ihre Rollen und ihr Status. Rollen bestimmen, welche Bereiche sichtbar sind.',
+  intro: 'Rollen bestimmen, was eine Person sehen und tun darf.',
   create: 'Benutzer anlegen',
   empty: 'Es gibt noch keine weiteren Benutzer.',
   name: 'Name',
   email: 'E-Mail-Adresse',
   roles: 'Rollen',
   rolesHint: 'Mindestens eine Rolle.',
-  status: 'Status',
   lastLogin: 'Letzte Anmeldung',
   never: 'Noch nie',
   language: 'Sprache',
@@ -20,6 +18,7 @@ export const users = {
   created: 'Benutzer angelegt.',
   edit: 'Bearbeiten',
   editTitle: 'Benutzer bearbeiten',
+  moreActions: 'Weitere Aktionen',
   saved: 'Änderungen gespeichert.',
   resetPassword: 'Passwort zurücksetzen',
   resetTitle: 'Passwort zurücksetzen',

@@ -11,7 +11,7 @@ interface Props {
   purposeLabel: string;
 }
 
-/** Hinweise und Code-Beispiele für den Zugriff aus Excel, Power BI, Python und curl. */
+/** Hinweise und Code-Beispiele für den Zugriff aus Excel, Power BI, Python und curl (zugeklappt). */
 export function ToolAccessBox({ url, fileBase, purposeLabel }: Props) {
   const { t } = useI18n();
   const token = t('myData.tokenPlaceholder');
@@ -43,7 +43,7 @@ export function ToolAccessBox({ url, fileBase, purposeLabel }: Props) {
   ].join('\n');
 
   return (
-    <Section title={t('myData.toolsTitle')} description={t('myData.toolsIntro')}>
+    <Section title={t('myData.toolsTitle')} description={t('myData.toolsIntro')} collapsible>
       <CodeBlock label={t('myData.toolsUrl', { purpose: purposeLabel })} code={url} />
       <p>
         <Link to="/konto">{t('myData.toolsTokenLink')}</Link>

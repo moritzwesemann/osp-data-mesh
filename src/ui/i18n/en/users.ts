@@ -2,14 +2,13 @@ import type { Messages } from '../de.ts';
 
 export const users: Messages['users'] = {
   title: 'Users',
-  intro: 'Accounts of this node, their roles and status. Roles determine which areas are visible.',
+  intro: 'Roles determine what a person can see and do.',
   create: 'Create user',
   empty: 'There are no other users yet.',
   name: 'Name',
   email: 'Email address',
   roles: 'Roles',
   rolesHint: 'At least one role.',
-  status: 'Status',
   lastLogin: 'Last sign-in',
   never: 'Never',
   language: 'Language',
@@ -21,6 +20,7 @@ export const users: Messages['users'] = {
   created: 'User created.',
   edit: 'Edit',
   editTitle: 'Edit user',
+  moreActions: 'More actions',
   saved: 'Changes saved.',
   resetPassword: 'Reset password',
   resetTitle: 'Reset password',

@@ -335,13 +335,6 @@ code,
   margin-top: 8px;
   padding-top: 10px;
 }
-.nav-node-id {
-  color: var(--text-3);
-  font-size: 0.75rem;
-  padding: 8px 10px 0;
-  word-break: break-all;
-}
-
 .main {
   grid-area: main;
   min-width: 0;
@@ -1459,6 +1452,234 @@ input[type="file"].input {
 .details-toggle {
   font-size: 0.8125rem;
 }
+
+/* Aufklappbare Nebensachen (<Details>) und zuklappbare Abschnitte (<Section collapsible>) */
+.details > summary,
+.card-collapsible > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.details > summary::-webkit-details-marker,
+.card-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+.details > summary::before,
+.card-collapsible > summary::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+.details[open] > summary::before,
+.card-collapsible[open] > summary::before {
+  transform: rotate(90deg);
+}
+.details-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-2);
+  border-radius: var(--radius);
+}
+.details-summary:hover {
+  color: var(--text);
+}
+.details-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.card-summary {
+  justify-content: flex-start;
+  border-radius: var(--radius);
+}
+.card-collapsible:not([open]):not(.is-open) {
+  gap: 0;
+}
+/* <Section collapsible>: Überschrift mit Schaltfläche */
+.card-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.card-toggle::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+.card-toggle[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+.card-collapsible-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.card-collapsible-body[hidden] {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-toggle::before,
+  .details > summary::before,
+  .card-collapsible > summary::before {
+    transition: none;
+  }
+}
+
+/* Startseite */
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.todo-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.stat-text {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 60ch;
+}
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Katalog: Suche, Trefferliste, Spalten als Chips */
+.search-bar {
+  display: flex;
+  gap: 8px;
+  max-width: 720px;
+}
+.search-bar .input {
+  min-height: 42px;
+  font-size: 1rem;
+}
+.inline-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.input.input-sm {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 0.875rem;
+}
+.results {
+  display: flex;
+  flex-direction: column;
+}
+.result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.result:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.result-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 360px;
+}
+.result-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.result-title .btn-link {
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+.result-title .btn-link:hover {
+  text-decoration: underline;
+}
+.result-description {
+  color: var(--text-2);
+  max-width: 80ch;
+}
+.result-status {
+  margin-top: 2px;
+}
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: none;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.875rem;
+}
+.card-flat {
+  box-shadow: none;
+  background: var(--surface-2);
+  padding: 14px 16px;
+}
+
+/* Kurze Angaben in einer Zeile: „Demo-OSP Nord · 9 Spalten · bis 30.06.2027“ */
+.meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  font-size: 0.875rem;
+  color: var(--text-2);
+}
+/* Trenner hinter jedem Eintrag außer dem letzten: beim Umbruch endet die Zeile mit „·“ statt die nächste zu beginnen */
+.meta-line > span:not(:last-child)::after {
+  content: "·";
+  margin: 0 8px;
+  color: var(--text-3);
+}
 pre.json {
   margin: 0;
   font-family: var(--mono);
@@ -1487,4 +1708,71 @@ pre.json {
 }
 .status-dot.bad {
   background: var(--danger);
+}
+
+/* --- Datenpflege --- */
+/* Kurzangabe neben einer Abschnittsüberschrift, z. B. aktuelle CSV-Einstellungen im zugeklappten Abschnitt */
+.title-note {
+  margin-left: 8px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--text-2);
+}
+/* Lange Tabellen (Einträge eines Datensatzes) scrollen in sich; der Tabellenkopf bleibt stehen */
+.table-scroll .table-wrap {
+  max-height: min(32rem, 70vh);
+  overflow-y: auto;
+}
+
+/* --- Freigaben und Meine Daten --- */
+/* Empfängerart als schlichte Optionsgruppe (ohne Rahmen) */
+.release-recipient-type {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.release-recipient-type > legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+/* Unterabschnitte im aufklappbaren Bereich „Einschränkungen“ */
+.release-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+/* Zweckwahl über den Daten */
+.mydata-purpose {
+  max-width: 40rem;
+}
+
+/* --- Verwaltung (Partner, Audit, System, Benutzer, Konto) --- */
+/* Zustandsübersicht auf /system: Ampelpunkt, Bezeichnung, kurzer Wert */
+.health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px 24px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+}
+.health-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.health-label {
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+@media (max-width: 480px) {
+  .health-list {
+    grid-template-columns: 1fr 1fr;
+  }
 }

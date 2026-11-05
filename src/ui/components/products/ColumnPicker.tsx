@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useI18n } from '../../i18n/index.tsx';
 import { uid } from '../../lib/util.ts';
 import { Checkbox, Fieldset } from '../FormField.tsx';
@@ -69,6 +69,18 @@ export function ColumnPicker({ options, value, onChange, serverError, notice, er
 
   const fieldName = (c: ColumnEntry) => options.find((o) => o.source === c.source)?.label ?? c.source;
 
+  // Spaltenschlüssel nur bei Bedarf: eingeblendet bei eigenem Schlüssel oder Schlüsselfehler, sonst über den Schalter
+  const keysNeeded = value.some(
+    (c, n) =>
+      c.key !== defaultKey(c.source) || Boolean(issues.get(c.uid)?.key) || Boolean(serverError?.(n, 'key')),
+  );
+  const [showKeys, setShowKeys] = useState(keysNeeded);
+  const [lastNeeded, setLastNeeded] = useState(keysNeeded);
+  if (keysNeeded !== lastNeeded) {
+    setLastNeeded(keysNeeded);
+    if (keysNeeded) setShowKeys(true);
+  }
+
   return (
     <div className="stack">
       <Fieldset legend={t('products.availableFields')}>
@@ -104,8 +116,20 @@ export function ColumnPicker({ options, value, onChange, serverError, notice, er
       </Fieldset>
 
       <div className="stack-sm">
-        <h3>{t('products.selectedColumns')}</h3>
-        <p className="field-hint">{t('products.columnKeyHint')}</p>
+        <div className="row-between">
+          <h3>{t('products.selectedColumns')}</h3>
+          {value.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              aria-expanded={showKeys}
+              onClick={() => setShowKeys((v) => !v)}
+            >
+              {showKeys ? t('products.hideKeys') : t('products.showKeys')}
+            </button>
+          )}
+        </div>
+        {showKeys && <p className="field-hint">{t('products.columnKeyHint')}</p>}
         {value.length === 0 ? (
           <EmptyState message={t('products.noColumnsSelected')} />
         ) : (
@@ -117,7 +141,7 @@ export function ColumnPicker({ options, value, onChange, serverError, notice, er
                     #
                   </th>
                   <th scope="col">{t('products.columnField')}</th>
-                  <th scope="col">{t('products.columnKey')}</th>
+                  {showKeys && <th scope="col">{t('products.columnKey')}</th>}
                   <th scope="col">{t('products.columnLabel')}</th>
                   <th scope="col">
                     <span className="sr-only">{t('common.actions')}</span>
@@ -142,25 +166,27 @@ export function ColumnPicker({ options, value, onChange, serverError, notice, er
                       <td className="num muted">{n + 1}</td>
                       <td>
                         <div>{field}</div>
-                        <div className="muted small mono">{c.source}</div>
+                        {showKeys && <div className="muted small mono">{c.source}</div>}
                       </td>
-                      <td>
-                        <input
-                          className="input mono"
-                          style={{ minWidth: 140 }}
-                          value={c.key}
-                          disabled={disabled}
-                          aria-label={t('products.columnKeyFor', { field })}
-                          aria-invalid={keyError ? true : undefined}
-                          aria-describedby={keyError ? keyErrId : undefined}
-                          onChange={(e) => patch(c.uid, { key: e.target.value.trim() })}
-                        />
-                        {keyError && (
-                          <p id={keyErrId} className="field-error">
-                            {keyError}
-                          </p>
-                        )}
-                      </td>
+                      {showKeys && (
+                        <td>
+                          <input
+                            className="input mono"
+                            style={{ minWidth: 140 }}
+                            value={c.key}
+                            disabled={disabled}
+                            aria-label={t('products.columnKeyFor', { field })}
+                            aria-invalid={keyError ? true : undefined}
+                            aria-describedby={keyError ? keyErrId : undefined}
+                            onChange={(e) => patch(c.uid, { key: e.target.value.trim() })}
+                          />
+                          {keyError && (
+                            <p id={keyErrId} className="field-error">
+                              {keyError}
+                            </p>
+                          )}
+                        </td>
+                      )}
                       <td>
                         <input
                           className="input"

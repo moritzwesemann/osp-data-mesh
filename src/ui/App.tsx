@@ -39,8 +39,6 @@ const MyData = screen(() => import('./screens/MyData.tsx'), 'MyData');
 const MyDataView = screen(() => import('./screens/MyDataView.tsx'), 'MyDataView');
 const Partners = screen(() => import('./screens/Partners.tsx'), 'Partners');
 const Catalog = screen(() => import('./screens/Catalog.tsx'), 'Catalog');
-const PartnerCatalog = screen(() => import('./screens/PartnerCatalog.tsx'), 'PartnerCatalog');
-const ReceivedList = screen(() => import('./screens/ReceivedList.tsx'), 'ReceivedList');
 const ReceivedDetail = screen(() => import('./screens/ReceivedDetail.tsx'), 'ReceivedDetail');
 const Audit = screen(() => import('./screens/Audit.tsx'), 'Audit');
 const Users = screen(() => import('./screens/Users.tsx'), 'Users');
@@ -82,8 +80,9 @@ function AppRoutes() {
         <Route path="meine-daten/:id" element={guard(['access.data'], <MyDataView />)} />
         <Route path="partner" element={guard(['peers.list'], <Partners />)} />
         <Route path="katalog" element={guard(['catalog.local'], <Catalog />)} />
-        <Route path="katalog/partner" element={guard(['discovery.search'], <PartnerCatalog />)} />
-        <Route path="empfangen" element={guard(['received.list'], <ReceivedList />)} />
+        {/* frühere Adressen: Partnerkatalog und empfangene Daten sind Bereiche des Katalogs */}
+        <Route path="katalog/partner" element={<Navigate to="/katalog?wo=partner" replace />} />
+        <Route path="empfangen" element={<Navigate to="/katalog?wo=empfangen" replace />} />
         <Route path="empfangen/:id" element={guard(['received.get'], <ReceivedDetail />)} />
         <Route path="audit" element={guard(['audit.list', 'exchange.log'], <Audit />)} />
         <Route path="benutzer" element={guard(['users.list'], <Users />)} />

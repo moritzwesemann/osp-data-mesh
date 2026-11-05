@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   type Product,
@@ -20,7 +20,7 @@ import { Checkbox, FormActions, FormField } from '../components/FormField.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, Skeleton } from '../components/QueryState.tsx';
 import { ReleasePreviewResult } from '../components/releases/ReleasePreviewResult.tsx';
-import { CategoryBadge, ShareabilityBadge, SpecialCategoryBadge } from '../components/StatusBadge.tsx';
+import { ShareabilityBadge } from '../components/StatusBadge.tsx';
 import { useToast } from '../components/Toast.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import type { ApiError, ApiOutput } from '../lib/api.ts';
@@ -28,7 +28,7 @@ import { clientValidate, useFieldErrors } from '../lib/errors.ts';
 import { usePurposes } from '../lib/purposes.ts';
 import { useApiMutation, useApiQuery } from '../lib/query.ts';
 import { useSession } from '../lib/session.tsx';
-import { isoToLocalInput, localInputToIso } from '../lib/util.ts';
+import { cx, isoToLocalInput, localInputToIso } from '../lib/util.ts';
 
 interface FormState {
   productId: string;
@@ -65,6 +65,18 @@ function emptyState(productId: string): FormState {
     legalBasis: '',
     note: '',
   };
+}
+
+/** Sind optionale Einschränkungen gesetzt? Dann ist der Bereich „Einschränkungen“ von Anfang an offen. */
+function hasRestrictions(f: FormState): boolean {
+  return (
+    f.filters.length > 0 ||
+    f.dataFrom !== '' ||
+    f.dataUntil !== '' ||
+    f.validFrom !== '' ||
+    f.validUntil !== '' ||
+    f.requiresConsent
+  );
 }
 
 function filterColumnsOf(product: Product | null | undefined): FilterColumn[] {
@@ -158,6 +170,8 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
   const [previewPurpose, setPreviewPurpose] = useState('');
   const [previewSig, setPreviewSig] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [restrictOpen, setRestrictOpen] = useState(() => hasRestrictions(initial));
+  const restrictId = `${ids}-restrictions`;
 
   const products = useApiQuery('products.list', {});
   const product = useApiQuery(
@@ -193,6 +207,21 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
   );
 
   const { conditions, invalid } = draftsToConditions(form.filters, filterColumns);
+
+  // Fehler in einem eingeklappten Bereich: Bereich öffnen, damit die Markierung sichtbar ist
+  const restrictionError =
+    Boolean(
+      fe('rowFilter') ??
+        fe('dataFrom') ??
+        fe('dataUntil') ??
+        fe('validFrom') ??
+        fe('validUntil') ??
+        fe('requiresConsent'),
+    ) ||
+    (showInvalid && invalid.length > 0);
+  useEffect(() => {
+    if (restrictionError) setRestrictOpen(true);
+  }, [restrictionError]);
 
   const update = (patch: Partial<FormState>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -234,6 +263,7 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
   const validate = () => {
     if (invalid.length > 0) {
       setShowInvalid(true);
+      setRestrictOpen(true);
       return null;
     }
     const r = clientValidate(ReleaseInput, draft);
@@ -246,8 +276,10 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
 
   const runPreview = () => {
     setPreviewError(null);
+    if (restrictionError) setRestrictOpen(true);
     if (invalid.length > 0) {
       setShowInvalid(true);
+      setRestrictOpen(true);
       return;
     }
     const r = clientValidate(ReleaseInput, draft);
@@ -261,6 +293,7 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (restrictionError) setRestrictOpen(true);
     const body = validate();
     if (body) create.mutate({ body });
   };
@@ -280,6 +313,13 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
 
   const selectRole = (role: RecipientRole | '') =>
     update({ role, purposes: role === 'bi' ? form.purposes.slice(0, 1) : form.purposes });
+
+  const restrictionSummary = [
+    form.filters.length > 0 && t('releases.sumRows', { count: form.filters.length }),
+    (form.dataFrom || form.dataUntil) && t('releases.sumDataWindow'),
+    (form.validFrom || form.validUntil) && t('releases.sumValidity'),
+    (special || form.requiresConsent) && t('releases.sumConsent'),
+  ].filter((x): x is string => typeof x === 'string' && x !== '');
 
   return (
     <div className="page">
@@ -309,8 +349,8 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
         </Section>
 
         <Section title={t('releases.sectionRecipient')}>
-          <fieldset className="fieldset">
-            <legend>{t('releases.recipientType')}</legend>
+          <fieldset className="release-recipient-type">
+            <legend className="field-label">{t('releases.recipientType')}</legend>
             <div className="row">
               <div className="checkbox-row">
                 <input
@@ -386,7 +426,7 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
                       <option value="">{peers.isPending ? t('common.loading') : t('common.select')}</option>
                       {trustedPeers.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {`${p.displayName} (${p.nodeId})`}
+                          {p.displayName} ({p.nodeId})
                         </option>
                       ))}
                     </select>
@@ -469,11 +509,6 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
                   <Checkbox
                     key={c.key}
                     label={c.unit ? `${c.label} (${c.unit})` : c.label}
-                    hint={
-                      <>
-                        <span className="mono">{c.key}</span> · {t(`fieldTypes.${c.type}`)}
-                      </>
-                    }
                     checked={form.columns.includes(c.key)}
                     onChange={(on) => toggleColumn(c.key, on)}
                   />
@@ -484,94 +519,119 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
           )}
         </Section>
 
-        <Section title={t('releases.sectionRows')} description={t('releases.rowsHint')}>
-          {!productData ? (
-            <p className="muted">{t('releases.chooseProductFirst')}</p>
-          ) : (
-            <ConditionBuilder
-              columns={filterColumns}
-              value={form.filters}
-              onChange={(filters) => update({ filters })}
-              invalid={showInvalid ? invalid : []}
-            />
-          )}
-          {fe('rowFilter') && <p className="field-error">{fe('rowFilter')}</p>}
-        </Section>
+        {/* Optionale Einschränkungen: zugeklappt, offen bei Werten (auch aus Vorlage) oder Fehlern */}
+        <section className={cx('card card-collapsible', restrictOpen && 'is-open')}>
+          <h2 className="card-title">
+            <button
+              type="button"
+              className="card-toggle"
+              aria-expanded={restrictOpen}
+              aria-controls={restrictId}
+              onClick={() => setRestrictOpen(!restrictOpen)}
+            >
+              {t('releases.sectionRestrictions')}
+            </button>
+          </h2>
+          <p className="muted small">
+            {restrictionSummary.length > 0 ? restrictionSummary.join(' · ') : t('releases.restrictionsNone')}
+          </p>
+          <div id={restrictId} className="card-collapsible-body" hidden={!restrictOpen}>
+            <div className="release-subsection">
+              <h3>{t('releases.subRows')}</h3>
+              <p className="field-hint">{t('releases.rowsHint')}</p>
+              {!productData ? (
+                <p className="muted">{t('releases.chooseProductFirst')}</p>
+              ) : (
+                <ConditionBuilder
+                  columns={filterColumns}
+                  value={form.filters}
+                  onChange={(filters) => update({ filters })}
+                  invalid={showInvalid ? invalid : []}
+                />
+              )}
+              {fe('rowFilter') && <p className="field-error">{fe('rowFilter')}</p>}
+            </div>
 
-        <Section title={t('releases.sectionTime')}>
-          <div className="stack-sm">
-            <p className="field-hint">{t('releases.dataWindowHint')}</p>
-            <div className="form-grid">
-              <FormField label={t('releases.dataFrom')} error={fe('dataFrom')}>
-                {(a) => (
-                  <input
-                    {...a}
-                    className="input"
-                    type="date"
-                    value={form.dataFrom}
-                    onChange={(e) => update({ dataFrom: e.target.value })}
-                  />
-                )}
-              </FormField>
-              <FormField label={t('releases.dataUntil')} error={fe('dataUntil')}>
-                {(a) => (
-                  <input
-                    {...a}
-                    className="input"
-                    type="date"
-                    value={form.dataUntil}
-                    min={form.dataFrom || undefined}
-                    onChange={(e) => update({ dataUntil: e.target.value })}
-                  />
-                )}
-              </FormField>
+            <div className="release-subsection">
+              <h3>{t('releases.subDataWindow')}</h3>
+              <p className="field-hint">{t('releases.dataWindowHint')}</p>
+              <div className="form-grid">
+                <FormField label={t('releases.dataFrom')} error={fe('dataFrom')}>
+                  {(a) => (
+                    <input
+                      {...a}
+                      className="input"
+                      type="date"
+                      value={form.dataFrom}
+                      onChange={(e) => update({ dataFrom: e.target.value })}
+                    />
+                  )}
+                </FormField>
+                <FormField label={t('releases.dataUntil')} error={fe('dataUntil')}>
+                  {(a) => (
+                    <input
+                      {...a}
+                      className="input"
+                      type="date"
+                      value={form.dataUntil}
+                      min={form.dataFrom || undefined}
+                      onChange={(e) => update({ dataUntil: e.target.value })}
+                    />
+                  )}
+                </FormField>
+              </div>
+            </div>
+
+            <div className="release-subsection">
+              <h3>{t('releases.subValidity')}</h3>
+              <div className="form-grid">
+                <FormField
+                  label={t('releases.validFrom')}
+                  hint={t('releases.validFromHint')}
+                  error={fe('validFrom')}
+                >
+                  {(a) => (
+                    <input
+                      {...a}
+                      className="input"
+                      type="datetime-local"
+                      value={form.validFrom}
+                      onChange={(e) => update({ validFrom: e.target.value })}
+                    />
+                  )}
+                </FormField>
+                <FormField
+                  label={t('releases.validUntil')}
+                  hint={t('releases.validUntilHint')}
+                  error={fe('validUntil')}
+                >
+                  {(a) => (
+                    <input
+                      {...a}
+                      className="input"
+                      type="datetime-local"
+                      value={form.validUntil}
+                      min={form.validFrom || undefined}
+                      onChange={(e) => update({ validUntil: e.target.value })}
+                    />
+                  )}
+                </FormField>
+              </div>
+            </div>
+
+            <div className="release-subsection">
+              <h3>{t('releases.subConsent')}</h3>
+              <Checkbox
+                label={t('releases.requiresConsent')}
+                checked={special || form.requiresConsent}
+                disabled={special}
+                hint={special ? t('releases.consentForced') : t('releases.consentHint')}
+                error={fe('requiresConsent')}
+                onChange={(on) => update({ requiresConsent: on })}
+              />
             </div>
           </div>
-          <div className="form-grid">
-            <FormField
-              label={t('releases.validFrom')}
-              hint={t('releases.validFromHint')}
-              error={fe('validFrom')}
-            >
-              {(a) => (
-                <input
-                  {...a}
-                  className="input"
-                  type="datetime-local"
-                  value={form.validFrom}
-                  onChange={(e) => update({ validFrom: e.target.value })}
-                />
-              )}
-            </FormField>
-            <FormField
-              label={t('releases.validUntil')}
-              hint={t('releases.validUntilHint')}
-              error={fe('validUntil')}
-            >
-              {(a) => (
-                <input
-                  {...a}
-                  className="input"
-                  type="datetime-local"
-                  value={form.validUntil}
-                  min={form.validFrom || undefined}
-                  onChange={(e) => update({ validUntil: e.target.value })}
-                />
-              )}
-            </FormField>
-          </div>
-        </Section>
-
-        <Section title={t('releases.sectionConsent')}>
-          <Checkbox
-            label={t('releases.requiresConsent')}
-            checked={special || form.requiresConsent}
-            disabled={special}
-            hint={special ? t('releases.consentForced') : t('releases.consentHint')}
-            error={fe('requiresConsent')}
-            onChange={(on) => update({ requiresConsent: on })}
-          />
-        </Section>
+        </section>
 
         <Section title={t('releases.sectionDocumentation')}>
           <div className="form-grid">
@@ -602,6 +662,7 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
                   {...a}
                   className="input"
                   maxLength={2000}
+                  rows={2}
                   value={form.note}
                   onChange={(e) => update({ note: e.target.value })}
                 />
@@ -615,25 +676,27 @@ function ReleaseFormInner({ initial, fromTemplate }: { initial: FormState; fromT
             <p className="muted">{t('releases.previewNeeds')}</p>
           ) : (
             <div className="toolbar">
-              <FormField label={t('releases.previewPurpose')}>
-                {(a) => (
-                  <select
-                    {...a}
-                    className="input"
-                    value={effectivePurpose}
-                    onChange={(e) => setPreviewPurpose(e.target.value)}
-                  >
-                    {form.purposes.map((code) => {
-                      const p = purposeItems.find((x) => x.code === code);
-                      return (
-                        <option key={code} value={code}>
-                          {p ? purposeLabel(p) : code}
-                        </option>
-                      );
-                    })}
-                  </select>
-                )}
-              </FormField>
+              {form.purposes.length > 1 && (
+                <FormField label={t('releases.previewPurpose')}>
+                  {(a) => (
+                    <select
+                      {...a}
+                      className="input"
+                      value={effectivePurpose}
+                      onChange={(e) => setPreviewPurpose(e.target.value)}
+                    >
+                      {form.purposes.map((code) => {
+                        const p = purposeItems.find((x) => x.code === code);
+                        return (
+                          <option key={code} value={code}>
+                            {p ? purposeLabel(p) : code}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </FormField>
+              )}
               <button type="button" className="btn" disabled={preview.isPending} onClick={runPreview}>
                 {preview.isPending ? t('releases.previewRunning') : t('releases.previewRun')}
               </button>
@@ -716,17 +779,17 @@ function ProductPicker({
   );
 }
 
+/** Kurzinfo zum gewählten Produkt: Beschreibung und nur die Ausnahmen (nur intern, Art. 9). */
 function ProductSummary({ product }: { product: Product }) {
   const { t } = useI18n();
   return (
     <div className="stack-sm">
-      <div className="badges">
-        <CategoryBadge category={product.category} />
-        <SpecialCategoryBadge show={product.specialCategory} />
-        <ShareabilityBadge value={product.shareability} />
-        <span className="badge badge-neutral">{t('common.versionN', { version: product.version })}</span>
-      </div>
       {product.description && <p className="muted">{product.description}</p>}
+      {product.shareability === 'internal' && (
+        <div className="badges">
+          <ShareabilityBadge value={product.shareability} />
+        </div>
+      )}
       {product.specialCategory && (
         <div className="alert alert-warning">
           <p>{t('releases.productSpecial')}</p>

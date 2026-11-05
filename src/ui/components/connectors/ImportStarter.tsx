@@ -5,7 +5,7 @@ import { useI18n } from '../../i18n/index.tsx';
 import { useApiMutation } from '../../lib/query.ts';
 import { useSession } from '../../lib/session.tsx';
 import { ErrorMessage } from '../ErrorMessage.tsx';
-import { FormActions, FormField } from '../FormField.tsx';
+import { FormField } from '../FormField.tsx';
 import { Section } from '../PageHeader.tsx';
 import { useToast } from '../Toast.tsx';
 
@@ -48,9 +48,9 @@ export function ImportStarter({ connector }: { connector: Connector }) {
           <p>{t('connectors.inactiveHint')}</p>
         </div>
       )}
-      <form className="form" onSubmit={submit} noValidate>
+      <form className="toolbar" onSubmit={submit} noValidate>
         {csv && (
-          <FormField label={t('connectors.importFile')} required>
+          <FormField label={t('connectors.importFile')} required className="field-grow">
             {(a) => (
               <input
                 {...a}
@@ -63,22 +63,20 @@ export function ImportStarter({ connector }: { connector: Connector }) {
             )}
           </FormField>
         )}
-        {start.error && <ErrorMessage error={start.error} />}
-        <FormActions>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={blocked || (csv && !file)}
-            aria-busy={start.isPending || undefined}
-          >
-            {start.isPending
-              ? t('connectors.starting')
-              : csv
-                ? t('connectors.startImport')
-                : t('connectors.fetchNow')}
-          </button>
-        </FormActions>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={blocked || (csv && !file)}
+          aria-busy={start.isPending || undefined}
+        >
+          {start.isPending
+            ? t('connectors.starting')
+            : csv
+              ? t('connectors.startImport')
+              : t('connectors.fetchNow')}
+        </button>
       </form>
+      {start.error && <ErrorMessage error={start.error} />}
     </Section>
   );
 }

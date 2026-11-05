@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { importCodeText, importParamTexts } from '../components/connectors/shared.ts';
+import { importCodeText, importParamTexts, targetLabel } from '../components/connectors/shared.ts';
 import { ConfirmDialog } from '../components/Dialog.tsx';
-import { DateTime, DescriptionList } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details, MetaLine } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
 import { formatScalar } from '../components/ResultTable.tsx';
@@ -17,7 +17,6 @@ import { useSession } from '../lib/session.tsx';
 
 type RunDetail = ApiOutput<'imports.get'>;
 type ErrorEntry = ApiOutput<'imports.errors'>['items'][number];
-type SummaryEntry = RunDetail['errorSummary'][number];
 
 const ERROR_PAGE_SIZE = 50;
 const AFTER_CHANGE = [
@@ -31,7 +30,7 @@ const AFTER_CHANGE = [
   'datasets.records',
 ] as const;
 
-/** /importe/:id – Importlauf: Prüfergebnis, Vorschau, Fehlerprotokoll, Übernehmen/Verwerfen. */
+/** /importe/:id – Importlauf: Prüfergebnis, Fehler und Warnungen, Vorschau, Übernehmen/Verwerfen; Laufangaben aufklappbar. */
 export function ImportRunView() {
   const { id = '' } = useParams();
   const { t } = useI18n();
@@ -76,20 +75,24 @@ function RunView({ detail }: { detail: RunDetail }) {
     },
   });
 
+  const [errorPage, setErrorPage] = useState(1);
+  const errors = useApiQuery(
+    'imports.errors',
+    { params: { id: run.id }, query: { page: errorPage, pageSize: ERROR_PAGE_SIZE } },
+    { keepPrevious: true },
+  );
+  // Quellspalte je Zielfeld aus den geladenen Einträgen (z. B. data.test_date → „Testdatum“)
+  const columnByField = new Map<string, string>();
+  for (const e of errors.data?.items ?? []) {
+    if (e.field && typeof e.params.column === 'string') columnByField.set(e.field, e.params.column);
+  }
+
   const previewed = run.status === 'previewed';
   const canCommit = previewed && session.can('imports.commit');
   const canDiscard = previewed && session.can('imports.discard');
   const busy = commit.isPending || discard.isPending;
 
-  const summaryColumns: Column<SummaryEntry>[] = [
-    { key: 'code', header: t('connectors.colCheck'), render: (s) => importCodeText(i, s.code) },
-    {
-      key: 'field',
-      header: t('connectors.colField'),
-      render: (s) => (s.field ? <span className="mono">{s.field}</span> : t('common.empty')),
-    },
-    { key: 'count', header: t('connectors.colCount'), className: 'num', render: (s) => fmt.number(s.count) },
-  ];
+  const committed = run.status === 'committed';
 
   return (
     <>
@@ -130,6 +133,14 @@ function RunView({ detail }: { detail: RunDetail }) {
           ) : undefined
         }
       />
+      <MetaLine
+        items={[
+          <span key="file" className="break">
+            {run.sourceName}
+          </span>,
+          <DateTime key="started" value={run.createdAt} />,
+        ]}
+      />
 
       {previewed && (
         <div className="alert alert-info">
@@ -146,57 +157,66 @@ function RunView({ detail }: { detail: RunDetail }) {
       <div className="stat-grid">
         <Stat label={t('connectors.statTotal')} value={fmt.number(run.totalRows)} />
         <Stat label={t('connectors.statValid')} value={fmt.number(run.validRows)} />
-        <Stat label={t('connectors.statWarnings')} value={fmt.number(run.warningRows)} />
+        {run.warningRows > 0 && (
+          <Stat label={t('connectors.statWarnings')} value={fmt.number(run.warningRows)} />
+        )}
         <Stat label={t('connectors.statErrors')} value={fmt.number(run.errorRows)} />
-        <Stat label={t('connectors.statInserted')} value={fmt.number(run.insertedRows)} />
-        <Stat label={t('connectors.statUpdated')} value={fmt.number(run.updatedRows)} />
+        {committed && <Stat label={t('connectors.statInserted')} value={fmt.number(run.insertedRows)} />}
+        {committed && <Stat label={t('connectors.statUpdated')} value={fmt.number(run.updatedRows)} />}
       </div>
 
-      <div className="grid-2">
-        <Section title={t('connectors.runInfo')}>
-          <DescriptionList
-            items={[
-              [
-                t('connectors.connector'),
-                <Link key="k161" to={`/quellen/${run.connectorId}`}>
-                  {run.connectorName}
-                </Link>,
-              ],
-              [t('connectors.connectorVersion'), run.connectorVersion],
-              [
-                t('connectors.sourceName'),
-                <span key="k164" className="break">
-                  {run.sourceName}
-                </span>,
-              ],
-              [t('connectors.sourceSize'), fmt.bytes(run.sourceSize)],
-              [
-                t('connectors.sha256'),
-                <span key="k166" className="mono break small">
-                  {run.sourceSha256}
-                </span>,
-              ],
-              [t('connectors.started'), <DateTime key="k167" value={run.createdAt} />],
-              [t('connectors.finished'), <DateTime key="k168" value={run.finishedAt} />],
-            ]}
-          />
-        </Section>
-        <Section title={t('connectors.errorSummaryTitle')}>
-          <Table
-            caption={t('connectors.errorSummaryTitle')}
-            columns={summaryColumns}
-            rows={detail.errorSummary}
-            rowKey={(s) => `${s.code}|${s.field ?? ''}`}
-            empty={t('connectors.errorSummaryEmpty')}
-          />
-        </Section>
-      </div>
+      <Section title={t('connectors.problemsTitle')}>
+        {detail.errorSummary.length > 0 && (
+          <ul className="list-plain stack-sm">
+            {detail.errorSummary.map((s) => (
+              <li key={`${s.code}|${s.field ?? ''}`}>
+                <strong>{t('connectors.problemCount', { count: s.count })}</strong>{' '}
+                {importCodeText(i, s.code)}
+                {s.field && (
+                  <span className="small muted">
+                    {' · '}
+                    <FieldText field={s.field} column={columnByField.get(s.field)} />
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <ErrorLog errors={errors} onPageChange={setErrorPage} />
+      </Section>
 
       <Section title={t('connectors.previewTitle')} description={t('connectors.previewIntro')}>
         <PreviewTable preview={detail.preview} />
       </Section>
 
-      <ErrorLog runId={run.id} />
+      <Details>
+        <DescriptionList
+          items={[
+            [
+              t('connectors.connector'),
+              <Link key="connector" to={`/quellen/${run.connectorId}`}>
+                {run.connectorName}
+              </Link>,
+            ],
+            [t('connectors.connectorVersion'), run.connectorVersion],
+            [
+              t('connectors.sourceName'),
+              <span key="file" className="break">
+                {run.sourceName}
+              </span>,
+            ],
+            [t('connectors.sourceSize'), fmt.bytes(run.sourceSize)],
+            [
+              t('connectors.sha256'),
+              <span key="sha" className="mono break small">
+                {run.sourceSha256}
+              </span>,
+            ],
+            [t('connectors.started'), <DateTime key="started" value={run.createdAt} />],
+            [t('connectors.finished'), <DateTime key="finished" value={run.finishedAt} />],
+          ]}
+        />
+      </Details>
 
       <ConfirmDialog
         open={confirm === 'commit'}
@@ -267,13 +287,13 @@ function PreviewTable({ preview }: { preview: RunDetail['preview'] }) {
           </tr>
           <tr>
             {rawCols.map((c) => (
-              <th key={`raw:${c}`} scope="col" className="mono">
+              <th key={`raw:${c}`} scope="col">
                 {c}
               </th>
             ))}
             {mappedCols.map((c) => (
-              <th key={`map:${c}`} scope="col" className="mono">
-                {c}
+              <th key={`map:${c}`} scope="col" className={c.startsWith('athlete.') ? undefined : 'mono'}>
+                {c.startsWith('athlete.') ? targetLabel(i, c, null) : c}
               </th>
             ))}
           </tr>
@@ -308,23 +328,32 @@ function PreviewTable({ preview }: { preview: RunDetail['preview'] }) {
   );
 }
 
-/** Fehlerprotokoll (imports.errors), seitenweise. */
-function ErrorLog({ runId }: { runId: string }) {
+/** Feld eines Prüfeintrags lesbar: Quellspalte, sonst Bezeichnung des Athletenfelds, sonst Feldpfad. */
+function FieldText({ field, column }: { field: string; column?: string }) {
   const i = useI18n();
   const { t } = i;
-  const [page, setPage] = useState(1);
-  const errors = useApiQuery(
-    'imports.errors',
-    { params: { id: runId }, query: { page, pageSize: ERROR_PAGE_SIZE } },
-    { keepPrevious: true },
+  if (column) return <>{`${t('importParams.column')}: ${column}`}</>;
+  if (field.startsWith('athlete.'))
+    return <>{`${t('connectors.colField')}: ${targetLabel(i, field, null)}`}</>;
+  return (
+    <>
+      {t('connectors.colField')}: <span className="mono">{field}</span>
+    </>
   );
+}
+
+/** Betroffene Zeilen (imports.errors), seitenweise: Zeile, Prüfung mit Angaben und Feld, Rohwert, Schwere. */
+function ErrorLog({
+  errors,
+  onPageChange,
+}: {
+  errors: ReturnType<typeof useApiQuery<'imports.errors'>>;
+  onPageChange: (page: number) => void;
+}) {
+  const i = useI18n();
+  const { t } = i;
   const columns: Column<ErrorEntry>[] = [
     { key: 'row', header: t('connectors.colRow'), className: 'num', render: (e) => e.rowNumber },
-    {
-      key: 'field',
-      header: t('connectors.colField'),
-      render: (e) => (e.field ? <span className="mono">{e.field}</span> : t('common.empty')),
-    },
     {
       key: 'code',
       header: t('connectors.colCheck'),
@@ -333,15 +362,20 @@ function ErrorLog({ runId }: { runId: string }) {
         return (
           <span className="stack-sm">
             <span>{importCodeText(i, e.code, e.params)}</span>
-            {params.length > 0 && <span className="small muted">{params.join(' · ')}</span>}
+            {(params.length > 0 || e.field) && (
+              <span className="small muted">
+                {params.join(' · ')}
+                {e.field && (
+                  <>
+                    {params.length > 0 && ' · '}
+                    {t('connectors.colField')}: <span className="mono">{e.field}</span>
+                  </>
+                )}
+              </span>
+            )}
           </span>
         );
       },
-    },
-    {
-      key: 'severity',
-      header: t('connectors.colSeverity'),
-      render: (e) => <StatusBadge group="severity" value={e.severity} />,
     },
     {
       key: 'raw',
@@ -353,23 +387,31 @@ function ErrorLog({ runId }: { runId: string }) {
           <span className="mono break">{e.rawValue}</span>
         ),
     },
+    {
+      key: 'severity',
+      header: t('connectors.colSeverity'),
+      render: (e) => <StatusBadge group="severity" value={e.severity} />,
+    },
   ];
   return (
-    <Section title={t('connectors.errorLogTitle')}>
-      <QueryView query={errors}>
-        {(data) => (
-          <>
-            <Table
-              caption={t('connectors.errorLogTitle')}
-              columns={columns}
-              rows={data.items}
-              rowKey={(e) => `${e.rowNumber}|${e.field ?? ''}|${e.code}|${e.severity}`}
-              empty={t('connectors.errorLogEmpty')}
-            />
-            <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPageChange={setPage} />
-          </>
-        )}
-      </QueryView>
-    </Section>
+    <QueryView query={errors}>
+      {(data) => (
+        <>
+          <Table
+            caption={t('connectors.errorLogTitle')}
+            columns={columns}
+            rows={data.items}
+            rowKey={(e) => `${e.rowNumber}|${e.field ?? ''}|${e.code}|${e.severity}`}
+            empty={t('connectors.errorSummaryEmpty')}
+          />
+          <Pagination
+            page={data.page}
+            pageSize={data.pageSize}
+            total={data.total}
+            onPageChange={onPageChange}
+          />
+        </>
+      )}
+    </QueryView>
   );
 }

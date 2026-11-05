@@ -1,10 +1,10 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { Dataset, FieldDef } from '../../shared/contract/index.ts';
-import { DateTime, DescriptionList, YesNo } from '../components/Misc.tsx';
+import { DateTime, DescriptionList, Details, YesNo } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { EmptyState, QueryView } from '../components/QueryState.tsx';
 import { formatScalar } from '../components/ResultTable.tsx';
-import { CategoryBadge, ShareabilityBadge, SpecialCategoryBadge } from '../components/StatusBadge.tsx';
+import { ShareabilityBadge, SpecialCategoryBadge } from '../components/StatusBadge.tsx';
 import { type Column, Pagination, Table } from '../components/Table.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import type { ApiOutput } from '../lib/api.ts';
@@ -14,7 +14,7 @@ import { useSession } from '../lib/session.tsx';
 type DatasetRecord = ApiOutput<'datasets.records'>['items'][number];
 const PAGE_SIZE = 50;
 
-/** /datensaetze/:id – Metadaten, Felder und Einträge (Zugriff wird protokolliert). */
+/** /datensaetze/:id – Überblick, Felder und Einträge (Zugriff wird protokolliert); Kennungen und Prüfregeln aufklappbar. */
 export function DatasetDetail() {
   const { id = '' } = useParams();
   const dataset = useApiQuery('datasets.get', { params: { id } });
@@ -36,12 +36,16 @@ function DatasetDetailBody({ dataset: d }: { dataset: Dataset }) {
     return `${lo} – ${hi}`;
   };
 
+  // Auf einen Blick: Bezeichnung, Typ, Einheit, Pflicht; Feldnamen und Prüfregeln aufklappbar
   const fieldColumns: Column<FieldDef>[] = [
-    { key: 'name', header: t('datasets.fields.name'), className: 'mono', render: (f) => f.name },
     { key: 'label', header: t('datasets.fields.label'), render: (f) => f.label },
     { key: 'type', header: t('datasets.fields.type'), render: (f) => t(`fieldTypes.${f.type}`) },
     { key: 'unit', header: t('datasets.fields.unit'), render: (f) => f.unit || t('common.empty') },
     { key: 'required', header: t('datasets.fields.required'), render: (f) => <YesNo value={f.required} /> },
+  ];
+  const ruleColumns: Column<FieldDef>[] = [
+    { key: 'name', header: t('datasets.fields.name'), className: 'mono', render: (f) => f.name },
+    { key: 'label', header: t('datasets.fields.label'), render: (f) => f.label },
     { key: 'range', header: t('datasets.fields.range'), className: 'nowrap', render: range },
     {
       key: 'enum',
@@ -57,9 +61,8 @@ function DatasetDetailBody({ dataset: d }: { dataset: Dataset }) {
     },
   ];
 
-  const observedLabel = d.observedAtField
-    ? (d.fields.find((f) => f.name === d.observedAtField)?.label ?? d.observedAtField)
-    : t('datasets.observedAtNone');
+  const fieldLabel = (name: string) => d.fields.find((f) => f.name === name)?.label ?? name;
+  const observedLabel = d.observedAtField ? fieldLabel(d.observedAtField) : t('datasets.observedAtNone');
 
   return (
     <>
@@ -68,11 +71,12 @@ function DatasetDetailBody({ dataset: d }: { dataset: Dataset }) {
         back={{ to: '/datensaetze', label: t('datasets.backToList') }}
         description={d.description || undefined}
         meta={
-          <>
-            <CategoryBadge category={d.category} />
-            <SpecialCategoryBadge show={d.specialCategory} />
-            <ShareabilityBadge value={d.shareability} />
-          </>
+          d.specialCategory || d.shareability === 'internal' ? (
+            <>
+              <SpecialCategoryBadge show={d.specialCategory} />
+              {d.shareability === 'internal' && <ShareabilityBadge value={d.shareability} />}
+            </>
+          ) : undefined
         }
         actions={
           session.can('datasets.update') ? (
@@ -83,47 +87,66 @@ function DatasetDetailBody({ dataset: d }: { dataset: Dataset }) {
         }
       />
 
-      <Section title={t('datasets.metadata')}>
-        <DescriptionList
-          items={[
-            [
-              t('datasets.slug'),
-              <span key="slug" className="mono">
-                {d.slug}
-              </span>,
-            ],
-            [t('datasets.category'), t(`categories.${d.category}`)],
-            [t('datasets.specialCategory'), <YesNo key="special" value={d.specialCategory} />],
-            [t('datasets.shareability'), t(`shareability.${d.shareability}`)],
-            [t('datasets.version'), d.version],
-            [
-              t('datasets.keyFields'),
-              d.keyFields.length > 0 ? (
-                <span key="keys" className="mono">
-                  {d.keyFields.join(', ')}
-                </span>
-              ) : (
-                t('datasets.noKeyFields')
-              ),
-            ],
-            [t('datasets.observedAtField'), observedLabel],
-            [t('datasets.ownerContact'), d.ownerContact || t('common.empty')],
-            [t('datasets.recordCount'), fmt.number(d.recordCount)],
-            [t('datasets.createdAt'), <DateTime key="created" value={d.createdAt} />],
-            [t('datasets.updatedAt'), <DateTime key="updated" value={d.updatedAt} />],
-          ]}
-        />
-      </Section>
+      <div className="grid-2">
+        <Section title={t('datasets.summaryTitle')}>
+          <DescriptionList
+            items={[
+              [t('datasets.category'), t(`categories.${d.category}`)],
+              [t('datasets.recordCount'), fmt.number(d.recordCount)],
+              [t('datasets.observedAtField'), observedLabel],
+              [t('datasets.ownerContact'), d.ownerContact || t('common.empty')],
+            ]}
+          />
+          <Details>
+            <DescriptionList
+              items={[
+                [
+                  t('datasets.slug'),
+                  <span key="slug" className="mono">
+                    {d.slug}
+                  </span>,
+                ],
+                [t('datasets.specialCategory'), <YesNo key="special" value={d.specialCategory} />],
+                [t('datasets.shareability'), t(`shareability.${d.shareability}`)],
+                [t('datasets.version'), d.version],
+                [
+                  t('datasets.keyFields'),
+                  d.keyFields.length > 0 ? (
+                    <span key="keys">
+                      {d.keyFields.map(fieldLabel).join(', ')}{' '}
+                      <span className="small muted mono">({d.keyFields.join(', ')})</span>
+                    </span>
+                  ) : (
+                    t('datasets.noKeyFields')
+                  ),
+                ],
+                [t('datasets.createdAt'), <DateTime key="created" value={d.createdAt} />],
+                [t('datasets.updatedAt'), <DateTime key="updated" value={d.updatedAt} />],
+              ]}
+            />
+          </Details>
+        </Section>
 
-      <Section title={t('datasets.fields.title')}>
-        <Table
-          columns={fieldColumns}
-          rows={d.fields}
-          rowKey={(f) => f.name}
-          caption={t('datasets.fields.caption')}
-          empty={t('datasets.fields.empty')}
-        />
-      </Section>
+        <Section title={t('datasets.fields.title')}>
+          <Table
+            columns={fieldColumns}
+            rows={d.fields}
+            rowKey={(f) => f.name}
+            caption={t('datasets.fields.caption')}
+            empty={t('datasets.fields.empty')}
+          />
+          {d.fields.length > 0 && (
+            <Details summary={t('datasets.fields.rulesTitle')}>
+              <Table
+                columns={ruleColumns}
+                rows={d.fields}
+                rowKey={(f) => f.name}
+                caption={t('datasets.fields.rulesTitle')}
+              />
+            </Details>
+          )}
+        </Section>
+      </div>
 
       <DatasetRecords dataset={d} />
     </>
@@ -194,12 +217,14 @@ function DatasetRecords({ dataset: d }: { dataset: Dataset }) {
             <EmptyState message={t('datasets.recordsEmpty')} />
           ) : (
             <div className="stack">
-              <Table
-                columns={columns}
-                rows={data.items}
-                rowKey={(r) => r.id}
-                caption={t('datasets.recordsCaption')}
-              />
+              <div className="table-scroll">
+                <Table
+                  columns={columns}
+                  rows={data.items}
+                  rowKey={(r) => r.id}
+                  caption={t('datasets.recordsCaption')}
+                />
+              </div>
               <Pagination
                 page={data.page}
                 pageSize={data.pageSize}

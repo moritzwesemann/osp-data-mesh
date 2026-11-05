@@ -13,6 +13,7 @@ import {
   apiStateFrom,
   buildApiConfig,
   CsvConfigFields,
+  csvDiffers,
   DEFAULT_API,
   DEFAULT_CSV,
 } from '../components/connectors/ConfigFields.tsx';
@@ -24,9 +25,16 @@ import {
   type MappingField,
 } from '../components/connectors/MappingEditor.tsx';
 import { SecretSection } from '../components/connectors/SecretSection.tsx';
-import { targetLabel, targetOptions } from '../components/connectors/shared.ts';
+import {
+  dateFormatLabel,
+  delimiterLabel,
+  ENCODING_LABELS,
+  targetLabel,
+  targetOptions,
+} from '../components/connectors/shared.ts';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { Checkbox, FormActions, FormField } from '../components/FormField.tsx';
+import { Details, useOpenWhen } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { QueryView } from '../components/QueryState.tsx';
 import { useToast } from '../components/Toast.tsx';
@@ -56,7 +64,6 @@ export function ConnectorForm() {
     <div className="page">
       <PageHeader
         title={id ? t('connectors.editTitle') : t('connectors.newTitle')}
-        description={id ? t('connectors.editVersionHint') : undefined}
         back={
           id
             ? { to: `/quellen/${id}`, label: t('connectors.backToConnector') }
@@ -142,6 +149,10 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
           ? { secret }
           : undefined;
   const fe = useFieldErrors(clientError, mutation.error);
+  const csvOpen = useOpenWhen(csvDiffers(csv) || Boolean(fe('config')));
+  const advancedOpen = useOpenWhen(
+    onError !== 'skip_row' || !active || Boolean(fe('onError') ?? fe('active')),
+  );
 
   const datasetItems = datasets.data?.items ?? [];
   const selectedDataset = datasetItems.find((d) => d.id === datasetId) ?? null;
@@ -213,6 +224,16 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
       <form className="form form-wide" onSubmit={submit} noValidate>
         <Section title={t('connectors.sectionBasics')}>
           <div className="form-grid">
+            <FormField
+              label={t('connectors.name')}
+              required
+              error={fe('name')}
+              className={connector ? 'span-2' : undefined}
+            >
+              {(a) => (
+                <input {...a} className="input" value={name} onChange={(e) => setName(e.target.value)} />
+              )}
+            </FormField>
             {!connector && (
               <FormField
                 label={t('connectors.slug')}
@@ -231,16 +252,6 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
                 )}
               </FormField>
             )}
-            <FormField
-              label={t('connectors.name')}
-              required
-              error={fe('name')}
-              className={connector ? 'span-2' : undefined}
-            >
-              {(a) => (
-                <input {...a} className="input" value={name} onChange={(e) => setName(e.target.value)} />
-              )}
-            </FormField>
             <FormField className="span-2" label={t('connectors.description')} error={fe('description')}>
               {(a) => (
                 <textarea
@@ -321,10 +332,31 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
           )}
         </Section>
 
-        <Section title={kind === 'csv_upload' ? t('connectors.sectionCsv') : t('connectors.sectionApi')}>
-          {kind === 'csv_upload' ? (
+        {kind === 'csv_upload' ? (
+          <Section
+            title={
+              <>
+                {t('connectors.sectionCsv')}
+                <span className="title-note">
+                  {[
+                    delimiterLabel(i, csv.delimiter),
+                    ENCODING_LABELS[csv.encoding],
+                    csv.decimalSeparator === ','
+                      ? t('connectors.decimalComma')
+                      : t('connectors.decimalPoint'),
+                    dateFormatLabel(i, csv.dateFormat),
+                  ].join(' · ')}
+                </span>
+              </>
+            }
+            description={t('connectors.csvSettingsHint')}
+            collapsible
+            defaultOpen={csvOpen}
+          >
             <CsvConfigFields value={csv} onChange={setCsv} fe={fe} />
-          ) : (
+          </Section>
+        ) : (
+          <Section title={t('connectors.sectionApi')}>
             <ApiConfigFields
               value={apiState}
               onChange={setApiState}
@@ -332,8 +364,8 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
               queryInvalid={queryInvalid}
               secret={connector ? null : { value: secret, onChange: setSecret }}
             />
-          )}
-        </Section>
+          </Section>
+        )}
 
         <Section title={t('connectors.sectionMapping')}>
           <MappingEditor
@@ -403,6 +435,11 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
                 </p>
               </div>
             )}
+          </div>
+        </Section>
+
+        <Details summary={t('connectors.advanced')} defaultOpen={advancedOpen}>
+          <div className="form-grid">
             <FormField label={t('connectors.onError')} error={fe('onError')}>
               {(a) => (
                 <select
@@ -423,7 +460,7 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
               onChange={setActive}
             />
           </div>
-        </Section>
+        </Details>
 
         {error && <ErrorMessage error={error} />}
         <FormActions>

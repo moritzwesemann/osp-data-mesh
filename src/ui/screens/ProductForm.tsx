@@ -11,7 +11,7 @@ import {
 } from '../components/ConditionBuilder.tsx';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { Fieldset, FormActions, FormField } from '../components/FormField.tsx';
-import { DescriptionList } from '../components/Misc.tsx';
+import { DescriptionList, Details, useOpenWhen } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { ColumnPicker } from '../components/products/ColumnPicker.tsx';
 import { type ColumnEntry, columnIssues, sourceOptions } from '../components/products/sources.ts';
@@ -203,6 +203,10 @@ function ProductEditor({ product, datasets }: { product: Product | null; dataset
   };
 
   const columnServerError = (n: number, field: 'key' | 'label') => fe(`columns.${n}.${field}`);
+  // Kennung (wird aus dem Namen gebildet) und Basisfilter: aufgeklappt bei Fehlern bzw. vorhandenen Filtern
+  // Kennung schon vergeben: Der Server meldet das als Konflikt ohne Feldpfad
+  const slugOpen = useOpenWhen(Boolean(fe('slug')) || serverError?.reason === 'slug_taken');
+  const filtersOpen = useOpenWhen(filters.length > 0 || invalidFilters.length > 0 || Boolean(fe('filters')));
 
   return (
     <form className="form form-wide stack-lg" onSubmit={submit} noValidate>
@@ -214,22 +218,6 @@ function ProductEditor({ product, datasets }: { product: Product | null; dataset
 
       <Section title={t('products.basics')}>
         <div className="form-grid">
-          {!isEdit && (
-            <FormField label={t('products.slug')} required hint={t('products.slugHint')} error={fe('slug')}>
-              {(a) => (
-                <input
-                  {...a}
-                  className="input mono"
-                  value={slug}
-                  autoComplete="off"
-                  onChange={(e) => {
-                    setSlug(e.target.value.trim());
-                    setSlugTouched(true);
-                  }}
-                />
-              )}
-            </FormField>
-          )}
           <FormField label={t('products.name')} required error={fe('name')}>
             {(a) => (
               <input
@@ -240,17 +228,6 @@ function ProductEditor({ product, datasets }: { product: Product | null; dataset
                   setName(e.target.value);
                   if (!slugTouched) setSlug(slugify(e.target.value));
                 }}
-              />
-            )}
-          </FormField>
-          <FormField label={t('products.description')} className="span-2" error={fe('description')}>
-            {(a) => (
-              <textarea
-                {...a}
-                className="input"
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
               />
             )}
           </FormField>
@@ -271,6 +248,43 @@ function ProductEditor({ product, datasets }: { product: Product | null; dataset
               </select>
             )}
           </FormField>
+          <FormField label={t('products.description')} className="span-2" error={fe('description')}>
+            {(a) => (
+              <textarea
+                {...a}
+                className="input"
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            )}
+          </FormField>
+          {!isEdit && (
+            <Details
+              className="span-2"
+              summary={
+                <>
+                  {t('products.slug')}: <span className="mono">{slug || t('common.empty')}</span>
+                </>
+              }
+              defaultOpen={slugOpen}
+            >
+              <FormField label={t('products.slug')} required hint={t('products.slugHint')} error={fe('slug')}>
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={slug}
+                    autoComplete="off"
+                    onChange={(e) => {
+                      setSlug(e.target.value.trim());
+                      setSlugTouched(true);
+                    }}
+                  />
+                )}
+              </FormField>
+            </Details>
+          )}
         </div>
       </Section>
 
@@ -378,7 +392,12 @@ function ProductEditor({ product, datasets }: { product: Product | null; dataset
         />
       </Section>
 
-      <Section title={t('products.filtersTitle')} description={t('products.filtersIntro')}>
+      <Section
+        title={t('products.filtersTitle')}
+        description={t('products.filtersIntro')}
+        collapsible
+        defaultOpen={filtersOpen}
+      >
         {columns.length === 0 ? (
           <p className="muted">{t('products.filtersNeedColumns')}</p>
         ) : (

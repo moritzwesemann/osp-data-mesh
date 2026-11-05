@@ -2,8 +2,7 @@ import type { Messages } from '../de.ts';
 
 export const products: Messages['products'] = {
   listTitle: 'Data products',
-  listIntro:
-    'Data products are views on the athlete core or a dataset with selected columns and base filters. Every release refers to a data product.',
+  listIntro: 'Selected columns from the athlete core or a dataset – the basis of every release.',
   create: 'Create data product',
   empty: 'There are no data products yet.',
   emptyNoRights: 'There are no data products yet; only data stewards can create them.',
@@ -33,8 +32,7 @@ export const products: Messages['products'] = {
   specialHint:
     'Health data and other special categories (Art. 9 GDPR) may only be released with a consent requirement.',
   columnsTitle: 'Columns',
-  columnsIntro:
-    'Choose the fields the product contains. Releases can later only release subsets of them; new columns are never released automatically.',
+  columnsIntro: 'Releases later only release parts of them; new columns are never released automatically.',
   availableFields: 'Available fields',
   groupAthlete: 'Athlete core',
   groupRecord: 'Record',
@@ -48,6 +46,8 @@ export const products: Messages['products'] = {
   columnKeyFor: 'Column key for {field}',
   columnLabelFor: 'Label for {field}',
   columnKeyHint: 'Column keys appear in exports and interfaces: lower-case letters, digits and underscore.',
+  showKeys: 'Show column keys',
+  hideKeys: 'Hide column keys',
   moveUp: 'Move up',
   moveDown: 'Move down',
   moveUpFor: 'Move {field} up',
@@ -69,20 +69,19 @@ export const products: Messages['products'] = {
   saved: 'Data product saved.',
   edit: 'Edit',
   release: 'Grant release',
-  viewReleases: 'View releases',
   retire: 'Retire',
   retireTitle: 'Retire data product',
   retireConfirm:
     'Retire “{name}”? All access through releases ends immediately, BI views are removed and partner nodes receive a revocation notice. This cannot be undone.',
   retired: 'Data product retired.',
   retiredNotice: 'This data product is retired and no longer delivers data.',
-  details: 'Details',
-  activeReleases: 'Active releases',
+  activeReleasesN: '{count} active {count|release|releases}',
+  columnPath: 'Field path',
+  columnsTechnical: 'Column keys and field paths',
   columnsTable: 'Columns of the product',
   filtersNone: 'No base filters – all rows of the source belong to the product.',
   previewTitle: 'Preview',
-  previewIntro:
-    'Shows up to 50 rows of the product without release restrictions (columns, rows, consent). The access is logged.',
+  previewIntro: 'Up to 50 rows without release restrictions. The access is logged.',
   loadPreview: 'Load preview',
   refreshPreview: 'Refresh preview',
   previewStats: '{returned} of {total} rows shown.',

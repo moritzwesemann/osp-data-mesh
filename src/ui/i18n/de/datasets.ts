@@ -1,8 +1,7 @@
 /** Datensätze: Strukturen mit Feldern, Format- und Plausibilitätsregeln; Einträge. */
 export const datasets = {
   title: 'Datensätze',
-  intro:
-    'Strukturen für Leistungs-, Trainings-, Gesundheits- und Wettkampfdaten mit Format- und Plausibilitätsregeln.',
+  intro: 'Wie Leistungs-, Trainings-, Gesundheits- und Wettkampfdaten aufgebaut sind und geprüft werden.',
   create: 'Datensatz anlegen',
   createTitle: 'Datensatz anlegen',
   editTitle: 'Datensatz bearbeiten',
@@ -18,12 +17,10 @@ export const datasets = {
   description: 'Beschreibung',
   category: 'Kategorie',
   specialCategory: 'Besondere Kategorie personenbezogener Daten (Art. 9 DSGVO)',
-  specialShort: 'Art. 9',
   specialHint:
-    'Gesundheitsdaten und andere besondere Kategorien dürfen nur mit dokumentierter Einwilligung der Person freigegeben werden. Bei der Kategorie „Gesundheit“ ist die Markierung immer gesetzt.',
+    'Nur mit dokumentierter Einwilligung der Person freigebbar. Bei der Kategorie „Gesundheit“ immer gesetzt.',
   shareability: 'Teilbarkeit',
-  shareabilityHint:
-    '„Nur intern“ verhindert jede Freigabe an Partnerknoten; „Teilbar auf Anfrage“ erlaubt Freigaben im Einzelfall.',
+  shareabilityHint: '„Nur intern“ verhindert jede Freigabe an Partnerknoten.',
   reclassifyWarning:
     'Eine geänderte Einstufung gilt als Änderung der Datenprodukte aus diesem Datensatz: Sie erhalten beim Speichern eine neue Version; bestehende Freigaben veralten und müssen neu erteilt werden.',
   reclassifyPeerWarning:
@@ -35,11 +32,13 @@ export const datasets = {
   version: 'Version',
   updatedAt: 'Geändert',
   createdAt: 'Angelegt',
+  summaryTitle: 'Überblick',
+  advanced: 'Erweiterte Einstellungen',
   general: 'Allgemein',
-  metadata: 'Metadaten',
   fields: {
     title: 'Felder',
-    intro: 'Jedes Feld legt Typ und Prüfregeln fest; Importe prüfen jede Zeile dagegen.',
+    intro:
+      'Importe prüfen jede Zeile gegen Typ und Regeln der Felder; fehlt ein Pflichtfeld, gilt die Zeile als fehlerhaft.',
     caption: 'Felder des Datensatzes',
     empty: 'Noch keine Felder – fügen Sie mindestens ein Feld hinzu.',
     add: 'Feld hinzufügen',
@@ -51,7 +50,6 @@ export const datasets = {
     unit: 'Einheit',
     unitHint: 'z. B. cm, s, kg',
     required: 'Pflichtfeld',
-    requiredHint: 'Zeilen ohne Wert werden beim Import als Fehler markiert.',
     min: 'Minimum',
     max: 'Maximum',
     rangeHint: 'Plausibilitätsgrenzen (inklusive); Werte außerhalb werden beim Import gemeldet.',
@@ -62,15 +60,16 @@ export const datasets = {
     moveUp: 'Nach oben',
     moveDown: 'Nach unten',
     remove: 'Feld entfernen',
+    more: 'Weitere Angaben',
+    rulesTitle: 'Feldnamen und Prüfregeln',
   },
   keyFields: 'Fachlicher Schlüssel',
   keyFieldsHint:
-    'Felder, die zusammen mit der Person einen Eintrag eindeutig machen; ein erneuter Import aktualisiert dann vorhandene Einträge statt sie zu verdoppeln.',
+    'Machen zusammen mit der Person einen Eintrag eindeutig – ein erneuter Import aktualisiert dann, statt zu verdoppeln.',
   keyFieldsNone: 'Legen Sie zuerst Felder mit Feldnamen an.',
   noKeyFields: 'Kein fachlicher Schlüssel',
   observedAtField: 'Beobachtungsdatum',
-  observedAtHint:
-    'Datums- oder Zeitpunktfeld mit dem Mess- bzw. Beobachtungszeitpunkt; nötig für zeitlich beschränkte Freigaben.',
+  observedAtHint: 'Messzeitpunkt der Einträge; nötig für zeitlich beschränkte Freigaben.',
   observedAtNone: 'Kein Beobachtungsdatum',
   versionWarning:
     'Änderungen an Feldern erhöhen die Version. Darauf aufbauende Datenprodukte können sich dadurch ändern, und deren Freigaben müssen dann neu erteilt werden.',

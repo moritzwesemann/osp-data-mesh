@@ -174,9 +174,15 @@ df <- DBI::dbGetQuery(con, "select * from bi.leistungsdiagnostik")
 ## Apache Superset: Referenz-Dashboards
 
 Optional enthält `deploy/` eine Superset-Installation (Docker-Profil `bi`), die sich ausschließlich als
-`mesh_bi` mit dem Schema `bi` verbindet und drei Referenz-Dashboards anlegt. **Nicht lokal verifiziert**
-(auf der Entwicklungsmaschine ist kein Docker verfügbar); Anleitung und manuelle Schritte in
-`deploy/superset/README.md`.
+`mesh_bi` mit dem Schema `bi` verbindet und drei Referenz-Dashboards anlegt. **Ohne Docker verifiziert:**
+Superset 6.1.0 (aus PyPI, virtuelle Umgebung) mit der mitgelieferten Konfiguration und dem
+Einrichtungsskript gegen die BI-Views der Demo: alle 13 Diagramme liefern Daten, die Dashboards laden ohne
+Fehler. **Nicht verifiziert** sind das Docker-Abbild und das Compose-Profil `bi` selbst (kein Docker auf der
+Entwicklungsmaschine), Caddy/HTTPS vor Superset und TLS zur Datenbank. Anleitung, lokale Prüfung und
+manuelle Schritte in `deploy/superset/README.md`; Bildschirmfotos
+[Kaderübersicht](screenshots/17-superset-kader.png),
+[Sprungkraft-Entwicklung](screenshots/18-superset-sprungkraft.png),
+[Leistungsdiagnostik](screenshots/19-superset-leistungsdiagnostik.png).
 
 | Dashboard | View (Schema `bi`) | Spalten | Inhalt |
 |---|---|---|---|

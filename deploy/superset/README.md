@@ -1,9 +1,14 @@
 # Apache Superset für OSP-Data-Mesh (optional)
 
-> **NICHT LOKAL VERIFIZIERT.** Auf der Entwicklungsmaschine ist kein Docker installiert; geprüft wurden
-> nur die Python-Syntax (Python 3.9), der Plan des Einrichtungsskripts (`--print-plan`), die Struktur von
-> `docker-compose.yml` und die Superset-Schnittstellen anhand der Quellen von Superset 6.1.0. Vor einem
-> Einsatz einmal vollständig durchspielen.
+> **Ohne Docker verifiziert** (November 2026): Superset 6.1.0 aus PyPI in einer virtuellen Umgebung
+> (Python 3.11, Abhängigkeiten auf die Stände von `requirements/base.txt` des Tags 6.1.0 festgelegt, aus
+> denen auch das Abbild gebaut ist) mit genau dieser `superset_config.py` und diesem
+> `bootstrap_superset.py` gegen die BI-Views der Demo (`osp-nord`, als `mesh_bi`): Verbindung, drei
+> Datasets, 13 Diagramme (jede Abfrage liefert Zeilen) und drei Dashboards im Browser ohne Fehler,
+> wiederholter Lauf ohne Duplikate. Bildschirmfotos: `docs/screenshots/17-…19-superset-*.png`. Ablauf siehe
+> [Lokal ohne Docker prüfen](#lokal-ohne-docker-prüfen).
+> **Nicht verifiziert:** Bau des Docker-Abbilds und das Compose-Profil `bi` (kein Docker auf der
+> Entwicklungsmaschine), Betrieb hinter Caddy/HTTPS und TLS zur Datenbank.
 
 Superset dient als Referenz für die BI-Anforderung (B1/B2): Es liest **ausschließlich als Datenbankrolle
 `mesh_bi`** die Views im Schema `bi` (nur lesend, nur freigegebene Daten) und bringt drei
@@ -54,6 +59,47 @@ docker compose --profile bi run --rm superset-bootstrap
 
 Plan ohne Superset anzeigen: `python3 bootstrap_superset.py --print-plan`.
 
+## Lokal ohne Docker prüfen
+
+Gegen die Demo, ohne globale Installation: alles liegt im (gitignorierten) Verzeichnis `.local/superset/`
+(virtuelle Umgebung etwa 0,7 GB). Benötigt Python 3.10 oder neuer (geprüft mit 3.11); vom
+Projektverzeichnis aus:
+
+```sh
+bun run demo -- --keep-running            # osp-nord mit den Views bi.* auf 127.0.0.1:55431
+
+python3.11 -m venv .local/superset/venv
+# Abhängigkeitsstände wie im Abbild (ohne die Zeile "-e ./superset-core" der Quellen)
+curl -sfL https://raw.githubusercontent.com/apache/superset/6.1.0/requirements/base.txt \
+  | grep -v '^-e' > .local/superset/constraints-6.1.0.txt
+.local/superset/venv/bin/pip install -c .local/superset/constraints-6.1.0.txt \
+  apache-superset==6.1.0 apache-superset-core==0.1.0rc3 psycopg2-binary==2.9.13
+
+export SUPERSET_CONFIG_PATH="$PWD/deploy/superset/superset_config.py"
+export PYTHONDONTWRITEBYTECODE=1                         # kein __pycache__ in deploy/superset/
+export SUPERSET_HOME="$PWD/.local/superset/home"
+export SUPERSET_METADATA_DB_URI="sqlite:///$PWD/.local/superset/superset.db?check_same_thread=false"
+export SUPERSET_SECRET_KEY="$(openssl rand -base64 42)"   # für spätere Starts aufbewahren
+export SUPERSET_ADMIN_USER=admin SUPERSET_ADMIN_PASSWORD="$(openssl rand -hex 16)"
+export SUPERSET_URL=http://127.0.0.1:4411
+# Passwort: MESH_DB_BI_PASSWORD aus .local/demo/osp-nord/owner.env; der Demo-Cluster hat kein TLS
+export SUPERSET_MESH_DB_URI="postgresql+psycopg2://mesh_bi:<passwort>@127.0.0.1:55431/mesh?sslmode=disable"
+
+S=.local/superset/venv/bin
+$S/superset db upgrade
+$S/superset fab create-admin --username admin --firstname Superset --lastname Admin \
+  --email admin@localhost --password "$SUPERSET_ADMIN_PASSWORD"
+$S/superset init
+$S/gunicorn --bind 127.0.0.1:4411 --workers 1 --worker-class gthread --threads 4 --timeout 120 \
+  "superset.app:create_app()" &
+$S/python deploy/superset/bootstrap_superset.py
+```
+
+`apache-superset-core==0.1.0rc3` ist der Stand, den der Tag 6.1.0 mitbringt. Anmelden im Browser unter
+`http://127.0.0.1:4411/`: Das Sitzungs-Cookie trägt `Secure` (`SESSION_COOKIE_SECURE`); Chromium
+akzeptiert es für `127.0.0.1` auch ohne HTTPS (geprüft), andere Browser womöglich nicht. Beenden: den
+gunicorn-Prozess stoppen, dann `bun run demo:stop`.
+
 ## Vertrag: Views im Schema `bi`
 
 Die Dashboards erwarten die folgenden Views. Eine View heißt wie das **Kürzel (slug) des Datenprodukts**
@@ -93,6 +139,14 @@ trotzdem angelegt und beim nächsten Lauf vervollständigt.
 
 Verwendete Superset-Diagrammtypen: `big_number_total`, `echarts_timeseries_bar`, `pie`,
 `pivot_table_v2`, `echarts_timeseries_line`, `histogram_v2`, `table`.
+
+**Abfragekontext:** Das Skript legt die Diagramme (wie Superset seine Beispieldiagramme) nur mit
+Formulardaten an. Dashboards berechnen die Abfrage daraus im Browser und sind nicht betroffen.
+`GET /api/v1/chart/<id>/data/` sowie Berichte und Alerts mit CSV- oder Textinhalt brauchen dagegen einen
+gespeicherten Abfragekontext (sonst „Chart has no query context saved“). Superset erzeugt und speichert
+ihn, sobald das Diagramm einmal in *Explore* geöffnet wird. Ändert ein späterer Lauf des Skripts die
+Definition eines Diagramms, verwirft das Skript den gespeicherten Kontext, damit keine veraltete Abfrage
+übrig bleibt; danach das Diagramm erneut einmal in Explore öffnen.
 
 ## Manuelle Einrichtung (falls das Skript scheitert)
 

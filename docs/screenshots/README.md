@@ -18,3 +18,6 @@ Aufgenommen mit `bun run demo -- --keep-running` (synthetische Daten, deutsche O
 - `14-benutzer.png` – Benutzerverwaltung mit Rollen, Status und letzter Anmeldung.
 - `15-mobil-navigation.png` – Aufgeklapptes Menü auf dem Smartphone (390 × 844).
 - `16-mobil-meine-daten.png` – „Meine Daten“ auf dem Smartphone (390 × 844).
+- `17-superset-kader.png` – Apache Superset 6.1.0, Referenz-Dashboard „Kaderübersicht“ auf der View `bi.kader_uebersicht` von osp-nord (als `mesh_bi`, eingerichtet mit `deploy/superset/bootstrap_superset.py`; 1440 × 1500).
+- `18-superset-sprungkraft.png` – Superset-Dashboard „Sprungkraft-Entwicklung“ auf `bi.sprungkraft` (CMJ-Verläufe je Sportart, nach Kaderstatus, Anzahl Messungen; 1440 × 1100).
+- `19-superset-leistungsdiagnostik.png` – Superset-Dashboard „Leistungsdiagnostik“ auf `bi.leistungsdiagnostik` (VO2max-Histogramm, Laktatschwelle, Zeitverlauf, Kennwerte-Tabelle; 1440 × 1100).

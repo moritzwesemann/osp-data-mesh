@@ -51,8 +51,8 @@ Stand der Prüfung: `bun test` 637 Tests in 42 Dateien bestanden; `bun run demo`
 
 | ID | Anforderung | Modul / Artefakt | Nachweis | Status |
 |---|---|---|---|---|
-| B1 | Apache Superset (oder gleichwertig) | Compose-Profil `bi`, `deploy/superset/` | – | nicht verifiziert |
-| B2 | 2–3 Referenz-Dashboards | `deploy/superset/bootstrap_superset.py` (3 Dashboards) | zugrunde liegende Views in der Demo geprüft | nicht verifiziert |
+| B1 | Apache Superset (oder gleichwertig) | Compose-Profil `bi`, `deploy/superset/` | Superset 6.1.0 lokal (venv, ohne Docker) gegen die Demo-Views als `mesh_bi`; Docker-Profil selbst nicht geprüft | getestet (lokal); Docker nicht verifiziert |
+| B2 | 2–3 Referenz-Dashboards | `deploy/superset/bootstrap_superset.py` (3 Dashboards, 13 Diagramme) | alle 13 Diagrammabfragen liefern Daten; Screenshots 17–19 in [Oberfläche/BI](bi.md) | getestet (lokal) |
 | B3 | Offene Schnittstellen (Excel, Power BI, SAP AC, Tableau, Python) | Schema `bi` (Rolle `mesh_bi`, nur lesend), REST CSV/JSON/XML | `bi.test.ts`, Demo (Zugriff als `mesh_bi`) | getestet (Schnittstellen); Werkzeuge selbst nicht getestet |
 
 ## Rollen, Rechte, Datenschutz, Sicherheit

@@ -1,8 +1,13 @@
 """
 Einrichtung von Apache Superset für OSP-Data-Mesh über die REST-API von Superset.
 
-NICHT LOKAL VERIFIZIERT (kein Docker auf der Entwicklungsmaschine). Geprüft wurden nur die Syntax
-(Python 3.9) und der Plan (--print-plan); siehe deploy/superset/README.md für manuelle Schritte.
+Lokal verifiziert mit Superset 6.1.0 (PyPI, virtuelle Umgebung, ohne Docker) gegen die BI-Views der Demo
+(osp-nord, als mesh_bi); das Docker-Abbild selbst nicht. Siehe deploy/superset/README.md, dort auch die
+manuellen Schritte.
+
+Die Diagramme werden wie die Beispieldiagramme von Superset ohne gespeicherten Abfragekontext angelegt:
+Dashboards berechnen die Abfrage im Browser aus den Formulardaten. GET /api/v1/chart/<id>/data/ (und Berichte
+mit CSV-/Textinhalt) brauchen ihn; Superset erzeugt und speichert ihn beim ersten Öffnen in Explore.
 
 Legt idempotent an:
   1. Datenbankverbindung "OSP-Data-Mesh (BI)" als Rolle mesh_bi (nur lesend, nur Schema "bi")
@@ -173,10 +178,23 @@ class ApiError(Exception):
         self.body = body
 
 
+class _InternalHttpCookiePolicy(http.cookiejar.DefaultCookiePolicy):
+    """Sitzungs-Cookie auch über http:// zurücksenden.
+
+    superset_config.py setzt SESSION_COOKIE_SECURE (Browser erreichen Superset nur über Caddy/HTTPS);
+    dieses Skript spricht Superset aber intern über http://superset:8088 an. Ohne Cookie fehlt Flask-WTF
+    das CSRF-Geheimnis der Sitzung, und jede schreibende Anfrage scheitert mit "400 The CSRF session token
+    is missing". Das Cookie geht nur an SUPERSET_URL, über dieselbe Verbindung wie Passwort und Token.
+    """
+
+    def return_ok_secure(self, cookie, request):
+        return True
+
+
 class Superset:
     def __init__(self, base_url):
         self.base = base_url.rstrip("/")
-        self.jar = http.cookiejar.CookieJar()
+        self.jar = http.cookiejar.CookieJar(policy=_InternalHttpCookiePolicy())
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
         self.token = None
         self.csrf = None
@@ -318,6 +336,10 @@ def ensure_chart(api, title, viz_type, ds_id, form, dash_id):
     found = api.find("chart", "slice_name", title)
     if found:
         chart_id = found[0]["id"]
+        if json.loads(found[0].get("params") or "{}") != params:
+            # Geänderte Definition: einen gespeicherten Abfragekontext (erzeugt Superset beim ersten Öffnen
+            # in Explore) verwerfen, sonst lieferten /api/v1/chart/<id>/data/ und Berichte die alte Abfrage.
+            payload["query_context"] = None
         api.request("PUT", "/api/v1/chart/%d" % chart_id, payload)
     else:
         chart_id = api.request("POST", "/api/v1/chart/", payload)["id"]

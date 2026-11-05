@@ -1,8 +1,9 @@
 """
 Superset-Konfiguration für OSP-Data-Mesh (optional, Profil "bi").
 
-NICHT LOKAL VERIFIZIERT. Wird über PYTHONPATH (/app/pythonpath) geladen und überschreibt die
-Standardwerte von Superset. Keine Beispieldaten, keine öffentliche Rolle, Betrieb hinter Caddy (TLS).
+Wird über PYTHONPATH (/app/pythonpath) geladen (lokal ohne Docker: SUPERSET_CONFIG_PATH) und
+überschreibt die Standardwerte von Superset. Keine Beispieldaten, keine öffentliche Rolle, Betrieb hinter
+Caddy (TLS). Mit Superset 6.1.0 ohne Docker verifiziert, siehe README.md.
 """
 
 import os

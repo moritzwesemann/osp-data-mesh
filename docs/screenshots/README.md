@@ -3,7 +3,7 @@
 Aufgenommen mit `bun run demo -- --keep-running` (synthetische Daten, deutsche Oberfläche, 1440 × 900 Pixel, sofern nicht anders angegeben).
 
 - `01-anmeldung.png` – Anmeldung am Knoten osp-nord.
-- `02-uebersicht.png` – Startseite der Datenverantwortung: für die Person freigegebene Daten und Kennzahlen „Auf einen Blick“.
+- `02-uebersicht.png` – Startseite der Datenverantwortung: Symbolleiste links, offene Importvorschau unter „Zu erledigen“, „Zuletzt geöffnet“ als Kacheln, für die Person freigegebene Daten und Kennzahlen „Auf einen Blick“.
 - `03-athleten.png` – Athletenliste mit Suche und Filtern nach Sportart und Kaderstatus.
 - `04-quelle-import-vorschau.png` – Importlauf einer CSV-Datei (Auszug aus der Leistungsdiagnostik) als Vorschau mit Zählern, Fehlern und Vorschauzeilen (ganze Seite).
 - `05-datenprodukt.png` – Datenprodukt „Leistungsdiagnostik“ mit Überblick und Spalten.
@@ -16,7 +16,7 @@ Aufgenommen mit `bun run demo -- --keep-running` (synthetische Daten, deutsche O
 - `12-audit.png` – Audit-Log der Revision nach erfolgreicher Prüfung der Hash-Kette, mit Export und Filtern.
 - `13-system.png` – Systemstatus der Administration nach einer manuellen Sicherung: Zustand auf einen Blick und Sicherungen.
 - `14-benutzer.png` – Benutzerverwaltung mit Rollen, Status und letzter Anmeldung.
-- `15-mobil-navigation.png` – Aufgeklapptes Menü auf dem Smartphone (390 × 844).
+- `15-mobil-navigation.png` – Aufgeklapptes Menü auf dem Smartphone mit Hilfe, Konto und Abmelden (390 × 844).
 - `16-mobil-meine-daten.png` – „Meine Daten“ auf dem Smartphone (390 × 844).
 - `17-superset-kader.png` – Apache Superset 6.1.0, Referenz-Dashboard „Kaderübersicht“ auf der View `bi.kader_uebersicht` von osp-nord (als `mesh_bi`, eingerichtet mit `deploy/superset/bootstrap_superset.py`; 1440 × 1500).
 - `18-superset-sprungkraft.png` – Superset-Dashboard „Sprungkraft-Entwicklung“ auf `bi.sprungkraft` (CMJ-Verläufe je Sportart, nach Kaderstatus, Anzahl Messungen; 1440 × 1100).

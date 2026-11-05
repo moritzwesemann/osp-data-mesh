@@ -126,10 +126,11 @@ describe('SBOM-Signatur (JSF)', () => {
 });
 
 describe('Konfiguration und Platzhalter', () => {
-  test('ausgelieferte Konfiguration enthält gekennzeichnete Platzhalter', () => {
-    const findings = placeholderFindings(loadConfig());
-    expect(findings.some((f) => f.startsWith('manufacturer.name'))).toBe(true);
-    expect(findings.some((f) => f.startsWith('securityContact'))).toBe(true);
+  test('ausgelieferte Konfiguration: Projekt als Hersteller, ohne Platzhalter', () => {
+    const cfg = loadConfig();
+    expect(placeholderFindings(cfg)).toEqual([]);
+    expect(cfg.manufacturer.name).toBe('OSP-Data-Mesh (Open-Source-Projekt)');
+    expect(cfg.securityContact.url).toEndWith('/security/advisories/new');
   });
 
   test('echte Angaben ergeben keine Warnung; fehlender Kontakt schon', () => {
@@ -215,14 +216,15 @@ describe('Quell-SBOM nach TR-03183-2 v2.1.0', () => {
     ]);
   });
 
-  test('alle Pflichtfelder vorhanden (Selbstprüfung), Platzhalter gekennzeichnet', () => {
+  test('alle Pflichtfelder vorhanden (Selbstprüfung), Angaben vollständig', () => {
     expect(checkTr03183(bom)).toEqual([]);
-    expect(bom.metadata.manufacturer?.name).toBe('Auftragnehmer (tbd)');
-    expect(getProperty(bom.metadata, 'osp:sbom-status')).toStartWith('ENTWURF');
+    expect(bom.metadata.manufacturer?.name).toBe('OSP-Data-Mesh (Open-Source-Projekt)');
+    expect(getProperty(bom.metadata, 'osp:sbom-status')).toBe('Angaben vollständig');
     expect(bom.metadata.lifecycles).toEqual([{ phase: 'pre-build' }]);
     const refs = bom.metadata.component?.externalReferences?.map((r) => r.type);
     expect(refs).toContain('security-contact');
-    expect(refs).toContain('rfc-9116');
+    // Quelltext-Repository des Projekts (eine security.txt nach RFC 9116 gibt es nicht)
+    expect(refs).toContain('vcs');
   });
 
   test('npm-Komponenten: Urheber, Hash der Distributionsform, TR-Eigenschaften', () => {

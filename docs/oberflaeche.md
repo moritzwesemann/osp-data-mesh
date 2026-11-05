@@ -29,19 +29,27 @@ erzeugten Initialpasswort angemeldet ist, muss zuerst ein eigenes Passwort festl
 
 ## Übersicht
 
-![Übersicht mit freigegebenen Daten und Kennzahlen](screenshots/02-uebersicht.png)
+![Übersicht mit offener Aufgabe, zuletzt geöffneten Einträgen und Kennzahlen](screenshots/02-uebersicht.png)
 
-Die Startseite zeigt oben **Zu erledigen** – nur wenn es etwas zu tun gibt: ein Import, der auf Prüfung
-wartet, Partner, die auf Bestätigung warten, eine fehlende, fehlgeschlagene oder zu alte Sicherung, nicht
-zugestellte Mitteilungen an Partner oder Fehler der letzten 24 Stunden. Darunter stehen die für die Person
+Die Startseite begrüßt die Person und bietet oben rechts eine Suche im Katalog. Darunter steht
+**Zu erledigen** wie ein Posteingang – je Aufgabe eine Zeile mit kurzer Erklärung und Schaltfläche: ein
+Import, der auf Prüfung wartet (mit „78 von 80 Zeilen gültig“ und der Zahl der Fehler), ein Partner, der
+auf Bestätigung wartet, eine fehlende, fehlgeschlagene oder zu alte Sicherung, nicht zugestellte
+Mitteilungen an Partner oder Fehler der letzten 24 Stunden; ist nichts offen, steht dort „Nichts zu
+erledigen“. **Zuletzt geöffnet** zeigt bis zu vier zuletzt angesehene Einträge (Personen, Datensätze,
+Datenprodukte, Quellen, Freigaben, empfangene und eigene Daten) als Kacheln. Es folgen die für die Person
 freigegebenen Datenprodukte und **Auf einen Blick** Kennzahlen je nach Rolle (Athleten, Quellen, aktive
 Freigaben, empfangene Daten, Partner, letzte Sicherung, Audit-Log); jede Kachel führt zur passenden Seite.
 *Dieser Knoten* (aufklappbar) zeigt Name, Knoten-ID und Fingerprint; die eigenen Rollen mit Beschreibung
 stehen unter *Konto*.
 
-Links steht die Navigation in drei Gruppen: *Daten finden* (Meine Daten, Katalog), *Daten pflegen*
-(Athleten, Quellen, Datensätze, Datenprodukte, Freigaben) und *Verwaltung* (Partner, Audit, Benutzer,
-System). Jede Person sieht nur die Punkte ihrer Rollen.
+Links steht eine schmale **Symbolleiste** auf grauem Grund; der Inhalt liegt auf einem hellen Blatt.
+Fährt man mit der Maus über ein Symbol (oder springt mit der Tabulatortaste darauf), erscheint sein Name.
+Ein Klick auf das Logo oben klappt die Leiste auf und zeigt alle Namen in drei Gruppen: *Daten finden*
+(Meine Daten, Katalog), *Daten pflegen* (Athleten, Quellen, Datensätze, Datenprodukte, Freigaben) und
+*Verwaltung* (Partner, Audit, Benutzer, System); unten stehen *Hilfe*, *Konto* und *Abmelden*. Auf
+breiten Bildschirmen merkt sich der Browser, ob die Leiste auf- oder zugeklappt ist. Jede Person sieht nur
+die Punkte ihrer Rollen.
 
 ## Athleten und Einwilligungen
 
@@ -251,5 +259,6 @@ verwaltet eigene API-Tokens.
 ![Aufgeklapptes Menü auf dem Smartphone](screenshots/15-mobil-navigation.png)
 ![„Meine Daten“ auf dem Smartphone](screenshots/16-mobil-meine-daten.png)
 
-Auf schmalen Bildschirmen klappt die Navigation in ein Menü ein; Tabellen lassen sich seitlich scrollen.
+Auf schmalen Bildschirmen steht oben eine Kopfzeile mit *Menü*; das Menü zeigt die Navigation mit
+Namen, dazu *Hilfe*, *Konto* und *Abmelden*. Tabellen lassen sich seitlich scrollen.
 So können etwa Trainerinnen und Trainer freigegebene Daten unterwegs ansehen.

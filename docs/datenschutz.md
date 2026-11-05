@@ -108,6 +108,11 @@ Audit- bzw. Austauschprotokoll festgehalten.
   (Audit `import.expire`). Fehler bei der Personenzuordnung (`athlete_not_found`, `athlete_ambiguous`)
   speichern keine Namen, Geburtsdaten oder Kennungen, nur Zeile und Zuordnungsfelder. Dauerhaft bleiben
   nur Zähler, Prüfsumme, Dateiname, Spaltennamen und das Fehlerprotokoll aus Zeile, Feld und Prüfcode.
+- **Browser:** Die Oberfläche speichert im Browser (`localStorage`) nur die gewählte Sprache, ob die
+  Seitenleiste aufgeklappt ist, und für *Zuletzt geöffnet* Art und ID der zuletzt angesehenen Einträge
+  (höchstens 12, je Knoten und Person) – keine Namen oder Fachdaten. Die Bezeichnungen lädt die
+  Startseite mit den Rechten der angemeldeten Person vom Server; bei Personen über die Athletenliste, die
+  protokolliert, welche Personen angezeigt wurden (`athlete.list` mit `ids`).
 
 ## Pseudonymisierung im Austausch
 

@@ -16,8 +16,8 @@ Begründung der Lizenzwahl: [ADR 0012](adr/0012-lizenz-eupl.md).
 
 ## Zusammenfassung
 
-- Pakete insgesamt (direkt und transitiv, laut `bun.lock`): **111**
-- davon zur Laufzeit ausgeliefert (Server oder gebündelt in der Web-Oberfläche): **27**
+- Pakete insgesamt (direkt und transitiv, laut `bun.lock`): **112**
+- davon zur Laufzeit ausgeliefert (Server oder gebündelt in der Web-Oberfläche): **28**
 - davon nur für Build und Entwicklung: **84**
 - Pakete ohne ermittelbare Lizenz: **0**
 
@@ -29,9 +29,13 @@ Begründung der Lizenzwahl: [ADR 0012](adr/0012-lizenz-eupl.md).
 | MIT OR Apache-2.0 | 11 |
 | ISC | 3 |
 | BSD-3-Clause | 1 |
+| OFL-1.1 | 1 |
 
 Alle zur Laufzeit ausgelieferten npm-Pakete stehen unter freizügigen Lizenzen (MIT, ISC, BSD, Apache-2.0),
-die mit der EUPL-1.2 vereinbar sind. Die MPL-2.0 (`lightningcss`) betrifft nur ein Build-Werkzeug,
+die mit der EUPL-1.2 vereinbar sind. Ausnahme ist die Schrift Hanken Grotesk
+(`@fontsource-variable/hanken-grotesk`) unter der SIL Open Font License 1.1 (OFL-1.1): Sie erlaubt,
+die Schrift mit Software zu bündeln und weiterzugeben; die Schrift selbst bleibt unter der OFL und darf
+nicht allein verkauft werden. Die MPL-2.0 (`lightningcss`) betrifft nur ein Build-Werkzeug,
 das nicht ausgeliefert wird. Eine abschließende rechtliche Prüfung der Lizenzkompatibilität vor einer
 Veröffentlichung wird empfohlen.
 
@@ -42,6 +46,7 @@ Veröffentlichung wird empfohlen.
 
 | Paket | Version | Lizenz | Verwendung | Art |
 |---|---|---|---|---|
+| `@fontsource-variable/hanken-grotesk` | 5.3.0 | OFL-1.1 | Web-Oberfläche (gebündelt) | direkt |
 | `@remix-run/route-pattern` | 0.22.1 | MIT | Web-Oberfläche (gebündelt) | transitiv |
 | `@tanstack/query-core` | 5.106.0 | MIT | Web-Oberfläche (gebündelt) | transitiv |
 | `@tanstack/react-query` | 5.106.0 | MIT | Web-Oberfläche (gebündelt) | direkt |
@@ -78,6 +83,7 @@ Weitergabe der gebündelten Web-Oberfläche sind Vermerk und Lizenztext der MIT-
 
 | Paket | Version | Copyright-Vermerk |
 |---|---|---|
+| `@fontsource-variable/hanken-grotesk` | 5.3.0 | Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk) HankenGrotesk-Italic[wght].ttf: Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk) |
 | `@remix-run/route-pattern` | 0.22.1 | Copyright (c) 2025 Shopify Inc. |
 | `@tanstack/query-core` | 5.106.0 | Copyright (c) 2021-present Tanner Linsley |
 | `@tanstack/react-query` | 5.106.0 | Copyright (c) 2021-present Tanner Linsley |

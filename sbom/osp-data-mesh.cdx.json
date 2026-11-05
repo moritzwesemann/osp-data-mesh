@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:610925a8-4e5a-49a7-8335-fb4f4e67c9af",
+  "serialNumber": "urn:uuid:6d112bc2-c04f-4f8f-892f-570f23399eb6",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-05T11:17:01Z",
+    "timestamp": "2026-11-05T12:16:17Z",
     "tools": {
       "components": [
         {
@@ -116,7 +116,7 @@
       },
       {
         "name": "cdx:bom:componentNamespaces",
-        "value": "@biomejs\\n@oxc-project\\n@remix-run\\n@rolldown\\n@tanstack\\n@types\\n@typescript\\n@vitejs"
+        "value": "@biomejs\\n@fontsource-variable\\n@oxc-project\\n@remix-run\\n@rolldown\\n@tanstack\\n@types\\n@typescript\\n@vitejs"
       },
       {
         "name": "cdx:bom:componentSrcFiles",
@@ -1677,6 +1677,144 @@
           "https://biomejs.dev"
         ]
       }
+    },
+    {
+      "group": "@fontsource-variable",
+      "name": "hanken-grotesk",
+      "version": "5.3.0",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "0ce77416a2feddc1f675f372d09b52abdb547f1073e662e61cc8d35340ceaf713d668eb0c6e6ad0a5e770c83cdad23e00ac9ee2b233bdfd053206e609422e2af"
+        }
+      ],
+      "purl": "pkg:npm/%40fontsource-variable/hanken-grotesk@5.3.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@fontsource-variable/hanken-grotesk/-/hanken-grotesk-5.3.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "0ce77416a2feddc1f675f372d09b52abdb547f1073e662e61cc8d35340ceaf713d668eb0c6e6ad0a5e770c83cdad23e00ac9ee2b233bdfd053206e609422e2af"
+            }
+          ]
+        },
+        {
+          "type": "website",
+          "url": "https://fontsource.org/fonts/hanken-grotesk"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/fontsource/font-files"
+        },
+        {
+          "type": "source-distribution",
+          "url": "https://github.com/fontsource/font-files"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:npm/@fontsource-variable/hanken-grotesk@5.3.0",
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "bun.lock"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@fontsource-variable/hanken-grotesk/-/hanken-grotesk-5.3.0.tgz"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ImportedModules",
+          "value": "@fontsource-variable/hanken-grotesk/wght.css"
+        },
+        {
+          "name": "osp:creator-source",
+          "value": "homepage"
+        },
+        {
+          "name": "bsi:component:filename",
+          "value": "hanken-grotesk-5.3.0.tgz"
+        },
+        {
+          "name": "bsi:component:executable",
+          "value": "executable"
+        },
+        {
+          "name": "bsi:component:archive",
+          "value": "archive"
+        },
+        {
+          "name": "bsi:component:structured",
+          "value": "structured"
+        },
+        {
+          "name": "osp:executable-source",
+          "value": "inspected:package-files"
+        },
+        {
+          "name": "osp:license-source",
+          "value": "package.json"
+        },
+        {
+          "name": "osp:usage",
+          "value": "ui"
+        }
+      ],
+      "evidence": {
+        "identity": [
+          {
+            "field": "purl",
+            "confidence": 1,
+            "methods": [
+              {
+                "technique": "manifest-analysis",
+                "confidence": 1,
+                "value": "bun.lock"
+              }
+            ],
+            "concludedValue": "bun.lock"
+          }
+        ],
+        "occurrences": [
+          {
+            "location": "src/ui/main.tsx",
+            "line": 3
+          }
+        ]
+      },
+      "licenses": [
+        {
+          "license": {
+            "id": "OFL-1.1",
+            "acknowledgement": "declared"
+          }
+        },
+        {
+          "license": {
+            "id": "OFL-1.1",
+            "acknowledgement": "concluded"
+          }
+        }
+      ],
+      "description": "Self-host the Hanken Grotesk font in a neatly bundled NPM package.",
+      "authors": [
+        {
+          "name": "Google Inc."
+        }
+      ],
+      "manufacturer": {
+        "name": "Google Inc.",
+        "url": [
+          "https://fontsource.org/fonts/hanken-grotesk"
+        ]
+      },
+      "copyright": "Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk) HankenGrotesk-Italic[wght].ttf: Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk)"
     },
     {
       "group": "@oxc-project",
@@ -13212,7 +13350,7 @@
           },
           {
             "location": "src/ui/main.tsx",
-            "line": 8
+            "line": 9
           }
         ]
       },
@@ -13358,11 +13496,11 @@
           },
           {
             "location": "src/ui/components/Layout.tsx",
-            "line": 57
+            "line": 100
           },
           {
             "location": "src/ui/components/Layout.tsx",
-            "line": 58
+            "line": 101
           },
           {
             "location": "src/ui/components/PageHeader.tsx",
@@ -13402,11 +13540,11 @@
           },
           {
             "location": "src/ui/screens/AthleteDetail.tsx",
-            "line": 25
+            "line": 26
           },
           {
             "location": "src/ui/screens/AthleteDetail.tsx",
-            "line": 38
+            "line": 40
           },
           {
             "location": "src/ui/screens/AthleteForm.tsx",
@@ -13450,7 +13588,7 @@
           },
           {
             "location": "src/ui/screens/ConnectorDetail.tsx",
-            "line": 24
+            "line": 25
           },
           {
             "location": "src/ui/screens/ConnectorForm.tsx",
@@ -13482,11 +13620,11 @@
           },
           {
             "location": "src/ui/screens/DatasetDetail.tsx",
-            "line": 19
+            "line": 20
           },
           {
             "location": "src/ui/screens/DatasetDetail.tsx",
-            "line": 159
+            "line": 161
           },
           {
             "location": "src/ui/screens/DatasetForm.tsx",
@@ -13530,7 +13668,7 @@
           },
           {
             "location": "src/ui/screens/MyDataView.tsx",
-            "line": 25
+            "line": 26
           },
           {
             "location": "src/ui/screens/NotFound.tsx",
@@ -13541,12 +13679,16 @@
             "line": 2
           },
           {
+            "location": "src/ui/screens/Overview.tsx",
+            "line": 70
+          },
+          {
             "location": "src/ui/screens/ProductDetail.tsx",
             "line": 2
           },
           {
             "location": "src/ui/screens/ProductDetail.tsx",
-            "line": 21
+            "line": 22
           },
           {
             "location": "src/ui/screens/ProductForm.tsx",
@@ -13570,11 +13712,11 @@
           },
           {
             "location": "src/ui/screens/ReceivedDetail.tsx",
-            "line": 31
+            "line": 32
           },
           {
             "location": "src/ui/screens/ReceivedDetail.tsx",
-            "line": 46
+            "line": 48
           },
           {
             "location": "src/ui/screens/ReleaseDetail.tsx",
@@ -13582,7 +13724,7 @@
           },
           {
             "location": "src/ui/screens/ReleaseDetail.tsx",
-            "line": 30
+            "line": 31
           },
           {
             "location": "src/ui/screens/ReleaseForm.tsx",
@@ -13700,7 +13842,7 @@
         },
         {
           "name": "ImportedModules",
-          "value": "react,useCallback,react/useCallback,ComponentType,react/ComponentType,lazy,react/lazy,ReactNode,react/ReactNode,Suspense,react/Suspense,useEffect,react/useEffect,useId,react/useId,useRef,react/useRef,useState,react/useState,KeyboardEvent,react/KeyboardEvent,SyntheticEvent,react/SyntheticEvent,useLayoutEffect,react/useLayoutEffect,FormEvent,react/FormEvent,Fragment,react/Fragment,createContext,react/createContext,useContext,react/useContext,useMemo,react/useMemo,Dispatch,react/Dispatch,SetStateAction,react/SetStateAction,ChangeEvent,react/ChangeEvent,StrictMode,react/StrictMode"
+          "value": "react,useCallback,react/useCallback,useEffect,react/useEffect,ComponentType,react/ComponentType,lazy,react/lazy,ReactNode,react/ReactNode,Suspense,react/Suspense,useId,react/useId,useRef,react/useRef,useState,react/useState,useSyncExternalStore,react/useSyncExternalStore,KeyboardEvent,react/KeyboardEvent,SyntheticEvent,react/SyntheticEvent,useLayoutEffect,react/useLayoutEffect,FormEvent,react/FormEvent,Fragment,react/Fragment,createContext,react/createContext,useContext,react/useContext,useMemo,react/useMemo,Dispatch,react/Dispatch,SetStateAction,react/SetStateAction,ChangeEvent,react/ChangeEvent,StrictMode,react/StrictMode"
         },
         {
           "name": "osp:creator-source",
@@ -13768,6 +13910,14 @@
             "line": 15
           },
           {
+            "location": "src/ui/lib/recent.ts",
+            "line": 10
+          },
+          {
+            "location": "src/ui/lib/recent.ts",
+            "line": 110
+          },
+          {
             "location": "src/ui/App.tsx",
             "line": 2
           },
@@ -13825,23 +13975,43 @@
           },
           {
             "location": "src/ui/components/Layout.tsx",
-            "line": 59
-          },
-          {
-            "location": "src/ui/components/Layout.tsx",
-            "line": 60
-          },
-          {
-            "location": "src/ui/components/Layout.tsx",
             "line": 61
           },
           {
             "location": "src/ui/components/Layout.tsx",
-            "line": 62
+            "line": 104
           },
           {
             "location": "src/ui/components/Layout.tsx",
-            "line": 71
+            "line": 105
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 106
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 107
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 108
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 109
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 110
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 111
+          },
+          {
+            "location": "src/ui/components/Layout.tsx",
+            "line": 125
           },
           {
             "location": "src/ui/components/Misc.tsx",
@@ -14213,14 +14383,6 @@
           },
           {
             "location": "src/ui/screens/AthleteDetail.tsx",
-            "line": 40
-          },
-          {
-            "location": "src/ui/screens/AthleteDetail.tsx",
-            "line": 41
-          },
-          {
-            "location": "src/ui/screens/AthleteDetail.tsx",
             "line": 42
           },
           {
@@ -14230,6 +14392,14 @@
           {
             "location": "src/ui/screens/AthleteDetail.tsx",
             "line": 44
+          },
+          {
+            "location": "src/ui/screens/AthleteDetail.tsx",
+            "line": 45
+          },
+          {
+            "location": "src/ui/screens/AthleteDetail.tsx",
+            "line": 46
           },
           {
             "location": "src/ui/screens/AthleteForm.tsx",
@@ -14465,15 +14635,31 @@
           },
           {
             "location": "src/ui/screens/MyDataView.tsx",
-            "line": 70
+            "line": 72
           },
           {
             "location": "src/ui/screens/MyDataView.tsx",
-            "line": 71
+            "line": 73
           },
           {
             "location": "src/ui/screens/Overview.tsx",
             "line": 1
+          },
+          {
+            "location": "src/ui/screens/Overview.tsx",
+            "line": 71
+          },
+          {
+            "location": "src/ui/screens/Overview.tsx",
+            "line": 96
+          },
+          {
+            "location": "src/ui/screens/Overview.tsx",
+            "line": 266
+          },
+          {
+            "location": "src/ui/screens/Overview.tsx",
+            "line": 418
           },
           {
             "location": "src/ui/screens/Partners.tsx",
@@ -14509,11 +14695,11 @@
           },
           {
             "location": "src/ui/screens/ProductDetail.tsx",
-            "line": 42
+            "line": 44
           },
           {
             "location": "src/ui/screens/ProductDetail.tsx",
-            "line": 43
+            "line": 45
           },
           {
             "location": "src/ui/screens/ProductForm.tsx",
@@ -14581,15 +14767,15 @@
           },
           {
             "location": "src/ui/screens/ReceivedDetail.tsx",
-            "line": 48
+            "line": 50
           },
           {
             "location": "src/ui/screens/ReceivedDetail.tsx",
-            "line": 227
+            "line": 229
           },
           {
             "location": "src/ui/screens/ReceivedDetail.tsx",
-            "line": 228
+            "line": 230
           },
           {
             "location": "src/ui/screens/ReleaseDetail.tsx",
@@ -14597,11 +14783,11 @@
           },
           {
             "location": "src/ui/screens/ReleaseDetail.tsx",
-            "line": 45
+            "line": 47
           },
           {
             "location": "src/ui/screens/ReleaseDetail.tsx",
-            "line": 46
+            "line": 48
           },
           {
             "location": "src/ui/screens/ReleaseForm.tsx",
@@ -16203,18 +16389,6 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 16
-          },
-          {
-            "location": "src/shared/contract/athletes.ts",
-            "line": 18
-          },
-          {
-            "location": "src/shared/contract/athletes.ts",
-            "line": 19
-          },
-          {
-            "location": "src/shared/contract/athletes.ts",
             "line": 20
           },
           {
@@ -16223,7 +16397,11 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 25
+            "line": 23
+          },
+          {
+            "location": "src/shared/contract/athletes.ts",
+            "line": 24
           },
           {
             "location": "src/shared/contract/athletes.ts",
@@ -16235,19 +16413,19 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 31
+            "line": 30
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 32
+            "line": 33
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 34
+            "line": 35
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 37
+            "line": 36
           },
           {
             "location": "src/shared/contract/athletes.ts",
@@ -16255,11 +16433,15 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 44
+            "line": 41
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 45
+            "line": 42
+          },
+          {
+            "location": "src/shared/contract/athletes.ts",
+            "line": 48
           },
           {
             "location": "src/shared/contract/athletes.ts",
@@ -16267,7 +16449,7 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 51
+            "line": 53
           },
           {
             "location": "src/shared/contract/athletes.ts",
@@ -16275,15 +16457,11 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 61
+            "line": 59
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 62
-          },
-          {
-            "location": "src/shared/contract/athletes.ts",
-            "line": 63
+            "line": 65
           },
           {
             "location": "src/shared/contract/athletes.ts",
@@ -16291,15 +16469,11 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 69
+            "line": 67
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 71
-          },
-          {
-            "location": "src/shared/contract/athletes.ts",
-            "line": 72
+            "line": 70
           },
           {
             "location": "src/shared/contract/athletes.ts",
@@ -16307,39 +16481,55 @@
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 74
+            "line": 75
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 79
+            "line": 76
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 80
+            "line": 77
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 81
+            "line": 78
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 92
+            "line": 83
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 93
+            "line": 84
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 104
+            "line": 85
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 160
+            "line": 96
           },
           {
             "location": "src/shared/contract/athletes.ts",
-            "line": 169
+            "line": 97
+          },
+          {
+            "location": "src/shared/contract/athletes.ts",
+            "line": 100
+          },
+          {
+            "location": "src/shared/contract/athletes.ts",
+            "line": 110
+          },
+          {
+            "location": "src/shared/contract/athletes.ts",
+            "line": 166
+          },
+          {
+            "location": "src/shared/contract/athletes.ts",
+            "line": 175
           },
           {
             "location": "src/shared/contract/auth.ts",
@@ -16943,23 +17133,27 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 169
+            "line": 164
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 170
+            "line": 165
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 172
+            "line": 166
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 179
+            "line": 173
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 180
+            "line": 174
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 176
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -16971,19 +17165,11 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 186
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
             "line": 187
           },
           {
             "location": "src/shared/contract/connectors.ts",
             "line": 188
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 189
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -17007,23 +17193,23 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
+            "line": 195
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
             "line": 196
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 252
+            "line": 197
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 253
+            "line": 198
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 254
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 255
+            "line": 200
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -17039,6 +17225,14 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
+            "line": 259
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 260
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
             "line": 261
           },
           {
@@ -17047,15 +17241,15 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 263
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 264
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
             "line": 265
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 266
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 267
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -17063,11 +17257,7 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 270
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 271
+            "line": 269
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -17075,19 +17265,19 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
+            "line": 274
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 275
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
             "line": 276
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 277
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 278
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 279
+            "line": 280
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -17099,23 +17289,19 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 292
+            "line": 283
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 300
+            "line": 285
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 301
+            "line": 286
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 302
-          },
-          {
-            "location": "src/shared/contract/connectors.ts",
-            "line": 303
+            "line": 296
           },
           {
             "location": "src/shared/contract/connectors.ts",
@@ -17127,15 +17313,31 @@
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 347
+            "line": 306
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 365
+            "line": 307
           },
           {
             "location": "src/shared/contract/connectors.ts",
-            "line": 396
+            "line": 308
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 309
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 351
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 369
+          },
+          {
+            "location": "src/shared/contract/connectors.ts",
+            "line": 400
           },
           {
             "location": "src/shared/contract/datasets.ts",
@@ -19180,6 +19382,10 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/@fontsource-variable/hanken-grotesk@5.3.0",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/@oxc-project/types@0.156.0",
       "dependsOn": []
     },
@@ -19504,6 +19710,7 @@
         "pkg:generic/bun@1.4.3",
         "pkg:generic/postgresql@18",
         "pkg:npm/@biomejs/biome@2.6.5",
+        "pkg:npm/@fontsource-variable/hanken-grotesk@5.3.0",
         "pkg:npm/@tanstack/react-query@5.106.0",
         "pkg:npm/@types/bun@1.4.4",
         "pkg:npm/@types/papaparse@5.5.2",
@@ -19752,8 +19959,8 @@
           ]
         }
       },
-      "timestamp": "2026-11-05T11:16:58Z",
-      "text": "This Software Bill-of-Materials (SBOM) document was created on Thursday, November 5, 2026 with cdxgen. The data was captured during the pre-build lifecycle phase without building the application. The document describes an application named 'osp-data-mesh' with version '0.1.0'. The package type in this SBOM is npm with 8 purl namespaces described under components. The components were identified from the source files: bun.lock."
+      "timestamp": "2026-11-05T12:16:14Z",
+      "text": "This Software Bill-of-Materials (SBOM) document was created on Thursday, November 5, 2026 with cdxgen. The data was captured during the pre-build lifecycle phase without building the application. The document describes an application named 'osp-data-mesh' with version '0.1.0'. The package type in this SBOM is npm with 9 purl namespaces described under components. The components were identified from the source files: bun.lock."
     }
   ],
   "compositions": [
@@ -19772,6 +19979,7 @@
         "pkg:npm/@biomejs/cli-linux-x64@2.6.5",
         "pkg:npm/@biomejs/cli-win32-arm64@2.6.5",
         "pkg:npm/@biomejs/cli-win32-x64@2.6.5",
+        "pkg:npm/@fontsource-variable/hanken-grotesk@5.3.0",
         "pkg:npm/@oxc-project/types@0.156.0",
         "pkg:npm/@remix-run/route-pattern@0.22.1",
         "pkg:npm/@rolldown/binding-android-arm-eabi@1.2.16",

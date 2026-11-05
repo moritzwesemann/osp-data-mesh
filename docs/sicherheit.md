@@ -431,11 +431,13 @@ Diese Angaben entscheidet der Eigentümer bzw. Auftraggeber; sie stehen an **ein
 | `sourceCodeUrl` | öffentliches Repository (z. B. openCode); `null` = noch keins | `externalReferences` `vcs`/`source-distribution` |
 | `signing.publicKey` | Pfad des veröffentlichten öffentlichen Signaturschlüssels | Standard für `verify` und die Prüfung nach dem Signieren |
 
-**Derzeit Platzhalter:** `Auftragnehmer (tbd)`, `…@example.invalid`, `https://example.invalid/…` (die Domain
-`.invalid` ist nach RFC 2606 reserviert und nie erreichbar). Solange Werte `tbd`, `TODO` oder `.invalid`
-enthalten, gibt `bun run sbom` eine deutlich hervorgehobene Warnung mit jedem betroffenen Feld aus, die SBOM
-trägt `osp:sbom-status = ENTWURF …`, und `bun run sbom -- --release` bricht ab. Nach der Entscheidung nur
-die Werte in `sbom/sbom.config.json` ersetzen und `bun run sbom` ausführen.
+**Gesetzt:** Hersteller, Lieferant und SBOM-Ersteller ist das Open-Source-Projekt selbst
+(„OSP-Data-Mesh (Open-Source-Projekt)“), Kontakt ist das öffentliche Repository
+(https://github.com/moritzwesemann/osp-data-mesh; TR-03183-2 erlaubt eine URL, wenn keine E-Mail-Adresse
+besteht), Schwachstellen werden vertraulich über GitHub gemeldet (`SECURITY.md` im Repository (vertrauliche Meldung über https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new)). Werte mit
+`tbd`, `TODO` oder `.invalid` gelten als Platzhalter: Dann warnt `bun run sbom` deutlich, die SBOM trägt
+`osp:sbom-status = ENTWURF …`, und `bun run sbom -- --release` bricht ab. Offen ist nur der
+Signaturschlüssel des Projekts (`signing.publicKey`).
 
 ### Abbildung der Datenfelder (TR-03183-2 v2.1.0, Abschnitte 5.2 und 8.2)
 
@@ -543,8 +545,8 @@ Tests erzeugen ihre Schlüssel zur Laufzeit.
    ([ADR 0013](adr/0013-knotenschluessel-rotation.md)). Offen: eine signierte Sperrmitteilung bei
    Kompromittierung (heute telefonische Benachrichtigung) und die Verwahrung in einem HSM bzw.
    Schlüsseldienst statt verschlüsselt in der Datenbank.
-4. Hersteller- und Sicherheitskontakt (in `sbom/sbom.config.json` noch Platzhalter), Signaturschlüssel des
-   Auftragnehmers und signierte Releases. SBOM-Signatur und Container-SBOM sind technisch umgesetzt.
+4. Signaturschlüssel des Projekts und signierte Releases (SBOM-Signatur und Container-SBOM sind technisch
+   umgesetzt; Hersteller und Sicherheitskontakt sind gesetzt, siehe `SECURITY.md` im Repository (vertrauliche Meldung über https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new)).
 5. Ratenbegrenzung prozessübergreifend (Anmeldung und Föderation derzeit im Speicher eines Prozesses; nach
    einem Neustart beginnen die Zähler neu).
 6. Festlegung der Aufbewahrungsfristen (insbesondere Audit-Log) und eines Archivierungsverfahrens.

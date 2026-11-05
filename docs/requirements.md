@@ -83,7 +83,7 @@ Vorabnahme-Durchlauf“ von [Abnahme](abnahme.md).
 
 | ID | Anforderung | Artefakt | Status |
 |---|---|---|---|
-| U1 | Quellcode, Repository | dieses Repository (lokal, nicht veröffentlicht) | umgesetzt |
+| U1 | Quellcode, Repository | öffentliches Repository https://github.com/moritzwesemann/osp-data-mesh | umgesetzt |
 | U2 | Datenbankschema und Migrationsskripte | `migrations/`, [Datenmodell](datenmodell.md) | umgesetzt |
 | U3 | API-Dokumentation | `/api/v1/openapi.json` (aus dem Vertrag erzeugt), [API](api.md) | getestet (`contract.test.ts`) |
 | U4 | Deployment-Konfiguration | `deploy/` (Compose, Caddy, Superset, systemd), `deploy/verify-deployment.sh` | getestet (Docker, siehe K2/S1/S5; systemd nicht geprüft) |
@@ -91,9 +91,9 @@ Vorabnahme-Durchlauf“ von [Abnahme](abnahme.md).
 | U6 | Architekturentscheidungen (ADRs) | `docs/adr/` (12 ADRs) | umgesetzt |
 | U7 | Betriebs- und Installationsdokumentation | [Installation](installation.md), [Betrieb](betrieb.md) | umgesetzt, nativ erprobt |
 | U8 | Drittkomponenten und Lizenzen | [Lizenzen](lizenzen.md) | umgesetzt |
-| U9 | SBOM CycloneDX (BSI TR-03183-2) | `sbom/osp-data-mesh.cdx.json` (Quellstand), Build-SBOM der Oberfläche, `sbom/osp-data-mesh.image.cdx.json` (Container), Signatur (`scripts/sbom-sign.ts`), Angaben in `sbom/sbom.config.json` | technisch vollständig (Schema- und TR-Selbstprüfung bestanden, sbomqs 9,9/10, `sbom.test.ts`); offen: Hersteller-, Lieferanten- und Sicherheitskontakt (Platzhalter) und Signaturschlüssel des Auftragnehmers – teilweise |
+| U9 | SBOM CycloneDX (BSI TR-03183-2) | `sbom/osp-data-mesh.cdx.json` (Quellstand), Build-SBOM der Oberfläche, `sbom/osp-data-mesh.image.cdx.json` (Container), Signatur (`scripts/sbom-sign.ts`), Angaben in `sbom/sbom.config.json` (Projekt als Hersteller, Repository als Kontakt) | technisch vollständig (Schema- und TR-Selbstprüfung bestanden, sbomqs 9,9/10, `sbom.test.ts`); offen: Signaturschlüssel des Projekts, Lizenzangaben der Debian-Pakete im Container-SBOM – teilweise |
 | U10 | Deutschsprachige HTML-Webdokumentation | `bun run build:docs` → `/hilfe/` (31 Seiten) | umgesetzt |
-| U11 | Open-Source-Lizenz gemäß openCode | `LICENSE` (EUPL-1.2, vorläufig; endgültige Wahl vor Veröffentlichung) | umgesetzt (vorläufig) |
+| U11 | Open-Source-Lizenz gemäß openCode | `LICENSE` (EUPL-1.2, [ADR 0012](adr/0012-lizenz-eupl.md)), `CONTRIBUTING.md`, `SECURITY.md` | umgesetzt |
 | – | Schulungen, Pflege, Leistungen nach Aufwand | nicht Teil der Software | offen (außerhalb des Umfangs) |
 
 ## Abnahmekriterien

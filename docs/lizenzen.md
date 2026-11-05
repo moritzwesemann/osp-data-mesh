@@ -7,13 +7,12 @@
 
 ## Lizenz des Projekts
 
-osp-data-mesh 0.1.0 steht **vorläufig** unter der **European Union Public Licence
+osp-data-mesh 0.1.0 steht unter der **European Union Public Licence
 1.2 (EUPL-1.2)** (Datei `LICENSE`).
 Die EUPL ist eine von der EU-Kommission herausgegebene, OSI-anerkannte Copyleft-Lizenz mit
 Kompatibilitätsklausel und erfüllt die Anforderungen von openCode an Open-Source-Lizenzen.
 
-**Die endgültige Lizenzwahl steht noch aus** und wird vor jeder Veröffentlichung durch den
-Auftraggeber bzw. Moritz getroffen (siehe [ADR 0012](adr/0012-lizenz-eupl.md)).
+Begründung der Lizenzwahl: [ADR 0012](adr/0012-lizenz-eupl.md).
 
 ## Zusammenfassung
 

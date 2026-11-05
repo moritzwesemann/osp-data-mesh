@@ -1,35 +1,31 @@
 {
   "$comment": [
     "Angaben zu Hersteller, Lieferant, SBOM-Ersteller und Sicherheitskontakt fuer die SBOM (BSI TR-03183-2).",
-    "Alle Werte mit 'tbd' oder der Domain example.invalid sind PLATZHALTER: Die echten Angaben entscheidet der",
-    "Eigentuemer/Auftraggeber. Solange Platzhalter gesetzt sind, warnt 'bun run sbom' und 'bun run sbom -- --release'",
-    "bricht ab. Je Eintrag: name und mindestens email oder url (TR-03183-2: E-Mail, sonst URL).",
-    "supplier und sbomAuthor duerfen fehlen; dann gilt manufacturer. Siehe docs/sicherheit.md#sbom-und-bsi-tr-03183-2."
+    "OSP-Data-Mesh ist ein Open-Source-Projekt (EUPL-1.2) ohne Unternehmen dahinter: Hersteller, Lieferant und",
+    "SBOM-Ersteller ist das Projekt selbst, erreichbar ueber das oeffentliche Repository (TR-03183-2: E-Mail, sonst URL).",
+    "Schwachstellen werden vertraulich ueber GitHub gemeldet (siehe SECURITY.md).",
+    "Siehe docs/sicherheit.md#sbom-und-bsi-tr-03183-2."
   ],
   "manufacturer": {
     "$comment": "Hersteller/Ersteller der Software (Component creator der Hauptkomponente)",
-    "name": "Auftragnehmer (tbd)",
-    "email": "sbom-tbd@example.invalid",
-    "url": "https://example.invalid/auftragnehmer-tbd"
+    "name": "OSP-Data-Mesh (Open-Source-Projekt)",
+    "url": "https://github.com/moritzwesemann/osp-data-mesh"
   },
   "supplier": {
     "$comment": "Anbieter/Lieferant (TR-03183-2, 3.2.9: Vendor/Supplier)",
-    "name": "Auftragnehmer (tbd)",
-    "email": "sbom-tbd@example.invalid",
-    "url": "https://example.invalid/auftragnehmer-tbd"
+    "name": "OSP-Data-Mesh (Open-Source-Projekt)",
+    "url": "https://github.com/moritzwesemann/osp-data-mesh"
   },
   "sbomAuthor": {
     "$comment": "Ersteller der SBOM (TR-03183-2, 5.2.1: Creator of the SBOM)",
-    "name": "Auftragnehmer (tbd)",
-    "email": "sbom-tbd@example.invalid",
-    "url": "https://example.invalid/auftragnehmer-tbd"
+    "name": "OSP-Data-Mesh (Open-Source-Projekt)",
+    "url": "https://github.com/moritzwesemann/osp-data-mesh"
   },
   "securityContact": {
-    "$comment": "Kontakt fuer Schwachstellenmeldungen (auch Cyber Resilience Act) und URL der security.txt (RFC 9116)",
-    "email": "security-tbd@example.invalid",
-    "securityTxtUrl": "https://example.invalid/.well-known/security.txt"
+    "$comment": "Kontakt fuer Schwachstellenmeldungen (auch Cyber Resilience Act): vertrauliche Meldung ueber GitHub",
+    "url": "https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new"
   },
-  "sourceCodeUrl": null,
+  "sourceCodeUrl": "https://github.com/moritzwesemann/osp-data-mesh",
   "signing": {
     "$comment": "Pfad (relativ zum Repository) des veroeffentlichten oeffentlichen Signaturschluessels (PEM), z. B. sbom/signing-key.pub.pem; null = noch keiner festgelegt. Der private Schluessel gehoert NIE ins Repository.",
     "publicKey": null

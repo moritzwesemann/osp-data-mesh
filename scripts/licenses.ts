@@ -530,13 +530,12 @@ export function renderLicensesMarkdown(inv: Inventory): string {
 
 ## Lizenz des Projekts
 
-${inv.project.name} ${inv.project.version} steht **vorläufig** unter der **European Union Public Licence
+${inv.project.name} ${inv.project.version} steht unter der **European Union Public Licence
 ${inv.project.license === 'EUPL-1.2' ? '1.2 (EUPL-1.2)' : `(${inv.project.license})`}** (Datei \`LICENSE\`).
 Die EUPL ist eine von der EU-Kommission herausgegebene, OSI-anerkannte Copyleft-Lizenz mit
 Kompatibilitätsklausel und erfüllt die Anforderungen von openCode an Open-Source-Lizenzen.
 
-**Die endgültige Lizenzwahl steht noch aus** und wird vor jeder Veröffentlichung durch den
-Auftraggeber bzw. Moritz getroffen (siehe [ADR 0012](adr/0012-lizenz-eupl.md)).
+Begründung der Lizenzwahl: [ADR 0012](adr/0012-lizenz-eupl.md).
 
 ## Zusammenfassung
 

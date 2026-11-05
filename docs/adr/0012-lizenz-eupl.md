@@ -1,10 +1,10 @@
-# ADR 0012: Lizenz EUPL-1.2 (vorläufig)
+# ADR 0012: Lizenz EUPL-1.2
 
 ## Status
 
-angenommen (vorläufig)
+angenommen
 
-Datum: 2026-11-04
+Datum: 2026-11-04 (vorläufig), endgültig festgelegt am 2026-11-05
 
 ## Kontext
 
@@ -15,7 +15,7 @@ AGPL-3.0.
 
 ## Entscheidung
 
-Das Projekt steht **vorläufig** unter der **European Union Public Licence 1.2 (EUPL-1.2)**
+Das Projekt steht unter der **European Union Public Licence 1.2 (EUPL-1.2)**
 (`LICENSE`, `package.json`):
 
 - von der EU-Kommission herausgegeben, in allen EU-Amtssprachen rechtsgleich verfügbar (auch Deutsch);
@@ -23,8 +23,9 @@ Das Projekt steht **vorläufig** unter der **European Union Public Licence 1.2 (
   Open-Source-Lizenzen möglich); deckt auch die Bereitstellung über ein Netzwerk ab;
 - verbreitet im öffentlichen Sektor und mit openCode vereinbar.
 
-Die **endgültige Lizenzentscheidung trifft Moritz vor jeder Veröffentlichung**; bis dahin wird der Code
-nicht veröffentlicht.
+Die Entscheidung wurde am 2026-11-05 als endgültig bestätigt: Das Projekt wird als unabhängiges
+Open-Source-Projekt öffentlich bereitgestellt (https://github.com/moritzwesemann/osp-data-mesh). Hersteller,
+Lieferant und SBOM-Ersteller ist das Projekt selbst, nicht ein Unternehmen (`sbom/sbom.config.json`).
 
 ## Konsequenzen
 

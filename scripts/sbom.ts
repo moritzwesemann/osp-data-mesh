@@ -634,11 +634,7 @@ export function enrich(
   };
   delete md.component.group;
   describePrimary(md.component, cfg, inv.project.license);
-  setProperty(
-    md.component,
-    'osp:license-status',
-    'vorläufig; endgültige Lizenzwahl vor Veröffentlichung offen',
-  );
+  setProperty(md.component, 'osp:license-status', 'festgelegt (ADR 0012)');
   setProperty(
     md,
     'osp:sbom-generator',

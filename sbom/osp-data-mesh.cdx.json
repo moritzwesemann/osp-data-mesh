@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:e4f7c095-51b6-4829-b46d-a41261573098",
+  "serialNumber": "urn:uuid:610925a8-4e5a-49a7-8335-fb4f4e67c9af",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-05T09:00:11Z",
+    "timestamp": "2026-11-05T11:17:01Z",
     "tools": {
       "components": [
         {
@@ -31,8 +31,7 @@
     },
     "authors": [
       {
-        "name": "Auftragnehmer (tbd)",
-        "email": "sbom-tbd@example.invalid"
+        "name": "OSP-Data-Mesh (Open-Source-Projekt)"
       }
     ],
     "lifecycles": [
@@ -65,7 +64,7 @@
         },
         {
           "name": "osp:license-status",
-          "value": "vorläufig; endgültige Lizenzwahl vor Veröffentlichung offen"
+          "value": "festgelegt (ADR 0012)"
         }
       ],
       "type": "application",
@@ -84,35 +83,29 @@
         }
       ],
       "manufacturer": {
-        "name": "Auftragnehmer (tbd)",
+        "name": "OSP-Data-Mesh (Open-Source-Projekt)",
         "url": [
-          "https://example.invalid/auftragnehmer-tbd"
-        ],
-        "contact": [
-          {
-            "email": "sbom-tbd@example.invalid"
-          }
+          "https://github.com/moritzwesemann/osp-data-mesh"
         ]
       },
       "supplier": {
-        "name": "Auftragnehmer (tbd)",
+        "name": "OSP-Data-Mesh (Open-Source-Projekt)",
         "url": [
-          "https://example.invalid/auftragnehmer-tbd"
-        ],
-        "contact": [
-          {
-            "email": "sbom-tbd@example.invalid"
-          }
+          "https://github.com/moritzwesemann/osp-data-mesh"
         ]
       },
       "externalReferences": [
         {
           "type": "security-contact",
-          "url": "mailto:security-tbd@example.invalid"
+          "url": "https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new"
         },
         {
-          "type": "rfc-9116",
-          "url": "https://example.invalid/.well-known/security.txt"
+          "type": "vcs",
+          "url": "https://github.com/moritzwesemann/osp-data-mesh"
+        },
+        {
+          "type": "source-distribution",
+          "url": "https://github.com/moritzwesemann/osp-data-mesh"
         }
       ]
     },
@@ -135,7 +128,7 @@
       },
       {
         "name": "osp:sbom-status",
-        "value": "ENTWURF: Platzhalter für Hersteller/Lieferant/SBOM-Ersteller/Sicherheitskontakt (15 Felder), Entscheidung des Eigentümers offen"
+        "value": "Angaben vollständig"
       },
       {
         "name": "osp:sbom-generator",
@@ -151,25 +144,15 @@
       }
     ],
     "manufacturer": {
-      "name": "Auftragnehmer (tbd)",
+      "name": "OSP-Data-Mesh (Open-Source-Projekt)",
       "url": [
-        "https://example.invalid/auftragnehmer-tbd"
-      ],
-      "contact": [
-        {
-          "email": "sbom-tbd@example.invalid"
-        }
+        "https://github.com/moritzwesemann/osp-data-mesh"
       ]
     },
     "supplier": {
-      "name": "Auftragnehmer (tbd)",
+      "name": "OSP-Data-Mesh (Open-Source-Projekt)",
       "url": [
-        "https://example.invalid/auftragnehmer-tbd"
-      ],
-      "contact": [
-        {
-          "email": "sbom-tbd@example.invalid"
-        }
+        "https://github.com/moritzwesemann/osp-data-mesh"
       ]
     }
   },
@@ -8909,7 +8892,7 @@
         },
         {
           "name": "ImportedModules",
-          "value": "kysely,kysely/sql,ColumnType,kysely/ColumnType,Generated,kysely/Generated,Insertable,kysely/Insertable,Selectable,kysely/Selectable,Updateable,kysely/Updateable,Kysely,kysely/Kysely,PostgresDialect,kysely/PostgresDialect,Transaction,kysely/Transaction,ExpressionBuilder,kysely/ExpressionBuilder"
+          "value": "kysely,ColumnType,kysely/ColumnType,Generated,kysely/Generated,Insertable,kysely/Insertable,Selectable,kysely/Selectable,Updateable,kysely/Updateable,Kysely,kysely/Kysely,PostgresDialect,kysely/PostgresDialect,Transaction,kysely/Transaction,kysely/sql,ExpressionBuilder,kysely/ExpressionBuilder"
         },
         {
           "name": "osp:creator-source",
@@ -8961,10 +8944,6 @@
         ],
         "occurrences": [
           {
-            "location": "src/server/cli/commands.ts",
-            "line": 7
-          },
-          {
             "location": "src/server/core/db-types.ts",
             "line": 5
           },
@@ -8974,15 +8953,19 @@
           },
           {
             "location": "src/server/core/locks.ts",
-            "line": 32
+            "line": 34
           },
           {
             "location": "src/server/core/locks.ts",
-            "line": 59
+            "line": 61
           },
           {
             "location": "src/server/modules/athletes/index.ts",
             "line": 9
+          },
+          {
+            "location": "src/server/modules/audit/chain.ts",
+            "line": 40
           },
           {
             "location": "src/server/modules/audit/index.ts",
@@ -9066,7 +9049,11 @@
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 15
+            "line": 25
+          },
+          {
+            "location": "src/server/modules/federation/anchors.ts",
+            "line": 490
           },
           {
             "location": "src/server/modules/federation/outbox.ts",
@@ -11044,7 +11031,7 @@
           },
           {
             "location": "src/server/modules/connectors/pipeline.ts",
-            "line": 259
+            "line": 274
           }
         ]
       },
@@ -11906,7 +11893,7 @@
           },
           {
             "location": "src/server/cli/commands.ts",
-            "line": 8
+            "line": 7
           },
           {
             "location": "src/server/core/db.ts",
@@ -11922,7 +11909,7 @@
           },
           {
             "location": "src/server/modules/system/restore.ts",
-            "line": 30
+            "line": 34
           }
         ]
       },
@@ -16036,11 +16023,11 @@
           },
           {
             "location": "src/server/cli/commands.ts",
-            "line": 9
+            "line": 8
           },
           {
             "location": "src/server/cli/commands.ts",
-            "line": 316
+            "line": 559
           },
           {
             "location": "src/server/core/http.ts",
@@ -16055,48 +16042,144 @@
             "line": 1
           },
           {
-            "location": "src/server/modules/federation/anchors.ts",
-            "line": 16
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 26
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 36
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 38
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 42
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 45
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 47
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 49
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 51
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 56
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 63
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 64
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 67
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 68
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 69
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 70
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 72
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 75
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 76
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 77
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 80
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 81
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 82
+          },
+          {
+            "location": "src/server/modules/federation/anchor-profile.ts",
+            "line": 83
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 529
+            "line": 26
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 530
+            "line": 1363
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 531
+            "line": 1364
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 532
+            "line": 1365
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 533
+            "line": 1367
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 534
+            "line": 1368
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 536
+            "line": 1369
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 538
+            "line": 1370
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 540
+            "line": 1372
           },
           {
             "location": "src/server/modules/federation/anchors.ts",
-            "line": 541
+            "line": 1374
+          },
+          {
+            "location": "src/server/modules/federation/anchors.ts",
+            "line": 1376
+          },
+          {
+            "location": "src/server/modules/federation/anchors.ts",
+            "line": 1377
           },
           {
             "location": "src/server/modules/federation/client.ts",
@@ -17400,35 +17483,39 @@
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 166
+            "line": 171
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 167
+            "line": 172
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 175
+            "line": 185
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 176
+            "line": 186
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 177
+            "line": 187
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 179
+            "line": 188
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 180
+            "line": 190
           },
           {
             "location": "src/shared/contract/federation-wire.ts",
-            "line": 181
+            "line": 191
+          },
+          {
+            "location": "src/shared/contract/federation-wire.ts",
+            "line": 192
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17764,19 +17851,15 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 178
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 179
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
             "line": 180
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 183
+            "line": 181
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 182
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17784,35 +17867,15 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
+            "line": 186
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
             "line": 187
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 189
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 190
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 191
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 192
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 193
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
             "line": 195
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 196
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17824,31 +17887,47 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 200
+            "line": 215
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 201
+            "line": 216
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 202
+            "line": 217
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 203
+            "line": 218
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 205
+            "line": 219
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 206
+            "line": 220
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 227
+            "line": 223
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 229
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 232
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 233
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 234
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17856,7 +17935,55 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 246
+            "line": 236
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 237
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 238
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 239
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 240
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 241
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 253
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 255
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 258
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 259
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 261
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 262
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 264
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17872,7 +17999,87 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
+            "line": 268
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 269
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 271
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 272
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 273
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 274
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 275
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
             "line": 279
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 280
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 282
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 283
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 284
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 285
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 286
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 287
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 288
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 289
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 290
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 292
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 294
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 295
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17888,35 +18095,11 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 301
+            "line": 302
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 312
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 313
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 314
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 315
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 324
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 325
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 326
+            "line": 320
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17924,55 +18107,7 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 329
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 330
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 331
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 333
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 334
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 335
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 337
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 338
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
             "line": 339
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 340
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 342
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 344
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 345
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -17980,39 +18115,55 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 367
+            "line": 359
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 376
+            "line": 360
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 385
+            "line": 372
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 395
+            "line": 390
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 396
+            "line": 391
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 397
+            "line": 392
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 398
+            "line": 394
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 399
+            "line": 405
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 400
+            "line": 406
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 407
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 408
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 417
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 418
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -18020,31 +18171,59 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
+            "line": 421
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 422
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 423
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 424
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 426
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 427
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
             "line": 428
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 436
+            "line": 430
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 445
+            "line": 431
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 446
+            "line": 432
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 448
+            "line": 433
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 449
+            "line": 435
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 450
+            "line": 437
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 438
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -18052,35 +18231,11 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 452
+            "line": 460
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 453
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 454
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 455
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 467
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 475
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 476
-          },
-          {
-            "location": "src/shared/contract/federation.ts",
-            "line": 477
+            "line": 469
           },
           {
             "location": "src/shared/contract/federation.ts",
@@ -18088,23 +18243,123 @@
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 479
+            "line": 488
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 481
+            "line": 489
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 482
+            "line": 490
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 483
+            "line": 491
           },
           {
             "location": "src/shared/contract/federation.ts",
-            "line": 484
+            "line": 492
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 493
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 512
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 521
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 529
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 538
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 539
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 543
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 544
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 545
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 546
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 547
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 548
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 549
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 550
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 562
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 570
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 571
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 572
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 573
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 574
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 575
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 577
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 578
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 579
+          },
+          {
+            "location": "src/shared/contract/federation.ts",
+            "line": 580
           },
           {
             "location": "src/shared/contract/products.ts",
@@ -19497,7 +19752,7 @@
           ]
         }
       },
-      "timestamp": "2026-11-05T09:00:08Z",
+      "timestamp": "2026-11-05T11:16:58Z",
       "text": "This Software Bill-of-Materials (SBOM) document was created on Thursday, November 5, 2026 with cdxgen. The data was captured during the pre-build lifecycle phase without building the application. The document describes an application named 'osp-data-mesh' with version '0.1.0'. The package type in this SBOM is npm with 8 purl namespaces described under components. The components were identified from the source files: bun.lock."
     }
   ],

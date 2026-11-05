@@ -40,7 +40,7 @@ Zweck. Es gibt keine zentrale Datenhaltung und keine Gesamtsynchronisation.
 | Knoten (Node) | Installation eines OSP: Server + Datenbank, eindeutige Kennung (`MESH_NODE_ID`) und Ed25519-Schlüssel |
 | Partner | anderer Knoten, dem nach Abgleich des Fingerprints vertraut wird |
 | Datensatz | Struktur (Felder mit Typen und Prüfregeln) für Messwerte, z. B. Sprungkraft |
-| Connector | wiederverwendbare Definition einer Quelle (CSV-Upload oder HTTP-API) samt Feldzuordnung |
+| Connector | wiederverwendbare Definition einer Quelle (CSV- oder Excel-Upload oder HTTP-API) samt Feldzuordnung |
 | Datenprodukt | definierte Sicht (Spalten, Basisfilter) auf einen Datensatz oder den Athletenkern |
 | Freigabe | Erlaubnis für genau einen Empfänger (Rolle, BI oder Partner) mit Beschränkungen |
 | PEP | Policy Enforcement Point: einzige Stelle, über die Daten den Knoten verlassen |

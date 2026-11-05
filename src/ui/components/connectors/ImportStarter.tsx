@@ -8,8 +8,9 @@ import { ErrorMessage } from '../ErrorMessage.tsx';
 import { FormField } from '../FormField.tsx';
 import { Section } from '../PageHeader.tsx';
 import { useToast } from '../Toast.tsx';
+import { FILE_ACCEPT } from './MappingEditor.tsx';
 
-/** Import starten: CSV hochladen oder API jetzt abrufen (imports.start) → Vorschau des Laufs. */
+/** Import starten: CSV- oder Excel-Datei hochladen oder API jetzt abrufen (imports.start) → Vorschau des Laufs. */
 export function ImportStarter({ connector }: { connector: Connector }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -25,7 +26,8 @@ export function ImportStarter({ connector }: { connector: Connector }) {
   });
 
   if (!session.can('imports.start')) return null;
-  const csv = connector.kind === 'csv_upload';
+  const kind = connector.kind;
+  const csv = kind !== 'http_api';
   const blocked = !connector.active || start.isPending;
 
   const submit = (e: FormEvent) => {
@@ -50,13 +52,17 @@ export function ImportStarter({ connector }: { connector: Connector }) {
       )}
       <form className="toolbar" onSubmit={submit} noValidate>
         {csv && (
-          <FormField label={t('connectors.importFile')} required className="field-grow">
+          <FormField
+            label={kind === 'xlsx_upload' ? t('connectors.importFileXlsx') : t('connectors.importFile')}
+            required
+            className="field-grow"
+          >
             {(a) => (
               <input
                 {...a}
                 className="input"
                 type="file"
-                accept=".csv,.txt,text/csv,text/plain"
+                accept={FILE_ACCEPT[kind]}
                 disabled={!connector.active}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />

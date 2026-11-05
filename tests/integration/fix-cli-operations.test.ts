@@ -10,7 +10,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { sql } from 'kysely';
-import { MIGRATE_COMMAND, otherNodeDatabases } from '../../src/server/cli/commands.ts';
+import {
+  MIGRATE_COMMAND,
+  MIGRATE_COMMAND_DOCKER,
+  migrateHint,
+  otherNodeDatabases,
+} from '../../src/server/cli/commands.ts';
 import { runCli } from '../../src/server/cli/main.ts';
 import { BackupManager } from '../../src/server/modules/system/backup.ts';
 import { createTestDb, queryAs, type TestDb, testClusterAccess } from '../helpers/db.ts';
@@ -83,6 +88,9 @@ async function databaseExists(name: string): Promise<boolean> {
 describe('db-bootstrap', () => {
   test('dokumentierter migrate-Aufruf', () => {
     expect(MIGRATE_COMMAND).toBe(DOCUMENTED_MIGRATE);
+    // im Container-Abbild (MESH_DEPLOYMENT=docker) nennt der Hinweis den Compose-Schritt
+    expect(migrateHint({ MESH_DEPLOYMENT: 'docker' })).toBe(MIGRATE_COMMAND_DOCKER);
+    expect(migrateHint({})).toBe(MIGRATE_COMMAND);
   });
 
   test('Superuser-URL aus MESH_DB_SUPERUSER_URL; weiterer Knoten im selben Cluster wird verweigert', async () => {

@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import type { ColumnDef } from '../../../shared/contract/common.ts';
 import type { OutboxMessage, Peer, ReceivedProduct } from '../../../shared/contract/federation.ts';
 import type { ExchangeLogEntry } from '../../../shared/contract/releases.ts';
+import { fingerprint } from '../../core/crypto.ts';
 import { iso, isoReq } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 
@@ -22,6 +23,9 @@ export function toPeer(r: Row<'peer'>): Peer {
     trustedAt: iso(r.trusted_at),
     lastSeenAt: iso(r.last_seen_at),
     lastError: r.last_error,
+    previousFingerprint: r.previous_public_key ? fingerprint(r.previous_public_key) : null,
+    previousKeyValidUntil: iso(r.previous_key_valid_until),
+    keyRotatedAt: iso(r.key_rotated_at),
   };
 }
 
@@ -79,6 +83,7 @@ export function toOutboxMessage(
     id: r.id,
     peerNodeId: r.peer_node_id,
     type: r.type,
+    kind: noticeKind(r.body),
     status: r.status as 'pending' | 'delivered' | 'failed',
     attempts: r.attempts,
     nextAttemptAt: isoReq(r.next_attempt_at),
@@ -86,4 +91,11 @@ export function toOutboxMessage(
     createdAt: isoReq(r.created_at),
     deliveredAt: iso(r.delivered_at),
   };
+}
+
+/** Art einer Mitteilung (body.kind), sonst null */
+function noticeKind(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const kind = (body as { kind?: unknown }).kind;
+  return typeof kind === 'string' && /^[a-z_]{1,40}$/.test(kind) ? kind : null;
 }

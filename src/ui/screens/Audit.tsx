@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { ErrorMessage } from '../components/ErrorMessage.tsx';
 import { FormField } from '../components/FormField.tsx';
+import { AnchorSection } from '../components/federation/AnchorSection.tsx';
 import { DateTime, DescriptionList, Details, Tabs } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
 import { QueryView } from '../components/QueryState.tsx';
@@ -291,8 +292,10 @@ function AuditLog() {
                   checked: verify.data.checked,
                 })}
           </p>
+          {verify.data.ok && <p className="small">{t('audit.verifyLocalOnly')}</p>}
         </div>
       )}
+      {s.can('anchors.status') && <AnchorSection />}
 
       <QueryView query={list}>
         {(data) => (

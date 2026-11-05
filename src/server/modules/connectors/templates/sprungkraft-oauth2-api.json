@@ -1,0 +1,138 @@
+{
+  "format": "osp-data-mesh/connector@1",
+  "connector": {
+    "slug": "sprungkraft-oauth2-api",
+    "name": "Sprungkraft-Messsystem (API mit OAuth2)",
+    "description": "Sprungmessungen (Counter Movement Jump, Squat Jump, Drop Jump) über die JSON-API eines Messsystems, das sich mit OAuth 2.0 (Client Credentials) absichert. Adresse, Token-Endpunkt und Client-Kennung des Herstellers eintragen, das Client-Geheimnis als Zugangsgeheimnis hinterlegen; beide Hosts müssen in MESH_SOURCE_ALLOWED_HOSTS stehen. Zuordnung über die Kennung der Person im Messsystem (osp-id).",
+    "kind": "http_api",
+    "targetType": "dataset",
+    "targetDatasetSlug": "sprungkraft",
+    "config": {
+      "type": "http_api",
+      "url": "https://messsystem.example.org/v1/measurements",
+      "itemsPath": "data",
+      "auth": {
+        "type": "oauth2_client_credentials",
+        "tokenUrl": "https://login.messsystem.example.org/oauth2/token",
+        "clientId": "osp-data-mesh",
+        "scope": "measurements.read",
+        "clientAuth": "basic"
+      },
+      "pagination": {
+        "type": "page",
+        "pageParam": "page",
+        "sizeParam": "page_size",
+        "pageSize": 50,
+        "firstPage": 1,
+        "maxPages": 50
+      },
+      "query": {},
+      "dateFormat": "ISO_DATETIME",
+      "timeoutMs": 15000
+    },
+    "mapping": [
+      {
+        "source": "athlete.external_id",
+        "target": "athlete.external_id",
+        "transform": "trim"
+      },
+      {
+        "source": "measurement_id",
+        "target": "data.measurement_id",
+        "transform": "trim"
+      },
+      {
+        "source": "test_type",
+        "target": "data.test_type",
+        "transform": "upper"
+      },
+      {
+        "source": "jump_height_cm",
+        "target": "data.jump_height_cm",
+        "transform": "trim"
+      },
+      {
+        "source": "peak_power_w",
+        "target": "data.peak_power_w",
+        "transform": "trim"
+      },
+      {
+        "source": "contact_time_ms",
+        "target": "data.contact_time_ms",
+        "transform": "trim"
+      },
+      {
+        "source": "measured_at",
+        "target": "data.measured_at",
+        "transform": "trim"
+      }
+    ],
+    "athleteMatch": {
+      "strategy": "external_id",
+      "system": "osp-id"
+    },
+    "onError": "skip_row",
+    "active": true
+  },
+  "dataset": {
+    "slug": "sprungkraft",
+    "name": "Sprungkraft",
+    "description": "Sprungdiagnostik auf der Kraftmessplatte: Sprunghöhe, Spitzenleistung und Bodenkontaktzeit.",
+    "category": "performance",
+    "specialCategory": false,
+    "shareability": "on_request",
+    "fields": [
+      {
+        "name": "measurement_id",
+        "label": "Mess-ID",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "test_type",
+        "label": "Testart",
+        "type": "enum",
+        "required": true,
+        "enumValues": ["CMJ", "SJ", "DJ"],
+        "description": "CMJ = Counter Movement Jump, SJ = Squat Jump, DJ = Drop Jump"
+      },
+      {
+        "name": "jump_height_cm",
+        "label": "Sprunghöhe",
+        "type": "number",
+        "unit": "cm",
+        "required": true,
+        "min": 5,
+        "max": 90
+      },
+      {
+        "name": "peak_power_w",
+        "label": "Spitzenleistung",
+        "type": "number",
+        "unit": "W",
+        "required": true,
+        "min": 500,
+        "max": 10000
+      },
+      {
+        "name": "contact_time_ms",
+        "label": "Bodenkontaktzeit",
+        "type": "integer",
+        "unit": "ms",
+        "required": false,
+        "min": 80,
+        "max": 600,
+        "description": "Nur bei Drop Jump"
+      },
+      {
+        "name": "measured_at",
+        "label": "Messzeitpunkt",
+        "type": "datetime",
+        "required": true
+      }
+    ],
+    "keyFields": ["measurement_id"],
+    "observedAtField": "measured_at",
+    "ownerContact": "Trainingswissenschaft des OSP"
+  }
+}

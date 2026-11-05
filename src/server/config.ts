@@ -89,6 +89,16 @@ const ConfigSchema = z.object({
   MESH_BI_DB_NAME: z.string().optional(),
   /** Hintergrundaufgaben (Outbox, Aufbewahrung, BI, Sicherungen) aktivieren */
   MESH_WORKERS: bool.default(true),
+  /**
+   * Abstand signierter Prüfpunkte der Audit-Kette an die Partner in Stunden (externe Verankerung,
+   * ADR 0014); 0 = nur auf Anforderung
+   */
+  MESH_AUDIT_CHECKPOINT_HOURS: z.coerce.number().min(0).max(168).default(1),
+  /**
+   * Höchstzahl neuer Prüfpunkte, die dieser Knoten je Partner in 24 Stunden verwahrt (Schutz vor
+   * Überflutung; stündliche Prüfpunkte plus einige auf Anforderung)
+   */
+  MESH_AUDIT_CHECKPOINT_MAX_PER_DAY: z.coerce.number().int().min(1).max(10_000).default(48),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

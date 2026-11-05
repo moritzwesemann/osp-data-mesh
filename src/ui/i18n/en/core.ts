@@ -194,6 +194,26 @@ export const reasons: Messages['reasons'] = {
   not_json: 'The data source did not return valid JSON.',
   items_not_array: 'The data source does not return a list of entries at the given path.',
   http_status: 'The data source responded with HTTP status {status}.',
+  // Excel files (import_error.params.reason or error.reason)
+  not_xlsx: 'The file is not an Excel workbook (.xlsx).',
+  xls_or_encrypted:
+    'The file is a legacy Excel file (.xls) or password-protected; please save it as .xlsx without a password.',
+  xlsx_corrupt: 'The Excel file is damaged or incomplete.',
+  xlsx_too_large:
+    'The Excel file is too large when unpacked (at most 100 MB) or contains an oversized cell value.',
+  xlsx_unsupported:
+    'The Excel file uses an unsupported feature (e.g. ZIP64, encryption, binary format .xlsb).',
+  // OAuth2 (client credentials) for API sources
+  token_url_not_allowed:
+    'The token endpoint (OAuth2) is not permitted for fetching (MESH_SOURCE_ALLOWED_HOSTS).',
+  token_network: 'The connection to the token endpoint (OAuth2) failed.',
+  token_timeout: 'The token endpoint (OAuth2) did not respond in time.',
+  token_rejected: 'The token endpoint (OAuth2) rejected the sign-in.',
+  token_invalid: 'The token endpoint (OAuth2) did not return a valid access token.',
+  oauth_invalid_client: 'The client ID or client secret is wrong (OAuth2).',
+  oauth_invalid_scope: 'The requested scope is invalid or not permitted (OAuth2).',
+  oauth_unauthorized_client: 'The client is not allowed to use this grant type (OAuth2).',
+  secret_missing: 'No access secret (for OAuth2: client secret) is stored for this source.',
   product_retired: 'The data product has been retired.',
   dataset_missing: 'The underlying dataset no longer exists.',
   already_revoked: 'The release has already been revoked.',
@@ -229,6 +249,14 @@ export const reasons: Messages['reasons'] = {
   pg_dump_failed: 'pg_dump exited with an error.',
   backup_write_failed: 'The backup file could not be written.',
   backup_failed: 'The backup failed.',
+  key_rotation_in_progress:
+    'A key change is already in progress; another one is only possible after its grace period (at any time in case of a suspected compromise).',
+  key_rotation_expired:
+    'The grace period of the key change has ended; the partner must add the new node card and compare the fingerprint.',
+  audit_log_empty: 'The audit log has no entries yet.',
+  checkpoint_signature_invalid: 'The partner returned checkpoints with an invalid signature.',
+  checkpoint_slot_occupied:
+    'The checkpoint could not be stored: its slot is repeatedly taken by invalid entries (logged). Check database access (incident response).',
 };
 
 export const denyReasons: Messages['denyReasons'] = {
@@ -287,6 +315,9 @@ export const importErrors: Messages['importErrors'] = {
   invalid_response: 'The response of the data source is invalid.',
   too_many_columns: 'The source has more columns than permitted.',
   too_many_rows: 'The source has more rows than permitted.',
+  invalid_file: 'The file cannot be read.',
+  sheet_not_found: 'The worksheet was not found in the file.',
+  header_row_detected: 'Title rows above the table were skipped; the header row was detected automatically.',
 };
 
 export const importParams: Messages['importParams'] = {
@@ -306,6 +337,8 @@ export const importParams: Messages['importParams'] = {
   firstRow: 'First in row',
   encoding: 'Read as',
   pages: 'Pages',
+  sheet: 'Worksheet',
+  headerRow: 'Header row',
   status: 'HTTP status',
   phase: 'Noticed',
   phases: {
@@ -320,6 +353,19 @@ export const importParams: Messages['importParams'] = {
     too_large: 'response too large',
     not_json: 'not valid JSON',
     items_not_array: 'no list at the path',
+    not_xlsx: 'not an Excel file (.xlsx)',
+    xls_or_encrypted: 'legacy .xls file or password-protected',
+    xlsx_corrupt: 'file damaged',
+    xlsx_too_large: 'too large when unpacked',
+    xlsx_unsupported: 'unsupported file feature',
+    token_network: 'connection to the token endpoint failed',
+    token_timeout: 'token endpoint timed out',
+    token_rejected: 'sign-in rejected by the token endpoint',
+    token_invalid: 'invalid token endpoint response',
+    oauth_invalid_client: 'client ID or client secret wrong',
+    oauth_invalid_scope: 'scope invalid or not permitted',
+    oauth_unauthorized_client: 'client not allowed for this grant',
+    secret_missing: 'no access secret stored',
   },
 };
 

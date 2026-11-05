@@ -228,7 +228,8 @@ Gibt die Kontrolle eine Zeile von `.env` aus, ist dieser Wert noch leer bzw. ein
 Alle übrigen Werte haben sinnvolle Standards (Beschreibung jeder Variable in `.env.example`); für diese
 Installation mit Caddy auf demselben Server bleiben insbesondere `MESH_HOST=127.0.0.1`, `MESH_PORT=4401`,
 `MESH_TRUST_PROXY=true` und `MESH_TRUSTED_PROXIES` (Standard `127.0.0.1,::1`) unverändert (siehe A9). Für
-API-Quellen (Messsysteme) die erlaubten Hosts in `MESH_SOURCE_ALLOWED_HOSTS` eintragen.
+API-Quellen (Messsysteme) die erlaubten Hosts in `MESH_SOURCE_ALLOWED_HOSTS` eintragen (bei OAuth2 auch
+den Host des Token-Endpunkts).
 
 **Sofort sichern:** `MESH_MASTER_KEY`, `MESH_BACKUP_KEY` und die Passwörter aus `.env.owner` in die
 Passwortverwaltung des OSP übertragen (getrennt von den Sicherungsdateien). Ohne `MESH_MASTER_KEY` sind
@@ -350,7 +351,11 @@ Superuser-Passwort mit `sudo -u postgres psql -p 5433 -c '\password postgres'`; 
 ## Variante B: Docker Compose
 
 Voraussetzung: Linux-Server mit Docker Engine 24 oder neuer und dem Compose-Plugin (v2.20 oder neuer),
-`git` und `openssl`.
+`git`, `openssl` und `curl`. Geprüft (November 2026) mit Docker Engine 29.5 und Compose 5.7 in einer
+Linux-VM (Colima auf macOS, arm64): dieser Ablauf Schritt für Schritt aus einem frischen Quellstand,
+Anmeldung über HTTPS, CSV-Import, Freigabe, Datenabruf, Sicherung und Wiederherstellung, zwei Knoten mit
+Vertrauen und Datenaustausch über HTTPS, Apache Superset sowie
+[`verify-deployment.sh`](#b5-installation-prüfen) (TLS, Netztrennung, Proxy-Vertrauen).
 
 ### B1. Quellcode und Umgebungsdatei
 
@@ -373,6 +378,26 @@ sudo sed -i "s|^CADDY_TLS=.*|CADDY_TLS=it@osp-beispiel.example.de|" .env    # LA
 
 Die Datei `deploy/.env` sofort in der Passwortverwaltung sichern (siehe Hinweis bei A5).
 
+**Weitere Werte in `deploy/.env`** (nur bei Bedarf ändern, Beschreibung in der Datei):
+
+| Variable | Standard | Wann ändern |
+|---|---|---|
+| `CADDY_BIND` | `0.0.0.0` (alle Schnittstellen) | nur eine Adresse veröffentlichen, z. B. die LAN-Adresse |
+| `CADDY_HTTPS_PORT`, `CADDY_HTTP_PORT` | `443`, `80` | 443/80 auf dem Server belegt (nur mit `CADDY_TLS=internal` oder eigenem Zertifikat – ACME braucht 443/80); der HTTPS-Port gehört dann in `MESH_PUBLIC_URL`, z. B. `https://mesh.osp-beispiel.example.de:8443` |
+| `FRONTEND_NET_PREFIX` | `172.31.252` | Subnetz `172.31.252.0/24` überschneidet sich mit einem Netz des OSP |
+| `COMPOSE_PROJECT_NAME` | `osp-data-mesh` | zweiter Knoten auf demselben Docker-Host (Test, Wiederherstellungstest): eigenes Verzeichnis, eigener Projektname, eigenes `FRONTEND_NET_PREFIX`, eigene Ports |
+
+> **Testinstallation auf einem Rechner (ohne DNS-Eintrag und ohne Ports 80/443):** z. B.
+> `CADDY_DOMAIN=mesh.localhost`, `MESH_PUBLIC_URL=https://mesh.localhost:8443`, `CADDY_TLS=internal`,
+> `CADDY_BIND=127.0.0.1`, `CADDY_HTTPS_PORT=8443`, `CADDY_HTTP_PORT=8081`. Namen unter `.localhost`
+> lösen Browser und `curl` ohne DNS zu `127.0.0.1` auf; das Zertifikat stellt Caddys interne CA aus
+> (Wurzelzertifikat siehe [Prüfen](#prüfen)). **Nicht für den Austausch mit Partnerknoten:** Bun verbindet
+> `*.localhost` immer mit der eigenen Loopback-Adresse (im Container also mit sich selbst). Knoten, die
+> Daten austauschen sollen, brauchen echte DNS-Namen (im LAN z. B. aus dem internen DNS des OSP).
+> Unter macOS (z. B. mit [Colima](https://github.com/abiosoft/colima)) die `sed`-Befehle aus B1 mit
+> `sed -i ''` ausführen und `sudo` weglassen; `deploy/` muss in einem Verzeichnis liegen, das die VM
+> einbindet (Colima: das Benutzerverzeichnis).
+
 ### B2. Starten
 
 ```sh
@@ -381,15 +406,18 @@ sudo docker compose ps -a
 ```
 
 Erwartet: `db` *healthy*, `migrate` *Exited (0)*, `node` *healthy* (nach bis zu 60 s), `caddy` *Up*.
-Bei Problemen: `sudo docker compose logs migrate node`.
+Bei Problemen: `sudo docker compose logs migrate node`. Der erste Bau dauert einige Minuten (geprüft:
+etwa 3,5 Minuten einschließlich Herunterladen der Basisabbilder).
 
 Ablauf beim Start: `db` initialisiert beim ersten Start mit `deploy/postgres/init/10-osp-bootstrap.sh`
 Rollen und Datenbank (ein eigener Cluster je Compose-Projekt) → `migrate` wendet die Migrationen als
 `mesh_owner` an → `node` startet mit der Rolle `mesh_app` → `caddy` stellt HTTPS bereit. Nur Caddy
-veröffentlicht Ports (80, 443); Datenbank und Knoten liegen im internen Netz. Caddy hat im Netz
-`frontend` (`172.31.252.0/24`) die feste Adresse `172.31.252.10`; der Knoten wertet `X-Forwarded-For`
-nur für Verbindungen von dieser Adresse aus (`MESH_TRUST_PROXY=true`,
-`MESH_TRUSTED_PROXIES=172.31.252.10`, in `docker-compose.yml` fest gesetzt).
+veröffentlicht Ports (`CADDY_HTTP_PORT`, `CADDY_HTTPS_PORT`, Standard 80 und 443); Datenbank und Knoten
+liegen in internen Netzen. Das Netz der Datenbank (`backend`) hat keinen Zugang nach außen und keine
+Adresse des Docker-Hosts – auch Prozesse auf dem Server selbst erreichen die Datenbank nicht. Caddy hat im
+Netz `frontend` (`172.31.252.0/24`, Präfix `FRONTEND_NET_PREFIX`) die feste Adresse `172.31.252.10`; der
+Knoten wertet `X-Forwarded-For` nur für Verbindungen von dieser Adresse aus (`MESH_TRUST_PROXY=true`,
+`MESH_TRUSTED_PROXIES=172.31.252.10`, in `docker-compose.yml` gesetzt).
 
 ### B3. Administration anlegen
 
@@ -403,6 +431,31 @@ Das ausgegebene Initialpasswort notieren (wird nur einmal angezeigt).
 
 Sicherungen landen im Docker-Volume `osp-data-mesh_backups` (im Container `/var/lib/osp-mesh/backups`).
 Für Kopien außerhalb des Servers siehe [Betrieb › Sicherungen](betrieb.md#sicherungen).
+
+### B5. Installation prüfen
+
+```sh
+sudo ./verify-deployment.sh
+```
+
+Das Skript (im Verzeichnis `deploy/`) prüft die laufende Installation von außen und endet mit
+„alle Prüfungen bestanden“ (Exit-Code 0):
+
+| Abschnitt | Prüfung |
+|---|---|
+| Container | `db`, `node` *healthy*, `caddy` läuft, `migrate` *Exited (0)* |
+| Veröffentlichte Ports | nur Caddy; Knoten (4401) und Datenbank (5432) nicht (Datenbank nur mit `docker-compose.bi-db.yml`) |
+| TLS | `https://<CADDY_DOMAIN>/healthz` und `/readyz` mit geprüfter Zertifikatskette (bei `CADDY_TLS=internal` mit Caddys exportiertem Wurzelzertifikat, ohne dieses abgelehnt); `http://` leitet auf dieselbe Adresse mit `https://` und richtigem Port um |
+| Sicherheits-Header | `Strict-Transport-Security`, `Content-Security-Policy` (`frame-ancestors 'none'`), `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`; kein `Server`-Header |
+| Netztrennung | Datenbank nicht erreichbar aus `frontend`, aus einem fremden Docker-Netz und vom Docker-Host; Knoten nicht aus einem fremden Docker-Netz; Datenbank ohne Zugang nach außen, Knoten mit (Partner, API-Quellen) |
+| Proxy-Vertrauen | `X-Forwarded-For` eines anderen Containers wird ignoriert (Audit-Log zeigt dessen echte Adresse); einen vom Client an Caddy geschickten Wert ersetzt Caddy |
+| optional | BI-Datenbankzugang (nur `mesh_bi` mit TLS), Superset über HTTPS, TLS-Vertrauen zu einem Partner (`VERIFY_PEER_URL=https://<partner>`) |
+
+Der Name `CADDY_DOMAIN` wird für die Prüfung per `curl --resolve` auf die Adresse von Caddy gelenkt
+(`CADDY_BIND`, bei `0.0.0.0` `127.0.0.1`; abweichend `VERIFY_ADDR=<ip>`), ein DNS-Eintrag ist also nicht
+nötig. Die Prüfung des Proxy-Vertrauens schreibt zwei abgelehnte Anmeldeversuche
+(`verify-deployment@example.invalid`) in das Audit-Log; auslassen mit `VERIFY_SKIP_XFF=1`. Weitere
+Optionen stehen im Kopf des Skripts. Nach Updates und Änderungen an `deploy/` erneut ausführen.
 
 ---
 
@@ -421,7 +474,9 @@ Für Kopien außerhalb des Servers siehe [Betrieb › Sicherungen](betrieb.md#si
    nativ (Debian/Ubuntu):
    `sudo cat /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt > osp-root.crt`.
    Dann `curl --cacert osp-root.crt https://…/healthz`. Für Browser das Zertifikat als vertrauenswürdige
-   Stelle importieren.
+   Stelle importieren. Die Wurzel gilt 10 Jahre; die Serverzertifikate (12 Stunden) erneuert Caddy selbst.
+   Docker: Diese und weitere Prüfungen (TLS, Netztrennung, Proxy-Vertrauen) fasst
+   [`verify-deployment.sh`](#b5-installation-prüfen) zusammen.
 
 2. **Anmeldung:** `https://mesh.osp-beispiel.example.de/` im Browser öffnen, mit der E-Mail-Adresse und
    dem Initialpasswort anmelden. Bei einem erzeugten Initialpasswort verlangt die Oberfläche sofort ein
@@ -480,10 +535,42 @@ Voraussetzungen für den Austausch: Beide Knoten erreichen einander per HTTPS un
 und haben ein Zertifikat, dem die Gegenseite vertraut (öffentliche Domain mit ACME empfohlen). Die Uhren
 beider Server müssen per NTP synchron sein (zulässige Abweichung 5 Minuten).
 
-*Interne CA (`tls internal`) zwischen OSPs (nicht verifiziert):* Der Partnerknoten muss Caddys
-Wurzelzertifikat vertrauen, z. B. über die Umgebungsvariable `NODE_EXTRA_CA_CERTS=/pfad/osp-root.crt`
-für den Server-Prozess, die von Bun ausgewertet wird. Für den produktiven Austausch werden öffentlich
-vertrauenswürdige Zertifikate empfohlen.
+*Interne CA (`tls internal`) zwischen OSPs:* Der Partnerknoten muss Caddys Wurzelzertifikat dieses
+Knotens vertrauen (Export siehe [Prüfen](#prüfen)), und umgekehrt. Bun wertet dafür die
+Umgebungsvariable `NODE_EXTRA_CA_CERTS` aus (PEM-Datei; mehrere Partner-CAs nacheinander in eine Datei
+schreiben). Die Föderation bleibt dabei auf HTTPS mit vollständiger Zertifikatsprüfung beschränkt
+(`MESH_FEDERATION_ALLOW_HTTP=false`). Die Variable muss in der Umgebung des Prozesses stehen; in `.env`
+wirkt sie **nicht** (Bun liest sie vor `--env-file`, geprüft mit Bun 1.4.3). Nativ daher
+`sudo systemctl edit osp-data-mesh` und eintragen:
+
+```ini
+[Service]
+Environment=NODE_EXTRA_CA_CERTS=/opt/osp-data-mesh/partner-ca.crt
+```
+
+dann `sudo systemctl restart osp-data-mesh`. Die Datei muss für den Dienstbenutzer lesbar sein
+(`sudo chmod 644 …`; ein Zertifikat ist nicht geheim): Ein mit `docker compose cp` exportiertes
+Wurzelzertifikat hat die Rechte `0600`, und eine unlesbare Datei übergeht Bun nur mit einer Warnung im Log
+(„ignoring extra certs … Permission denied“). Docker: das Zertifikat des Partners als
+`deploy/partner-ca.crt` ablegen (`sudo chmod 644 partner-ca.crt`) und `deploy/docker-compose.override.yml`
+anlegen (Compose liest die Datei
+automatisch mit; mit `COMPOSE_FILE` in `.env` dort ergänzen):
+
+```yaml
+services:
+  node:
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/osp-mesh/partner-ca.crt
+    volumes:
+      - ./partner-ca.crt:/etc/osp-mesh/partner-ca.crt:ro
+```
+
+Dann `sudo docker compose up -d` und prüfen: `sudo VERIFY_PEER_URL=https://<partner> ./verify-deployment.sh`
+(Abschnitt 9: Abruf von `/healthz` des Partners aus dem Knoten-Container mit geprüftem Zertifikat).
+Geprüft mit zwei Docker-Knoten mit je eigener interner CA: Vertrauen beidseitig bestätigt, signierter
+`ping` in beide Richtungen, Discovery und Datenabruf über HTTPS; ohne das Partnerzertifikat scheitert die
+Verbindung (`unable to get local issuer certificate`). Für den produktiven Austausch werden öffentlich
+vertrauenswürdige Zertifikate (ACME) empfohlen: Dann ist nichts weiter einzurichten.
 
 ## Optional: Apache Superset
 
@@ -509,9 +596,18 @@ die Sitzungen aller angemeldeten Personen. Das Cookie gilt ohne `Domain`-Attribu
 des Knotens und wird an `bi.<knoten>` nicht gesendet. Superset deshalb nie unter dem Namen des Knotens
 (auch nicht mit anderem Port) betreiben.
 
+Prüfen, ob die drei Referenz-Dashboards Daten liefern (je Diagramm eine Abfrage wie im Browser; die
+BI-Views entstehen erst mit Freigaben an die Empfängerrolle `bi`, siehe [BI-Anbindung](bi.md)):
+
+```sh
+sudo docker compose --profile bi run --rm --no-deps superset-bootstrap \
+  python /app/osp/bootstrap_superset.py --verify       # → "alle Diagramme liefern Daten"
+```
+
 Einzelheiten, Vertrag der BI-Views und manuelle Schritte: [BI-Anbindung](bi.md) und
-`deploy/superset/README.md`.
-**Nicht lokal verifiziert.**
+`deploy/superset/README.md`. Geprüft mit Docker 29: Bau des Abbilds, Einrichtung, alle 13 Diagramme der
+drei Dashboards mit Daten, Aufruf über Caddy/HTTPS unter `bi.<CADDY_DOMAIN>` (Sitzungs-Cookie `Secure`,
+`HttpOnly`); Superset lädt nichts von Dritten (Content-Security-Policy ohne externe Quellen).
 
 ## Lokale Demo und Tests (Entwicklungsrechner)
 

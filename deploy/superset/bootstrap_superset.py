@@ -1,9 +1,9 @@
 """
 Einrichtung von Apache Superset für OSP-Data-Mesh über die REST-API von Superset.
 
-Lokal verifiziert mit Superset 6.1.0 (PyPI, virtuelle Umgebung, ohne Docker) gegen die BI-Views der Demo
-(osp-nord, als mesh_bi); das Docker-Abbild selbst nicht. Siehe deploy/superset/README.md, dort auch die
-manuellen Schritte.
+Verifiziert mit Superset 6.1.0 ohne Docker (PyPI, virtuelle Umgebung) gegen die BI-Views der Demo und im
+Docker-Abbild (Compose-Profil "bi", Docker 29) gegen einen Knoten mit Daten aus den Demo-Vorlagen, auch
+über Caddy/HTTPS (--verify). Siehe deploy/superset/README.md, dort auch die manuellen Schritte.
 
 Die Diagramme werden wie die Beispieldiagramme von Superset ohne gespeicherten Abfragekontext angelegt:
 Dashboards berechnen die Abfrage im Browser aus den Formulardaten. GET /api/v1/chart/<id>/data/ (und Berichte
@@ -25,6 +25,10 @@ Umgebung:
 Aufruf:
   python bootstrap_superset.py              Einrichtung ausführen
   python bootstrap_superset.py --print-plan nur den Plan (Datasets, Diagramme, Dashboards) ausgeben
+  python bootstrap_superset.py --verify     prüfen: jedes Diagramm der drei Dashboards liefert Zeilen
+                                            (Abfrage wie im Browser über POST /api/v1/chart/data;
+                                            SUPERSET_MESH_DB_URI nicht nötig; über HTTPS mit interner
+                                            CA: SSL_CERT_FILE=<wurzelzertifikat>); Exit-Code 1 bei Fehlern
 
 Nur Standardbibliothek (läuft mit jedem Python >= 3.8).
 """
@@ -402,6 +406,83 @@ def print_plan():
             assert view in VIEWS, text
 
 
+# ------------------------------------------------------------------------------------------------
+# Prüfung: liefern die Diagramme der Dashboards Daten?
+# ------------------------------------------------------------------------------------------------
+def query_for(viz_type, form):
+    """Abfrage (QueryObject) aus den Formulardaten eines Diagramms, wie sie die Oberfläche von Superset für
+    die hier verwendeten Diagrammtypen erzeugt (vereinfacht: ohne Sortierung und Nachbearbeitung)."""
+    filters = [
+        {"col": f["subject"], "op": f["operator"], "val": f["comparator"]}
+        for f in form.get("adhoc_filters", [])
+        if f.get("expressionType") == "SIMPLE"
+    ]
+    metrics = form.get("metrics") or ([form["metric"]] if form.get("metric") else [])
+    if viz_type in ("echarts_timeseries_bar", "echarts_timeseries_line"):
+        x_axis = form["x_axis"]
+        if form.get("time_grain_sqla"):
+            x_axis = {
+                "timeGrain": form["time_grain_sqla"],
+                "columnType": "BASE_AXIS",
+                "sqlExpression": x_axis,
+                "label": x_axis,
+                "expressionType": "SQL",
+            }
+        columns = [x_axis] + form.get("groupby", [])
+    elif viz_type == "pivot_table_v2":
+        columns = form.get("groupbyRows", []) + form.get("groupbyColumns", [])
+    elif viz_type == "histogram_v2":
+        columns, metrics = [form["column"]] + form.get("groupby", []), []
+    else:  # big_number_total, pie, table (query_mode aggregate)
+        columns = form.get("groupby", [])
+    return {
+        "columns": columns,
+        "metrics": metrics,
+        "filters": filters,
+        "orderby": [],
+        "row_limit": form.get("row_limit", 1000),
+        "time_range": "No filter",
+        "extras": {"having": "", "where": ""},
+    }
+
+
+def verify(api):
+    failures = 0
+    for title, slug, expected in DASHBOARDS:
+        try:
+            charts = api.request("GET", "/api/v1/dashboard/%s/charts" % slug).get("result", [])
+        except ApiError as err:
+            print("FEHLER Dashboard %s (%s): %s" % (title, slug, err))
+            failures += 1
+            continue
+        print("Dashboard %s (%s): %d von %d Diagrammen" % (title, slug, len(charts), len(expected)))
+        if len(charts) != len(expected):
+            failures += 1
+        for chart in sorted(charts, key=lambda c: c["id"]):
+            form = chart.get("form_data") or {}
+            viz_type = form.get("viz_type", "")
+            ds_id = int(str(form.get("datasource", "0__table")).split("__")[0])
+            body = {
+                "datasource": {"id": ds_id, "type": "table"},
+                "force": True,
+                "queries": [query_for(viz_type, form)],
+                "form_data": form,
+                "result_format": "json",
+                "result_type": "full",
+            }
+            try:
+                result = api.request("POST", "/api/v1/chart/data", body)["result"][0]
+                rows = result.get("rowcount") or len(result.get("data") or [])
+                ok = rows > 0 and not result.get("error")
+                detail = "%d Zeilen" % rows if ok else "keine Zeilen %s" % (result.get("error") or "")
+            except (ApiError, KeyError, IndexError) as err:
+                ok, detail = False, str(err)
+            failures += 0 if ok else 1
+            print("  %s %s (%s): %s" % ("ok    " if ok else "FEHLER", chart.get("slice_name"), viz_type, detail))
+    print("Ergebnis: %s" % ("alle Diagramme liefern Daten" if failures == 0 else "%d Fehler" % failures))
+    return failures
+
+
 def main():
     if "--print-plan" in sys.argv:
         print_plan()
@@ -409,6 +490,13 @@ def main():
     base = os.environ.get("SUPERSET_URL", "http://superset:8088")
     user = os.environ.get("SUPERSET_ADMIN_USER", "admin")
     password = os.environ.get("SUPERSET_ADMIN_PASSWORD", "")
+    if "--verify" in sys.argv:
+        if not password:
+            raise SystemExit("SUPERSET_ADMIN_PASSWORD setzen")
+        api = Superset(base)
+        api.wait_until_healthy(attempts=12)
+        api.login(user, password)
+        sys.exit(1 if verify(api) else 0)
     uri = os.environ.get("SUPERSET_MESH_DB_URI", "")
     if not password or not uri or ":@" in uri:
         raise SystemExit("SUPERSET_ADMIN_PASSWORD und SUPERSET_MESH_DB_URI (mit Passwort von mesh_bi) setzen")

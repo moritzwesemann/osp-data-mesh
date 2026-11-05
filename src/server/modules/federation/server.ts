@@ -1,5 +1,5 @@
 /**
- * Server des Föderationsprotokolls: POST /federation/v1/:type (ping | catalog | pull | notice).
+ * Server des Föderationsprotokolls: POST /federation/v1/:type (ping | catalog | pull | notice | checkpoints).
  *
  * Prüfreihenfolge (docs/protokoll.md): unknown_node → untrusted → bad_signature → bad_request →
  * wrong_recipient → clock_skew → replay. Absender (unknown_node/untrusted) werden geprüft, bevor der Body
@@ -12,6 +12,8 @@ import { Uuid } from '../../../shared/contract/common.ts';
 import {
   CatalogRequest,
   CatalogResponse,
+  CheckpointsRequest,
+  type DataNoticeBody,
   type FederationErrorCode,
   type MessageType,
   NoticeBody,
@@ -23,13 +25,16 @@ import {
   type ResponseEnvelope,
 } from '../../../shared/contract/federation-wire.ts';
 import type { AuditEntryInput } from '../../core/audit.ts';
-import { ed25519Verify, sha256Hex } from '../../core/crypto.ts';
+import { sha256Hex } from '../../core/crypto.ts';
 import type { Tx } from '../../core/db.ts';
 import type { Row } from '../../core/db-types.ts';
 import type { AppEnv, Deps } from '../../core/deps.ts';
+import type { Signer } from '../../core/node-identity.ts';
 import { writeTx } from '../../core/tx.ts';
 import type { DenyReason } from '../releases/engine.ts';
+import { receiveCheckpoint, serveCheckpoints } from './anchors.ts';
 import { REJECTION_WINDOW_MS, RejectionGuard } from './guard.ts';
+import { type InboundContext, receiveKeyRotation, verifyPeerSignature } from './keys.ts';
 import {
   decodeUtf8,
   FEDERATION_PATH,
@@ -120,12 +125,16 @@ interface RequestMeta {
   ip: string | null;
   /** bekannter Partner laut X-Mesh-Node (noch nicht authentifiziert) */
   peer: Row<'peer'> | null;
+  /** signiert die Antwort (im Übergang eines Schlüsselwechsels für diesen Partner ggf. der bisherige Schlüssel) */
+  signer: Signer;
 }
 
 interface Inbound extends RequestMeta {
   peer: Row<'peer'>;
   envelope: RequestEnvelope;
   now: Date;
+  /** Schlüssel des Partners, mit dem die Anfrage geprüft wurde (bisheriger nur in der Übergangszeit) */
+  verifiedWith: 'current' | 'previous';
 }
 
 type Outcome =
@@ -152,7 +161,7 @@ function respond(status: number, nodeId: string, signed: Signed<unknown>): Respo
 
 function sendResult(meta: RequestMeta, to: string, inReplyTo: string | null, result: ResponseResult) {
   const { deps } = meta;
-  const signed = signResponse(deps.identity, to, inReplyTo, result, deps.now());
+  const signed = signResponse(meta.signer, to, inReplyTo, result, deps.now());
   const status = result.ok ? 200 : FEDERATION_STATUS[result.code];
   return respond(status, deps.identity.nodeId, signed);
 }
@@ -290,6 +299,7 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
     httpRequestId: c.get('requestId'),
     ip: c.get('ip'),
     peer: null,
+    signer: deps.identity,
   };
   const guard = rejectionGuard(deps);
 
@@ -301,6 +311,7 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
     ? await deps.db.selectFrom('peer').selectAll().where('node_id', '=', meta.headerNode).executeTakeFirst()
     : undefined;
   meta.peer = peer ?? null;
+  if (peer) meta.signer = await deps.identity.signerFor(deps.db, peer.node_id, deps.now());
   if (!peer || !acceptsFrom(peer, meta.pathType)) {
     // je behauptetem Absender nur hier: zugelassene Partner kann eine gefälschte Kennung nicht aussperren
     if (guard.nodeBlocked(meta.headerNode, deps.now().getTime())) return tooManyRejections(meta);
@@ -313,7 +324,9 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
   const bytes = await readLimited(c.req.raw, MAX_REQUEST_BYTES);
   if (!bytes) return reject(meta, 'bad_request', null, { reason: 'payload_too_large', protocol: true });
   const signature = c.req.header(HEADER_SIGNATURE) ?? '';
-  if (!signature || !ed25519Verify(peer.public_key, bytes, signature)) {
+  // gespeicherter Schlüssel; der bisherige nur in der Übergangszeit nach einem Schlüsselwechsel des Partners
+  const verifiedWith = signature ? verifyPeerSignature(peer, bytes, signature, deps.now()) : null;
+  if (!verifiedWith) {
     return reject(meta, 'bad_signature', peekId(bytes), { protocol: true });
   }
 
@@ -341,7 +354,7 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
     .executeTakeFirst();
   if (!fresh) return reject(meta, 'replay', env.id, { protocol: true });
 
-  const inbound: Inbound = { ...meta, peer, envelope: env, now };
+  const inbound: Inbound = { ...meta, peer, envelope: env, now, verifiedWith };
   let outcome: Outcome;
   try {
     outcome = await HANDLERS[env.type](inbound, env.body);
@@ -360,7 +373,7 @@ async function handleInbound(deps: Deps, c: Context<AppEnv>): Promise<Response> 
   const signed =
     'signed' in outcome
       ? outcome.signed
-      : signResponse(deps.identity, peer.node_id, env.id, { ok: true, body: outcome.body }, deps.now());
+      : signResponse(meta.signer, peer.node_id, env.id, { ok: true, body: outcome.body }, deps.now());
   try {
     await deps.db.updateTable('peer').set({ last_seen_at: now }).where('id', '=', peer.id).execute();
   } catch (err) {
@@ -380,6 +393,7 @@ const HANDLERS: Record<MessageType, MessageHandler> = {
   catalog: handleCatalog,
   pull: handlePull,
   notice: handleNotice,
+  checkpoints: handleCheckpoints,
 };
 
 const BAD_REQUEST: Outcome = { ok: false, code: 'bad_request' };
@@ -556,13 +570,7 @@ async function servePull(
     generatedAt: ib.now.toISOString(),
   };
 
-  const signed = signResponse(
-    deps.identity,
-    peer.node_id,
-    envelope.id,
-    { ok: true, body: response },
-    deps.now(),
-  );
+  const signed = signResponse(ib.signer, peer.node_id, envelope.id, { ok: true, body: response }, deps.now());
   const logId = await logExchange(trx, {
     direction: 'outgoing',
     peer_id: peer.id,
@@ -592,10 +600,37 @@ async function servePull(
   };
 }
 
+function inboundContext(ib: Inbound): InboundContext {
+  return {
+    deps: ib.deps,
+    peer: ib.peer,
+    verifiedWith: ib.verifiedWith,
+    messageId: ib.envelope.id,
+    now: ib.now,
+    ip: ib.ip,
+    requestId: ib.httpRequestId,
+  };
+}
+
 async function handleNotice(ib: Inbound, body: unknown): Promise<Outcome> {
   const parsed = NoticeBody.safeParse(body);
   if (!parsed.success) return BAD_REQUEST;
-  const notice = parsed.data;
+  const data = parsed.data;
+  // Steuermitteilungen (Schlüsselwechsel, Prüfpunkte der Audit-Kette): nur von vertrauenswürdigen Partnern
+  if (data.kind === 'key_rotated') return receiveKeyRotation(inboundContext(ib), data);
+  if (data.kind === 'audit_checkpoint') return receiveCheckpoint(inboundContext(ib), data);
+  return handleDataNotice(ib, data);
+}
+
+/** Bei uns verwahrte Prüfpunkte der Audit-Kette des anfragenden Partners (ADR 0014) */
+async function handleCheckpoints(ib: Inbound, body: unknown): Promise<Outcome> {
+  const req = CheckpointsRequest.safeParse(body);
+  if (!req.success) return BAD_REQUEST;
+  return serveCheckpoints(inboundContext(ib), req.data);
+}
+
+/** Widerruf bzw. Löschung: Empfänger löscht Kopie bzw. Zeilen von genau diesem Datenhalter */
+async function handleDataNotice(ib: Inbound, notice: DataNoticeBody): Promise<Outcome> {
   const { deps, peer, envelope } = ib;
 
   const subjects = notice.kind === 'subjects_withdrawn' ? [...new Set(notice.subjects)] : [];

@@ -216,6 +216,8 @@ export interface RawSendOptions {
   tamper?: (raw: string) => string;
   /** Exakt diesen Rohtext/diese Signatur senden (Replay) */
   replay?: { raw: string; signature: string };
+  /** mit diesem Schlüssel statt dem aktuellen des Absenders signieren (z. B. bisheriger Schlüssel) */
+  signWith?: { sign(data: string): string };
 }
 
 export interface RawResult {
@@ -251,7 +253,7 @@ export async function rawSend(target: TestNode, o: RawSendOptions): Promise<RawR
     ...o.envelope,
   };
   let raw = o.replay?.raw ?? JSON.stringify(env);
-  const signature = o.replay?.signature ?? o.from.deps.identity.sign(raw);
+  const signature = o.replay?.signature ?? (o.signWith ?? o.from.deps.identity).sign(raw);
   if (o.tamper) raw = o.tamper(raw);
   const headers: Record<string, string> = {
     'content-type': 'application/json',

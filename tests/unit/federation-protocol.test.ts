@@ -19,7 +19,14 @@ import { RequestEnvelope, ResponseEnvelope } from '../../src/shared/contract/fed
 
 function identity(nodeId: string) {
   const kp = generateEd25519();
-  return { nodeId, publicKey: kp.publicKey, sign: (d: string | Uint8Array) => ed25519Sign(kp.privateKey, d) };
+  const id = {
+    nodeId,
+    publicKey: kp.publicKey,
+    sign: (d: string | Uint8Array) => ed25519Sign(kp.privateKey, d),
+    // kein Schlüsselwechsel im Gang: immer der aktuelle Schlüssel (NodeIdentity.signerFor)
+    signerFor: async () => id,
+  };
+  return id;
 }
 
 describe('Umschläge', () => {

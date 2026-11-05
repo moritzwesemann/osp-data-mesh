@@ -2,21 +2,42 @@
  * Befehle der Betriebs-CLI (siehe main.ts).
  */
 import { randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sql } from 'kysely';
 import pg from 'pg';
 import { z } from 'zod';
 import { buildDeps } from '../app.ts';
 import { loadConfig } from '../config.ts';
 import type { Actor } from '../core/audit.ts';
 import { AuditWriter } from '../core/audit.ts';
-import { randomToken, SecretBox } from '../core/crypto.ts';
+import { randomToken, SecretBox, sha256Hex } from '../core/crypto.ts';
 import { createDb, type Db, pgCode } from '../core/db.ts';
 import { migrate } from '../core/migrate.ts';
 import { NodeIdentity } from '../core/node-identity.ts';
 import { tryAcquireNodeLock } from '../core/node-lock.ts';
+import { recomputeAuditChain } from '../modules/audit/chain.ts';
 import { passwordPolicyViolation } from '../modules/auth/policy.ts';
 import { hashPassword } from '../modules/auth/sessions.ts';
+import {
+  type AnchorProfile,
+  type LoadedProfile,
+  loadAnchorProfile,
+  type ProfileDiff,
+  type ProfileEpoch,
+  ProfileError,
+  type ProfilePlan,
+  planAnchorProfile,
+} from '../modules/federation/anchor-profile.ts';
+import {
+  type AnchorFinding,
+  type AnchorVerification,
+  checkCheckpointExport,
+  createCheckpoint,
+  latestCheckpointExport,
+  STALE_INTERVALS,
+  verifyAnchors,
+} from '../modules/federation/anchors.ts';
+import { DEFAULT_GRACE_DAYS, MAX_GRACE_DAYS, rotateNodeKey } from '../modules/federation/keys.ts';
 import { BackupManager } from '../modules/system/backup.ts';
 import { BackupFileError } from '../modules/system/backup-file.ts';
 import { resolvePsql, sanitizeToolOutput, splitDbUrl, toolEnv } from '../modules/system/pg-tools.ts';
@@ -28,8 +49,18 @@ export type Command = (args: string[]) => Promise<number>;
 
 const CLI_ACTOR: Actor = { type: 'system', id: null, label: 'cli' };
 
+/** Aufruf der CLI in Ausgaben (nativ; Docker: docker compose run --rm cli …) */
+const MESH_CLI = 'bun --env-file=.env run cli';
+
 /** Dokumentierter Aufruf der Migrationen (Server- und Owner-Umgebung, docs/installation.md) */
 export const MIGRATE_COMMAND = 'bun --env-file=.env --env-file=.env.owner run cli migrate';
+/** Entsprechender Schritt unter Docker Compose (im Verzeichnis deploy/; der Dienst migrate läuft auch bei jedem „up“) */
+export const MIGRATE_COMMAND_DOCKER = 'docker compose run --rm migrate';
+
+/** Nächster Schritt passend zur Installationsart (Container-Abbild setzt MESH_DEPLOYMENT=docker) */
+export function migrateHint(env: Record<string, string | undefined> = process.env): string {
+  return env.MESH_DEPLOYMENT === 'docker' ? MIGRATE_COMMAND_DOCKER : MIGRATE_COMMAND;
+}
 const ROOT = resolve(import.meta.dir, '../../..');
 
 interface Parsed {
@@ -89,14 +120,319 @@ async function withDb<T>(url: string, fn: (db: Db) => Promise<T>): Promise<T> {
   }
 }
 
-async function verifyAudit(db: Db) {
-  const r = await sql<{
-    checked: number | string;
-    first_broken_seq: number | string | null;
-  }>`select * from audit_verify()`.execute(db);
-  const row = r.rows[0];
-  const firstBrokenSeq = row?.first_broken_seq == null ? null : Number(row.first_broken_seq);
-  return { ok: firstBrokenSeq === null, checked: Number(row?.checked ?? 0), firstBrokenSeq };
+/** Exit-Codes von verify-audit --with-partners bzw. --checkpoint */
+export const VERIFY_EXIT = { ok: 0, manipulated: 1, unanchored: 3, needs_review: 4 } as const;
+
+function readProfile(file: string): LoadedProfile {
+  try {
+    return loadAnchorProfile(resolve(file));
+  } catch (err) {
+    if (err instanceof ProfileError) {
+      throw new Error(`Anker-Profil unbrauchbar / anchoring profile unusable (${err.message}): ${file}`);
+    }
+    throw err;
+  }
+}
+
+const BREAK_TEXT: Record<string, string> = {
+  seq_gap: 'Laufnummer fehlt oder außer der Reihe / sequence gap',
+  prev_hash_mismatch: 'Verweis auf den Vorgänger falsch / previous hash wrong',
+  hash_mismatch: 'Inhalt passt nicht zum Hash, Eintrag geändert / content does not match its hash',
+  unsequenced: 'Einträge ohne Laufnummer / entries without sequence number',
+  not_a_table: 'audit_log ist keine gewöhnliche Tabelle oder hat Zeilensicherheit / not a plain table',
+  column_changed:
+    'Aufbau von audit_log verändert (Spaltentyp, NOT NULL oder Spalte fehlt) / audit_log columns altered',
+  invalid_value: 'actor_type oder outcome mit unzulässigem Wert / actor_type or outcome not allowed',
+  digest_version:
+    'unbekannte oder zurückgesetzte Version der Hash-Eingabe / unknown or downgraded digest version',
+};
+
+function chainLine(local: {
+  ok: boolean;
+  checked: number;
+  firstBrokenSeq: number | null;
+  breakKind: string | null;
+}) {
+  return local.ok
+    ? `Audit-Kette (im Programm neu berechnet) ok / chain (recomputed) ok: ${local.checked} Einträge / entries`
+    : `Audit-Kette GEBROCHEN bei seq ${local.firstBrokenSeq} (${BREAK_TEXT[local.breakKind ?? ''] ?? local.breakKind}) / chain BROKEN`;
+}
+
+function findingText(f: AnchorFinding): string {
+  const n = f.nodeId ?? '?';
+  switch (f.code) {
+    case 'insufficient_partners':
+      return `nur ${f.count} von mindestens ${f.seq} Partnern bestätigen die Kette / only ${f.count} of ${f.seq} required partners confirm`;
+    case 'partner_missing':
+      return `Partner ${n} aus dem Profil hat nicht bestätigt (${f.detail}); ohne Begründung (--excuse … --reason …) nicht bestanden / profile partner did not confirm`;
+    case 'partner_excused':
+      return `Partner ${n} entschuldigt / excused: ${f.detail ?? ''}`;
+    case 'partner_not_trusted_in_database':
+      return `Partner ${n} ist in der Datenbank nicht vertrauenswürdig (${f.detail}) – Partnerliste verändert? Klären / not trusted in the database: clarify`;
+    case 'partner_differs_from_database':
+      return `Partner ${n}: ${f.detail} in der Datenbank weicht vom Profil ab – Manipulation oder Schlüsselwechsel/Umzug des Partners; klären, dann Profil neu exportieren / differs from the profile`;
+    case 'epoch_not_in_profile':
+      return `Epoche ${f.epoch}${f.seq !== undefined ? ` (Wiederherstellung, übernommen bis seq ${f.seq}${f.detail ? `, ${f.detail}` : ''})` : ''} steht nicht im Profil – mit dem Protokoll der Wiederherstellung abgleichen; ohne Wiederherstellung: Manipulation / epoch not documented in the profile`;
+    case 'epoch_conflict':
+      return `Epoche ${f.epoch}: Datenbank und Profil widersprechen sich / database and profile disagree`;
+    case 'restore_epoch':
+      return `Wiederherstellung / restore: Epoche ${f.epoch} seit ${f.detail ?? '?'}, übernommen bis seq ${f.seq ?? '?'}`;
+    case 'lost_by_restore':
+      if (f.severity === 'fail') {
+        return `${f.count} Prüfpunkt(e) bei ${n} wären durch eine im Profil NICHT dokumentierte Wiederherstellung verloren – gilt als Abschneiden. Echte Wiederherstellung: mit ihrem Protokoll (Prüfsumme der Sicherung, Kopf davor) abgleichen und das Profil mit --previous … --accept-epochs neu exportieren / lost by a restore the profile does not document: treated as truncation`;
+      }
+      return `${f.count} Prüfpunkt(e) bei ${n} durch Wiederherstellung verloren (frühere Epoche, nach der übernommenen Laufnummer)${f.severity === 'info' ? ', im Profil dokumentiert' : ''} / lost by restore`;
+    case 'unknown_epoch':
+      return `${f.count} Prüfpunkt(e) bei ${n} mit unbekannter Epoche – Profil mit --previous ergänzen oder klären / unknown epoch`;
+    case 'inconclusive':
+      return `${f.count} Abweichung(en) bei ${n}, signiert mit einem als kompromittiert abgelösten Schlüssel – kein Beweis, klären / signed by a compromised key: not conclusive`;
+    case 'anchor_stale':
+      return `Jüngster von Partnern bestätigter Prüfpunkt (seq ${f.seq ?? '?'}, ${f.detail ?? '?'}) ist älter als das ${STALE_INTERVALS}-fache Intervall; ${f.count ?? 0} Einträge danach sind nicht verankert und könnten unbemerkt geändert oder gelöscht sein. Planer und Zustellung prüfen (Knoten lief lange nicht? audit-checkpoint), dann erneut prüfen / newest confirmed checkpoint is stale`;
+    case 'legacy_digest_ambiguous':
+      return `${f.count} alte Einträge (Hash-Version 1) enthalten „|“ in einem Feld: dort ist eine Verschiebung zwischen benachbarten Feldern nicht erkennbar (Restrisiko, ADR 0006) / legacy entries with ambiguous field boundaries`;
+  }
+}
+
+function anchoringLine(a: AnchorVerification['anchoring']): string {
+  const last =
+    a.lastAnchoredSeq === null
+      ? 'kein bestätigter Prüfpunkt / no confirmed checkpoint'
+      : `bis seq ${a.lastAnchoredSeq} (${a.lastAnchoredAt ?? '?'})`;
+  return `Verankert / anchored: ${last}; ${a.unanchoredEntries} Einträge danach noch nicht verankert / entries not yet anchored${a.staleAfterHours === null ? ' (kein Planer / no schedule)' : ''}`;
+}
+
+function keyLine(k: AnchorProfile['keys'][number]): string {
+  return `Fingerprint ${k.fingerprint}: ${k.validFrom ?? 'Anfang / start'} … ${k.validUntil ?? 'heute / now'}${k.retired ? ` (${k.retired === 'compromised' ? 'kompromittiert / compromised' : 'planmäßig abgelöst / rotated'})` : ''}`;
+}
+
+function epochLine(e: ProfileEpoch): string {
+  if (e.reason === 'initial') {
+    return `${e.epoch}: erste / initial${e.startedAt ? `, seit / since ${e.startedAt}` : ''}`;
+  }
+  const backup =
+    e.backupSha256 === undefined
+      ? 'Sicherung nicht festgehalten / backup not recorded'
+      : `Sicherung / backup SHA-256 ${e.backupSha256 ?? '?'} vom / of ${e.backupCreatedAt ?? '?'}`;
+  const head =
+    e.preRestoreSeq === undefined || e.preRestoreSeq === null
+      ? 'Kopf davor unbekannt / head before unknown'
+      : `Kopf davor / head before: Epoche ${e.preRestoreEpoch ?? '?'} seq ${e.preRestoreSeq} hash ${e.preRestoreHash ?? '?'}`;
+  return `${e.epoch}: Wiederherstellung / restore${e.startedAt ? ` am / on ${e.startedAt}` : ''}, übernommen bis / restored up to seq ${e.restoredSeq}; ${backup}; ${head}`;
+}
+
+/** Abweichungen vom alten Profil, je Kategorie mit Hinweis, ob angenommen */
+function profileDiffLines(d: ProfileDiff, accept: Record<'partners' | 'keys' | 'epochs', boolean>): string[] {
+  const lines: string[] = [];
+  const state = (c: 'partners' | 'keys' | 'epochs') =>
+    accept[c] ? 'angenommen / accepted' : 'NICHT angenommen / NOT accepted';
+  if (d.minPartners.previous !== d.minPartners.next) {
+    lines.push(`Mindestzahl / minimum: ${d.minPartners.previous} → ${d.minPartners.next} (--min-partners)`);
+  } else lines.push(`Mindestzahl bleibt / minimum kept: ${d.minPartners.next}`);
+  const pd = d.partners;
+  if (pd.added.length || pd.removed.length || pd.changed.length) {
+    lines.push(`Partner geändert / partner changes (${state('partners')}):`);
+    for (const x of pd.removed)
+      lines.push(
+        `  - entfernt / removed: ${x.nodeId} (in der Datenbank / in the database: ${x.dbStatus ?? 'fehlt / missing'}), Fingerprint ${x.fingerprint}`,
+      );
+    for (const x of pd.added)
+      lines.push(`  + neu / added: ${x.nodeId} (${x.displayName}) ${x.baseUrl} Fingerprint ${x.fingerprint}`);
+    for (const x of pd.changed) {
+      const parts = x.fields.map((f) =>
+        f === 'publicKey'
+          ? `Fingerprint ${x.previous.fingerprint} → ${x.current.fingerprint}`
+          : `Adresse / address ${x.previous.baseUrl} → ${x.current.baseUrl}`,
+      );
+      lines.push(`  ~ geändert / changed: ${x.nodeId}: ${parts.join(', ')}`);
+    }
+  }
+  for (const x of pd.renamed) lines.push(`Anzeigename / display name ${x.nodeId}: ${x.from} → ${x.to}`);
+  const kd = d.keys;
+  if (kd.added.length || kd.changed.length) {
+    lines.push(`Eigene Schlüssel geändert / own key changes (${state('keys')}):`);
+    for (const k of kd.added) lines.push(`  + neu / added: ${keyLine(k)}`);
+    for (const k of kd.changed) {
+      lines.push(`  ~ geändert / changed: ${keyLine(k.current)}`);
+      lines.push(`      bisher / previously: ${keyLine(k.previous)}`);
+    }
+  }
+  for (const k of kd.kept)
+    lines.push(`Schlüssel nur im alten Profil, bleibt / kept from previous: ${k.fingerprint}`);
+  const ed = d.epochs;
+  if (ed.added.length || ed.changed.length) {
+    lines.push(`Epochen geändert / epoch changes (${state('epochs')}):`);
+    for (const e of ed.added) lines.push(`  + neu / added: ${epochLine(e)}`);
+    for (const e of ed.changed) {
+      lines.push(`  ~ geändert / changed: ${epochLine(e.current)}`);
+      lines.push(`      bisher / previously: ${epochLine(e.previous)}`);
+    }
+  }
+  for (const e of ed.kept) lines.push(`Epoche nur im alten Profil, bleibt / kept from previous: ${e.epoch}`);
+  return lines;
+}
+
+/** Zusammenfassung der Abweichungen für das Audit-Log (Fingerprints, keine Schlüssel) */
+function diffSummary(d: ProfileDiff) {
+  return {
+    minPartners: d.minPartners,
+    partnersAdded: d.partners.added.map((x) => x.nodeId),
+    partnersRemoved: d.partners.removed.map((x) => x.nodeId),
+    partnersChanged: d.partners.changed.map((x) => ({ nodeId: x.nodeId, fields: x.fields })),
+    keysAdded: d.keys.added.map((k) => k.fingerprint),
+    keysChanged: d.keys.changed.map((k) => k.current.fingerprint),
+    epochsAdded: d.epochs.added.map((e) => e.epoch),
+    epochsChanged: d.epochs.changed.map((e) => e.current.epoch),
+  };
+}
+
+const PROBLEM_TEXT: Record<string, string> = {
+  missing: 'fehlt, Kette abgeschnitten / missing, truncated',
+  hash_mismatch: 'Hash abweichend, umgeschrieben / hash differs, rewritten',
+  beyond_pre_restore:
+    'hinter dem vor der Wiederherstellung festgehaltenen Kopf / beyond the head recorded before the restore',
+  lost_by_restore: 'durch nicht dokumentierte Wiederherstellung verloren / lost by an undocumented restore',
+};
+
+function partnerLine(p: AnchorVerification['partners'][number]): string {
+  const problem = p.firstProblem
+    ? ` – erste Abweichung / first mismatch: seq ${p.firstProblem.seq} (${PROBLEM_TEXT[p.firstProblem.kind] ?? p.firstProblem.kind}), ${p.problems} insgesamt / total`
+    : '';
+  const code = p.errorCode ? ` (${p.errorCode})` : '';
+  const extra = [
+    p.lostByRestore ? `${p.lostByRestore} verloren durch Wiederherstellung / lost by restore` : '',
+    p.inconclusive ? `${p.inconclusive} nicht beweiskräftig / inconclusive` : '',
+    p.unknownEpoch ? `${p.unknownEpoch} unbekannte Epoche / unknown epoch` : '',
+    p.invalidSignatures
+      ? `${p.invalidSignatures} ungültig signiert oder unbekannter Schlüssel / invalid signature or unknown key`
+      : '',
+    p.excused ? 'entschuldigt / excused' : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return `  ${p.nodeId} [Fingerprint ${p.fingerprint}]: ${p.status}${code}, ${p.checkpoints} Prüfpunkte / checkpoints, ${p.matched} bestätigt / confirmed, letzter / latest seq ${p.latestSeq ?? '–'}${problem}${extra ? `; ${extra}` : ''}`;
+}
+
+/**
+ * Prüfung mit den bei Partnern verwahrten Prüfpunkten. Mit --profile unabhängig von der Datenbank (Partner,
+ * Adressen, Schlüssel nur aus dem Profil). Exit 0 ok, 1 Manipulation, 3 nicht ausreichend verankert,
+ * 4 Klärung nötig.
+ */
+async function verifyWithPartners(p: Parsed): Promise<number> {
+  const profileFile = flag(p, 'profile');
+  const excuseRaw = flag(p, 'excuse');
+  const reason = flag(p, 'reason')?.trim();
+  const profile = profileFile ? readProfile(profileFile) : undefined;
+  if (excuseRaw && !profile) throw new UsageError('--excuse nur mit --profile / --excuse requires --profile');
+  if (excuseRaw && (!reason || reason.length < 3)) {
+    throw new UsageError('--excuse braucht eine Begründung mit --reason "…" / --excuse requires --reason');
+  }
+  const excused = excuseRaw
+    ? excuseRaw
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : [];
+  for (const id of excused) {
+    if (!profile?.profile.partners.some((x) => x.nodeId === id)) {
+      throw new UsageError(`--excuse: ${id} steht nicht im Profil / is not a partner in the profile`);
+    }
+  }
+  const config = loadConfig();
+  if (profile && profile.profile.nodeId !== config.MESH_NODE_ID) {
+    throw new Error(
+      `Profil gehört zu Knoten ${profile.profile.nodeId}, dieser ist ${config.MESH_NODE_ID} / profile belongs to another node`,
+    );
+  }
+  const deps = await buildDeps({ config });
+  try {
+    const r = await verifyAnchors(
+      deps,
+      { actor: CLI_ACTOR },
+      { profile, excuse: excused.length ? { nodeIds: excused, reason: reason ?? '' } : undefined },
+    );
+    if (profile) {
+      out(
+        `Quelle der Partner / source of partners: Anker-Profil / anchoring profile ${resolve(profileFile ?? '')}` +
+          ` (erstellt / created ${profile.profile.createdAt}, mindestens / at least ${profile.profile.minPartners} Partner)`,
+      );
+      out(
+        `  SHA-256 des Profils / of the profile: ${profile.sha256} – mit dem bei der Ablage notierten Wert vergleichen / compare with the recorded value`,
+      );
+    } else {
+      out(
+        'Quelle der Partner / source of partners: Datenbank – NICHT UNABHÄNGIG: Partnerliste, Adressen, ' +
+          'Partnerschlüssel und frühere eigene Schlüssel stammen aus der geprüften Datenbank. Unabhängige ' +
+          'Prüfung mit --profile <datei> (audit-anchor-profile) / partners and keys come from the database ' +
+          'being checked: NOT independent of it; use --profile for an independent check',
+      );
+    }
+    out(`${chainLine(r.local)}, Kopf / head seq ${r.local.headSeq ?? '–'}`);
+    out(anchoringLine(r.anchoring));
+    out(`Epoche / epoch: ${r.epoch.current}`);
+    for (const partner of r.partners) out(partnerLine(partner));
+    if (r.partners.length === 0) out('  keine Partner / no partners');
+    if (r.findings.length > 0) {
+      out('Hinweise / findings:');
+      const mark = { fail: '!!', review: '! ', info: '  ' } as const;
+      for (const f of r.findings) out(`  ${mark[f.severity]} ${findingText(f)}`);
+    }
+    const verdict = {
+      ok: `VERANKERT UND INTAKT / anchored and intact (${r.anchoredPartners} Partner)`,
+      manipulated: 'MANIPULATION ERKANNT (abgeschnitten, umgeschrieben oder gebrochen) / TAMPERING DETECTED',
+      unanchored: `NICHT VERANKERT: ${r.anchoredPartners} von mindestens ${r.requiredPartners} Partnern bestätigen die Kette / NOT ANCHORED`,
+      needs_review:
+        'KLÄRUNG NÖTIG: Hinweise oben erklären und dokumentieren / NEEDS REVIEW: explain the findings above',
+    }[r.result];
+    out(`Ergebnis / result: ${verdict}${r.independent ? '' : ' (nicht unabhängig / not independent)'}`);
+    return VERIFY_EXIT[r.result];
+  } finally {
+    await deps.db.destroy();
+  }
+}
+
+/** Prüfung gegen einen exportierten Prüfpunkt (Verankerung außerhalb des Netzes) */
+async function verifyAgainstExport(file: string, profileFile?: string): Promise<number> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(resolve(file), 'utf8'));
+  } catch {
+    throw new Error(`Datei nicht lesbar oder kein JSON / file not readable or not JSON: ${file}`);
+  }
+  const profile = profileFile ? readProfile(profileFile) : undefined;
+  const nodeId = env('MESH_NODE_ID');
+  const url = process.env.MESH_DB_URL ?? env('MESH_DB_OWNER_URL');
+  const check = await withDb(url, (db) => checkCheckpointExport(db, nodeId, raw, { profile }));
+  const fp = (raw as { fingerprint?: unknown })?.fingerprint;
+  out(
+    `Signatur / signature: ${check.signatureValid ? 'gültig / valid' : 'UNGÜLTIG / INVALID'}${typeof fp === 'string' ? ` (Fingerprint ${fp})` : ''}`,
+  );
+  out(
+    `Schlüssel dieses Knotens zum Zeitpunkt / key of this node at that time${profile ? ' (laut Profil / per profile)' : ''}: ${check.keyKnown ? 'ja / yes' : 'NEIN / NO'}${check.keyCompromised ? ' – als kompromittiert abgelöst / retired as compromised' : ''}`,
+  );
+  out(`Knoten / node: ${check.nodeMatches ? 'passt / matches' : 'FALSCH / WRONG'}`);
+  const localText: Record<string, string> = {
+    match: 'vorhanden, Hash gleich / present, same hash',
+    missing: 'FEHLT (abgeschnitten) / MISSING (truncated)',
+    hash_mismatch: 'HASH ABWEICHEND (umgeschrieben) / HASH DIFFERS (rewritten)',
+    lost_by_restore:
+      'durch eine Wiederherstellung verloren (frühere Epoche) – klären / lost by a restore (earlier epoch): review',
+    unknown_epoch: 'Epoche unbekannt – klären / unknown epoch: review',
+    inconclusive:
+      'abweichend, aber Schlüssel kompromittiert – kein Beweis / differs, but key compromised: not conclusive',
+  };
+  out(
+    `Prüfpunkt seq ${check.seq ?? '?'}${check.epoch ? ` (Epoche ${check.epoch})` : ''} in der lokalen Kette / in local chain: ${check.local ? (localText[check.local] ?? check.local) : '?'}`,
+  );
+  out(chainLine(check.chain));
+  out(
+    'Den Fingerprint mit dem außerhalb des Systems notierten Wert vergleichen / compare the fingerprint with the value recorded outside the system.',
+  );
+  if (check.ok) return VERIFY_EXIT.ok;
+  const review =
+    check.local === 'lost_by_restore' || check.local === 'unknown_epoch' || check.local === 'inconclusive';
+  return review && check.chain.ok && check.signatureValid && check.keyKnown && check.nodeMatches
+    ? VERIFY_EXIT.needs_review
+    : VERIFY_EXIT.manipulated;
 }
 
 /**
@@ -207,7 +543,7 @@ export const commands: Record<string, Command> = {
           '(ändern mit --rotate-passwords) / roles already existed; passwords were NOT changed (use --rotate-passwords)',
       );
     }
-    out(`Weiter / next: ${MIGRATE_COMMAND}`);
+    out(`Weiter / next: ${migrateHint()}`);
     return 0;
   },
 
@@ -332,10 +668,32 @@ export const commands: Record<string, Command> = {
       out(`  Manifest geprüft / verified: ${r.manifestVerified ? 'ja/yes' : 'nein/no (keine Begleitdatei)'}`);
       out(`  Sitzungen beendet / sessions ended: ${r.sessionsEnded}`);
       out(
-        `  Audit-Kette / audit chain: ${r.audit.ok ? 'ok' : `GEBROCHEN bei / BROKEN at seq ${r.audit.firstBrokenSeq}`} (${r.audit.checked} geprüft / checked)`,
+        `  Audit-Kette (im Programm neu berechnet) / audit chain (recomputed): ${r.audit.ok ? 'ok' : `GEBROCHEN bei / BROKEN at seq ${r.audit.firstBrokenSeq}${r.audit.breakKind ? ` (${BREAK_TEXT[r.audit.breakKind] ?? r.audit.breakKind})` : ''}`} (${r.audit.checked} geprüft / checked)` +
+          `; audit_verify() der Datenbank / of the database: ${r.audit.database.ok ? 'ok' : `seq ${r.audit.database.firstBrokenSeq}`}`,
       );
+      out(`  Sicherung / backup SHA-256: ${r.sha256}, erstellt / created ${r.createdAt}`);
       out(
-        `Weiter / next: ${MIGRATE_COMMAND}, Knoten starten / start node, BI-Views neu aufbauen / refresh BI views.`,
+        `  Kopf vor der Wiederherstellung / head before the restore: ${r.preRestore ? `Epoche ${r.preRestore.epoch ?? '?'} seq ${r.preRestore.seq} hash ${r.preRestore.hash}` : 'keiner / none (leere Datenbank / empty database)'}`,
+      );
+      if (r.epoch) {
+        out(
+          `  Neue Epoche der Audit-Kette / new audit chain epoch: ${r.epoch.epoch} (übernommen bis / restored up to seq ${r.epoch.restoredSeq}, vorige / previous ${r.epoch.previousEpoch ?? '–'})`,
+        );
+        out(
+          '  Diese Angaben ins Protokoll der Wiederherstellung übernehmen; beim Neuexport des Anker-Profils ' +
+            '(--accept-epochs) werden sie damit abgeglichen / record these values; they are compared when ' +
+            're-exporting the anchoring profile',
+        );
+        out(
+          '  Prüfpunkte bei Partnern nach seq ' +
+            `${r.epoch.restoredSeq} sind damit verloren (verify-audit meldet „Klärung nötig“, mit dem alten Profil ` +
+            '„Manipulation“, bis die Wiederherstellung im Profil dokumentiert ist). Wiederherstellung dokumentieren und ' +
+            `das Anker-Profil neu exportieren: ${MESH_CLI} audit-anchor-profile --out <datei> --previous <altes-profil> ` +
+            '--accept-epochs / document the restore and re-export the anchoring profile',
+        );
+      }
+      out(
+        `Weiter / next: ${migrateHint()}, Knoten starten / start node, BI-Views neu aufbauen / refresh BI views.`,
       );
       return r.audit.ok ? 0 : 1;
     } catch (err) {
@@ -346,15 +704,250 @@ export const commands: Record<string, Command> = {
     }
   },
 
-  async 'verify-audit'() {
+  async 'verify-audit'(args) {
+    const p = parseArgs(args, ['with-partners']);
+    const file = flag(p, 'checkpoint');
+    if (p.flags['with-partners'] === true) return verifyWithPartners(p);
+    if (flag(p, 'excuse') || flag(p, 'reason')) {
+      throw new UsageError('--excuse/--reason nur mit --with-partners / only with --with-partners');
+    }
+    if (file) return verifyAgainstExport(file, flag(p, 'profile'));
+    if (flag(p, 'profile')) {
+      throw new UsageError(
+        '--profile nur mit --with-partners oder --checkpoint / only with --with-partners or --checkpoint',
+      );
+    }
     const url = process.env.MESH_DB_URL ?? env('MESH_DB_OWNER_URL');
-    const r = await withDb(url, verifyAudit);
-    if (r.ok) out(`Audit-Kette ok / audit chain ok (${r.checked} Einträge / entries)`);
+    // im Programm neu berechnet (nicht audit_verify() der Datenbank, die deren Eigentümer ersetzen kann)
+    const r = await withDb(url, (db) => recomputeAuditChain(db));
+    if (r.ok)
+      out(
+        `Audit-Kette ok / audit chain ok (${r.checked} Einträge / entries, im Programm neu berechnet / recomputed)`,
+      );
     else
       out(
-        `Audit-Kette GEBROCHEN bei seq ${r.firstBrokenSeq} / audit chain BROKEN (${r.checked} ok davor / before)`,
+        `Audit-Kette GEBROCHEN bei seq ${r.firstBrokenSeq} (${BREAK_TEXT[r.breakKind ?? ''] ?? r.breakKind}) / audit chain BROKEN (${r.checked} ok davor / before)`,
       );
+    if (r.ok) {
+      out(
+        'Hinweis: prüft nur die innere Konsistenz; Abschneiden/Umschreiben durch den Datenbank-Eigentümer erkennt ' +
+          '--with-partners / note: checks internal consistency only; use --with-partners to detect truncation/rewriting',
+      );
+    }
     return r.ok ? 0 : 1;
+  },
+
+  async 'audit-checkpoint'(args) {
+    const p = parseArgs(args);
+    const file = flag(p, 'out');
+    const config = loadConfig();
+    const deps = await buildDeps({ config });
+    try {
+      const r = await createCheckpoint(deps, 'cli', { actor: CLI_ACTOR });
+      out(
+        `${r.created ? 'Prüfpunkt erstellt / checkpoint created' : 'Prüfpunkt bestand bereits / checkpoint already existed'}: ` +
+          `seq ${r.checkpoint.seq}, hash ${r.checkpoint.hash}, Epoche / epoch ${r.checkpoint.epoch}`,
+      );
+      if (r.created) {
+        out(
+          `  an ${r.checkpoint.peers} Partner im Ausgangspostfach (Zustellung durch den laufenden Knoten) / ` +
+            `queued for ${r.checkpoint.peers} partner(s), delivered by the running node`,
+        );
+      }
+      const exp = await latestCheckpointExport(deps);
+      const json = `${JSON.stringify(exp, null, 2)}\n`;
+      if (file) {
+        writeFileSync(resolve(file), json, { mode: 0o644 });
+        out(`  exportiert / exported: ${resolve(file)} (Fingerprint ${exp.fingerprint})`);
+      } else out(json.trimEnd());
+      return 0;
+    } finally {
+      await deps.db.destroy();
+    }
+  },
+
+  async 'audit-anchor-profile'(args) {
+    const p = parseArgs(args, ['accept-partner-changes', 'accept-key-changes', 'accept-epochs']);
+    const file = flag(p, 'out', true);
+    const minRaw = flag(p, 'min-partners');
+    const minPartners = minRaw === undefined ? undefined : Number(minRaw);
+    if (minPartners !== undefined && (!Number.isInteger(minPartners) || minPartners < 1)) {
+      throw new UsageError('--min-partners: ganze Zahl ≥ 1 / integer ≥ 1');
+    }
+    const previousFile = flag(p, 'previous');
+    const accept = {
+      partners: p.flags['accept-partner-changes'] === true,
+      keys: p.flags['accept-key-changes'] === true,
+      epochs: p.flags['accept-epochs'] === true,
+    };
+    if (!previousFile && (accept.partners || accept.keys || accept.epochs)) {
+      throw new UsageError('--accept-… nur mit --previous / --accept-… requires --previous');
+    }
+    const previous = previousFile ? readProfile(previousFile) : undefined;
+    const config = loadConfig();
+    const deps = await buildDeps({ config });
+    try {
+      let plan: ProfilePlan;
+      try {
+        plan = await planAnchorProfile(deps.db, {
+          nodeId: deps.identity.nodeId,
+          now: deps.now(),
+          minPartners,
+          previous: previous?.profile,
+          accept,
+        });
+      } catch (err) {
+        if (err instanceof ProfileError) {
+          const text: Record<string, string> = {
+            no_trusted_partners: 'keine vertrauenswürdigen Partner / no trusted partners',
+            min_partners_out_of_range:
+              'Mindestzahl der Partner (--min-partners bzw. aus dem alten Profil) größer als die Zahl der Partner; ' +
+              'ausdrücklich mit --min-partners festlegen / minimum exceeds the number of partners: set --min-partners',
+            previous_other_node: '--previous gehört zu einem anderen Knoten / belongs to another node',
+          };
+          throw new UsageError(text[err.message] ?? err.message);
+        }
+        throw err;
+      }
+      const { profile, diff } = plan;
+      if (diff && previous) {
+        out(
+          `Vergleich mit dem alten Profil / compared with the previous profile: ${resolve(previousFile ?? '')} ` +
+            `(erstellt / created ${previous.profile.createdAt}, SHA-256 ${previous.sha256})`,
+        );
+        for (const line of profileDiffLines(diff, accept)) out(`  ${line}`);
+      }
+      if (plan.unaccepted.length > 0) {
+        const flagOf = {
+          partners: '--accept-partner-changes',
+          keys: '--accept-key-changes',
+          epochs: '--accept-epochs',
+        } as const;
+        out(
+          'NICHT EXPORTIERT: Abweichungen vom alten Profil sind nicht angenommen. Jede Abweichung mit den ' +
+            'Unterlagen abgleichen (Vertrauensaufnahme, Protokoll des Schlüsselwechsels bzw. der Wiederherstellung) ' +
+            `und dann ausdrücklich annehmen: ${plan.unaccepted.map((c) => flagOf[c]).join(' ')} / NOT EXPORTED: ` +
+            'changes not accepted; verify each against your records, then accept explicitly',
+        );
+        await deps.audit.record({
+          actor: CLI_ACTOR,
+          action: 'audit.anchor_profile.export',
+          outcome: 'denied',
+          objectType: 'audit_log',
+          details: {
+            reason: 'previous_changes_not_accepted',
+            unaccepted: plan.unaccepted,
+            previousSha256: previous?.sha256 ?? null,
+            ...(diff ? { changes: diffSummary(diff) } : {}),
+          },
+        });
+        return VERIFY_EXIT.needs_review;
+      }
+      const json = `${JSON.stringify(profile, null, 2)}\n`;
+      writeFileSync(resolve(file), json, { mode: 0o644 });
+      const digest = sha256Hex(Buffer.from(json, 'utf8'));
+      await deps.audit.record({
+        actor: CLI_ACTOR,
+        action: 'audit.anchor_profile.export',
+        objectType: 'audit_log',
+        details: {
+          sha256: digest,
+          minPartners: profile.minPartners,
+          partners: profile.partners.map((x) => ({ nodeId: x.nodeId, fingerprint: x.fingerprint })),
+          keys: profile.keys.length,
+          epochs: profile.epochs.length,
+          ...(previous
+            ? {
+                previousCreatedAt: previous.profile.createdAt,
+                previousSha256: previous.sha256,
+                accepted: (Object.keys(accept) as (keyof typeof accept)[]).filter((k) => accept[k]),
+                ...(diff ? { changes: diffSummary(diff) } : {}),
+              }
+            : {}),
+        },
+      });
+      out(`Anker-Profil exportiert / anchoring profile exported: ${resolve(file)}`);
+      out(`  SHA-256: ${digest}`);
+      out(
+        `  Knoten / node: ${profile.nodeId}, mindestens / at least ${profile.minPartners} Partner müssen bestätigen / must confirm`,
+      );
+      out(
+        '  Partner (Fingerprints mit den Unterlagen der Vertrauensaufnahme vergleichen / compare with the onboarding records):',
+      );
+      for (const x of profile.partners)
+        out(`    ${x.nodeId} (${x.displayName}) ${x.baseUrl}  Fingerprint ${x.fingerprint}`);
+      out('  Eigene Schlüssel / own keys:');
+      for (const k of profile.keys) out(`    ${keyLine(k)}`);
+      out('  Epochen der Audit-Kette / audit chain epochs:');
+      for (const e of profile.epochs) out(`    ${epochLine(e)}`);
+      out(
+        'Jede Wiederherstellung in dieser Liste mit ihrem Protokoll abgleichen (Prüfsumme der Sicherung, Kopf ' +
+          'davor). Profil offline neben dem Sicherungsschlüssel verwahren und die Prüfsumme notieren; nach ' +
+          'Schlüsselwechseln, Änderungen der Partner und Wiederherstellungen neu exportieren (--previous ' +
+          '<altes-profil>) / store offline next to the backup key, record the checksum; re-export after key ' +
+          'rotations, partner changes and restores.',
+      );
+      return 0;
+    } finally {
+      await deps.db.destroy();
+    }
+  },
+
+  async 'rotate-node-key'(args) {
+    const p = parseArgs(args, ['routine', 'compromised', 'yes']);
+    const routine = p.flags.routine === true;
+    const compromised = p.flags.compromised === true;
+    if (routine === compromised) {
+      throw new UsageError(
+        'genau eine Art angeben: --routine (planmäßig, Partner werden signiert benachrichtigt) oder --compromised ' +
+          '(Verdacht auf Kompromittierung: keine Benachrichtigung, Partner gleichen den neuen Fingerprint telefonisch ' +
+          'ab) / specify exactly one of --routine or --compromised',
+      );
+    }
+    if (compromised && p.flags.yes !== true) {
+      throw new UsageError(
+        '--compromised verwirft den bisherigen Schlüssel sofort; alle Partner müssen die neue Knotenkarte aufnehmen ' +
+          'und den Fingerprint telefonisch abgleichen. Mit --yes bestätigen / discards the old key immediately; ' +
+          'confirm with --yes',
+      );
+    }
+    const graceRaw = flag(p, 'grace-days');
+    const graceDays = graceRaw === undefined ? DEFAULT_GRACE_DAYS : Number(graceRaw);
+    if (!Number.isInteger(graceDays) || graceDays < 1 || graceDays > MAX_GRACE_DAYS) {
+      throw new UsageError(`--grace-days: 1–${MAX_GRACE_DAYS}`);
+    }
+    const config = loadConfig();
+    const deps = await buildDeps({ config });
+    try {
+      const r = await rotateNodeKey(deps, {
+        mode: compromised ? 'compromised' : 'routine',
+        graceDays,
+        actor: CLI_ACTOR,
+      });
+      out(`Knotenschlüssel gewechselt / node key rotated (${r.mode})`);
+      out(`  bisheriger Fingerprint / old fingerprint: ${r.oldFingerprint}`);
+      out(`  neuer Fingerprint / new fingerprint:      ${r.newFingerprint}`);
+      if (r.mode === 'routine') {
+        out(
+          `  ${r.peersNotified} Partner benachrichtigt (Ausgangspostfach, Zustellung durch den laufenden Knoten) / ` +
+            `${r.peersNotified} partner(s) notified via the outbox`,
+        );
+        out(`  Übergangszeit bis / grace period until: ${r.graceUntil.toISOString()}`);
+        out(
+          'Partner ohne Bestätigung bis dahin müssen die neue Knotenkarte aufnehmen (Partner › Neuen Schlüssel eintragen) ' +
+            'und den Fingerprint telefonisch abgleichen / partners that have not confirmed by then must re-trust manually.',
+        );
+      } else {
+        out(
+          'Keine Benachrichtigung: alle Partner müssen den Knoten sperren, die neue Knotenkarte aufnehmen und den neuen ' +
+            'Fingerprint telefonisch abgleichen (docs/betrieb.md) / no notice sent: every partner must re-onboard this node.',
+        );
+      }
+      out(`Neue Knotenkarte / new node card: ${MESH_CLI} node-card`);
+      return 0;
+    } finally {
+      await deps.db.destroy();
+    }
   },
 
   async 'rotate-master-key'() {

@@ -74,6 +74,68 @@ export const partners = {
   messageTypes: {
     release_revoked: 'Widerruf einer Freigabe',
     subjects_withdrawn: 'Löschmitteilung zu Personen',
+    key_rotated: 'Mitteilung zum Schlüsselwechsel',
+    audit_checkpoint: 'Prüfpunkt der Audit-Kette',
     notice: 'Mitteilung',
   },
+  // Schlüsselwechsel (eigener Knoten)
+  rotateKey: 'Schlüssel wechseln',
+  rotateTitle: 'Knotenschlüssel wechseln',
+  rotateIntro:
+    'Der Knotenschlüssel weist diesen Knoten gegenüber allen Partnern aus. Nach dem Wechsel zeigt die Knotenkarte einen neuen Fingerprint.',
+  rotateMode: 'Anlass',
+  rotateRoutine: 'Planmäßiger Wechsel',
+  rotateRoutineHint:
+    'Zum Beispiel turnusmäßig oder nach dem Ausscheiden einer Person mit Zugang. Alle Partner erhalten automatisch eine Mitteilung, die mit dem bisherigen und dem neuen Schlüssel unterschrieben ist.',
+  rotateCompromised: 'Verdacht auf Kompromittierung',
+  rotateCompromisedHint:
+    'Der bisherige Schlüssel könnte in fremden Händen sein. Eine damit unterschriebene Mitteilung wäre nicht vertrauenswürdig – es wird keine gesendet.',
+  graceDays: 'Übergangszeit (Tage)',
+  graceDaysHint:
+    'Partner, die die Mitteilung noch nicht bestätigt haben, erhalten so lange weiter mit dem bisherigen Schlüssel Unterschriebenes. Danach wird er gelöscht.',
+  graceDaysInvalid: 'Bitte 1 bis 30 Tage angeben.',
+  rotateRoutineInfo:
+    'Die Mitteilungen gehen über das Ausgangspostfach und werden bei Bedarf wiederholt. Partner, die bis zum Ende der Übergangszeit nicht bestätigt haben, müssen die neue Knotenkarte aufnehmen und den Fingerprint telefonisch abgleichen.',
+  rotateConfirmRoutine: 'Es besteht kein Verdacht, dass der bisherige Schlüssel in fremde Hände gelangt ist.',
+  compromisedTitle: 'Vorgehen bei Verdacht auf Kompromittierung',
+  compromisedStep1:
+    'Alle Partner sofort über einen zweiten Kanal (Telefon) informieren: Sie sperren diesen Knoten.',
+  compromisedStep2: 'Hier den Schlüssel wechseln; der bisherige wird sofort verworfen.',
+  compromisedStep3:
+    'Die neue Knotenkarte an jeden Partner senden; er trägt sie unter „Neuen Schlüssel eintragen“ ein.',
+  compromisedStep4:
+    'Den neuen Fingerprint telefonisch abgleichen; erst dann bestätigt der Partner das Vertrauen wieder. Weiter nach Incident Response.',
+  rotateConfirmCompromised:
+    'Ich informiere alle Partner selbst; bis sie den neuen Fingerprint abgeglichen haben, ist kein Austausch möglich.',
+  rotateSubmit: 'Schlüssel wechseln und Partner benachrichtigen',
+  rotateSubmitCompromised: 'Schlüssel sofort ersetzen',
+  rotating: 'Wird gewechselt …',
+  rotated: 'Schlüssel gewechselt. Neuer Fingerprint: {fingerprint}',
+  keyCreatedAt: 'Schlüssel erzeugt',
+  rotationRunning:
+    'Schlüsselwechsel läuft bis {date}: {confirmed} von {total} Partnern haben den neuen Schlüssel bestätigt.',
+  rotationUnconfirmed: '{count} {count|Partner hat|Partner haben} den Schlüsselwechsel nicht bestätigt.',
+  rotationUnconfirmedHint:
+    'Diese Partner können Nachrichten dieses Knotens nicht mehr prüfen. Sie müssen die neue Knotenkarte aufnehmen und den Fingerprint telefonisch abgleichen.',
+  rotationPeerPending: 'Mitteilung noch nicht bestätigt',
+  previousFingerprintLabel: 'Bisheriger Fingerprint: {fingerprint}',
+  compromisedDone: 'Schlüssel am {date} wegen Verdacht auf Kompromittierung ersetzt.',
+  compromisedDoneHint:
+    'Partner wurden nicht automatisch benachrichtigt. Jeder Partner muss die neue Knotenkarte aufnehmen und den Fingerprint telefonisch abgleichen.',
+  // Schlüssel eines Partners
+  keyRotatedAt: 'Schlüssel gewechselt',
+  previousFingerprint: 'Bisheriger Fingerprint',
+  previousValidUntil: 'wird noch bis {date} angenommen',
+  keyChangeNote:
+    'Wechselt ein Partner planmäßig seinen Schlüssel, übernimmt dieser Knoten den neuen automatisch aus der unterschriebenen Mitteilung. Hat ein Partner die Mitteilung verpasst oder den Schlüssel nach einer Kompromittierung ersetzt, tragen Sie seine neue Knotenkarte unter „Neuen Schlüssel eintragen“ ein und gleichen den Fingerprint telefonisch ab.',
+  replaceKey: 'Neuen Schlüssel eintragen',
+  replaceKeyTitle: 'Neuen Schlüssel eintragen: {name}',
+  replaceKeyIntro: 'Laden Sie die neue Knotenkarte hoch, die Ihnen der Partner geschickt hat.',
+  replaceKeyWarning:
+    'Der bisherige Schlüssel gilt danach sofort nicht mehr, und der Partner steht auf „Ausstehend“, bis Sie den neuen Fingerprint telefonisch abgeglichen und das Vertrauen bestätigt haben.',
+  replaceKeyCurrent: 'Bisheriger Fingerprint',
+  replaceKeyNew: 'Neuer Fingerprint laut Karte',
+  replaceKeyOtherNode: 'Die Karte gehört zu einem anderen Knoten ({nodeId}).',
+  replaceKeySubmit: 'Schlüssel eintragen',
+  keyReplaced: 'Neuer Schlüssel für {name} eingetragen; bitte jetzt den Fingerprint abgleichen.',
 };

@@ -962,7 +962,14 @@ async function integrateData(): Promise<void> {
   const templates = (await st.ok<{ items: TemplateItem[] }>('GET', '/api/v1/connector-templates')).items;
   ensureEqual(
     templates.map((t) => t.id),
-    ['athleten-stammdaten-csv', 'leistungsdiagnostik-csv', 'sprungkraft-api', 'verletzungen-csv'],
+    [
+      'athleten-stammdaten-csv',
+      'leistungsdiagnostik-csv',
+      'leistungsdiagnostik-xlsx',
+      'sprungkraft-api',
+      'sprungkraft-oauth2-api',
+      'verletzungen-csv',
+    ],
     'Connector-Vorlagen',
   );
 

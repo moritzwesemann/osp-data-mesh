@@ -48,4 +48,5 @@ export const myData = {
   snippetPython: 'Python (requests und pandas)',
   snippetPowerQuery: 'Power BI und Excel (Power Query)',
   tokenPlaceholder: 'IHR-API-TOKEN',
+  powerQueryAuthHint: 'Anmeldung in Power Query: „Anonym“ wählen – das Token steht im Header',
 };

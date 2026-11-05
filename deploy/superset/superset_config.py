@@ -34,6 +34,30 @@ SESSION_COOKIE_SAMESITE = "Lax"
 WTF_CSRF_ENABLED = True
 TALISMAN_ENABLED = True
 
+# Content-Security-Policy ohne Dritte. Die Standardrichtlinie von Superset 6.1 erlaubt u. a. den
+# Telemetrie-Dienst Scarf (apachesuperset.gateway.scarf.sh): Das veröffentlichte Abbild bindet auf jeder
+# Seite ein Zählpixel ein, das der Browser sonst mit der IP-Adresse der angemeldeten Person abriefe.
+# Ebenso entfallen Kartendienste (Mapbox, OpenStreetMap, Carto) und Schriften-CDNs (Google Fonts, Adobe):
+# Die Referenz-Dashboards brauchen keine Karten; Superset liefert seine Schriften selbst aus.
+TALISMAN_CONFIG = {
+    "content_security_policy": {
+        "base-uri": ["'self'"],
+        "default-src": ["'self'"],
+        "img-src": ["'self'", "blob:", "data:"],
+        "worker-src": ["'self'", "blob:"],
+        "connect-src": ["'self'"],
+        "object-src": "'none'",
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "font-src": ["'self'"],
+        "script-src": ["'self'", "'strict-dynamic'"],
+        "frame-ancestors": ["'self'"],
+    },
+    "content_security_policy_nonce_in": ["script-src"],
+    # HTTPS erzwingt Caddy; Sitzungs-Cookie siehe SESSION_COOKIE_SECURE
+    "force_https": False,
+    "session_cookie_secure": False,
+}
+
 # Keine anonymen Zugriffe, keine Selbstregistrierung
 PUBLIC_ROLE_LIKE = None
 AUTH_USER_REGISTRATION = False

@@ -36,4 +36,6 @@ oder HTTP-Message-Signatures.
 - Replay-Schutz über Nonces (15 min) und Zeitfenster (± 5 min) erfordert synchronisierte Uhren (NTP).
 - Pull bedeutet: Berichtigungen erreichen Partner erst beim nächsten Abruf; Löschungen und Widerrufe
   werden aktiv mitgeteilt ([ADR 0011](0011-widerruf-mitteilung-keine-weitergabe.md)).
-- Schlüsselwechsel eines Knotens erfordert erneute Vertrauensaufnahme (Werkzeug offen).
+- Schlüsselwechsel eines Knotens erfordert erneute Vertrauensaufnahme (Werkzeug offen). *Ergänzung
+  2026-11-05:* planmäßiger Wechsel mit signierter Mitteilung ohne erneute Vertrauensaufnahme siehe
+  [ADR 0013](0013-knotenschluessel-rotation.md).

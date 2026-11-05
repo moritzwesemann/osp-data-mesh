@@ -7,8 +7,12 @@
 > Datasets, 13 Diagramme (jede Abfrage liefert Zeilen) und drei Dashboards im Browser ohne Fehler,
 > wiederholter Lauf ohne Duplikate. Bildschirmfotos: `docs/screenshots/17-…19-superset-*.png`. Ablauf siehe
 > [Lokal ohne Docker prüfen](#lokal-ohne-docker-prüfen).
-> **Nicht verifiziert:** Bau des Docker-Abbilds und das Compose-Profil `bi` (kein Docker auf der
-> Entwicklungsmaschine), Betrieb hinter Caddy/HTTPS und TLS zur Datenbank.
+> **Mit Docker verifiziert** (November 2026, Docker 29 in Colima, arm64): Bau des Abbilds, Compose-Profil
+> `bi` mit `superset-init` → `superset` (*healthy*) → `superset-bootstrap` (Exit 0, zweiter Lauf ohne
+> Duplikate) gegen einen Knoten, dessen Daten aus den Demo-Vorlagen importiert wurden; alle 13 Diagramme
+> liefern Daten (`--verify`, siehe unten), auch über Caddy/HTTPS (`https://bi.<CADDY_DOMAIN>/`, Zertifikat
+> geprüft); Sitzungs-Cookie `Secure; HttpOnly; SameSite=Lax`; Content-Security-Policy ohne Dritte.
+> Superset spricht die Datenbank im internen Netz `backend` ohne TLS an.
 
 Superset dient als Referenz für die BI-Anforderung (B1/B2): Es liest **ausschließlich als Datenbankrolle
 `mesh_bi`** die Views im Schema `bi` (nur lesend, nur freigegebene Daten) und bringt drei
@@ -58,6 +62,23 @@ docker compose --profile bi run --rm superset-bootstrap
 ```
 
 Plan ohne Superset anzeigen: `python3 bootstrap_superset.py --print-plan`.
+
+Prüfen, ob jedes Diagramm der drei Dashboards Daten liefert (Abfrage wie im Browser über
+`POST /api/v1/chart/data`; Exit-Code 1, wenn ein Diagramm fehlt oder keine Zeilen liefert):
+
+```sh
+docker compose --profile bi run --rm --no-deps superset-bootstrap python /app/osp/bootstrap_superset.py --verify
+```
+
+Über Caddy/HTTPS von einem anderen Rechner: `SUPERSET_URL=https://bi.<CADDY_DOMAIN>`,
+`SUPERSET_ADMIN_PASSWORD=…` und bei `CADDY_TLS=internal` `SSL_CERT_FILE=osp-root.crt` setzen, dann
+`python3 bootstrap_superset.py --verify`.
+
+**Datenschutz:** `superset_config.py` setzt eine Content-Security-Policy ohne Dritte. Die Standardrichtlinie
+von Superset 6.1 erlaubt den Telemetrie-Dienst Scarf; das veröffentlichte Abbild bindet auf jeder Seite ein
+Zählpixel (`apachesuperset.gateway.scarf.sh`) ein, das der Browser sonst mit der IP-Adresse der
+angemeldeten Person abriefe. Ebenso gesperrt sind Karten-Kacheln (Mapbox, OpenStreetMap, Carto) und
+Schriften-CDNs; Kartendiagramme funktionieren daher nicht (die Referenz-Dashboards nutzen keine).
 
 ## Lokal ohne Docker prüfen
 

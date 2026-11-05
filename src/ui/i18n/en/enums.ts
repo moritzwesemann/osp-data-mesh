@@ -147,6 +147,7 @@ export const enums: typeof DeEnums = {
   },
   connectorKind: {
     csv_upload: 'CSV upload',
+    xlsx_upload: 'Excel upload (.xlsx)',
     http_api: 'HTTP API',
   },
   targetType: {

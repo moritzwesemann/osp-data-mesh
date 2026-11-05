@@ -46,7 +46,8 @@ Tokens der Person ([REST-API](api.md#api-token-erzeugen)).
 | Freigaben erteilen, widerrufen, Vorschau | – | ✓ | – | – | – |
 | Freigaben lesen | – | ✓ | – | – | ✓ |
 | Eigene Knotenkarte, Partnerliste, Verbindung prüfen | ✓ | ✓ | – | – | – |
-| Partner aufnehmen, vertrauen, sperren, ändern | ✓ | – | – | – | – |
+| Partner aufnehmen, vertrauen, sperren, ändern, neuen Partnerschlüssel eintragen | ✓ | – | – | – | – |
+| Eigenen Knotenschlüssel wechseln | ✓ | – | – | – | – |
 | Ausgangspostfach anzeigen / sofort zustellen | ✓ / ✓ | – / ✓ | – | – | – |
 | Lokaler Metadatenkatalog | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Discovery bei Partnern | – | ✓ | ✓ | – | – |
@@ -54,6 +55,7 @@ Tokens der Person ([REST-API](api.md#api-token-erzeugen)).
 | Empfangene Daten lesen | – | ✓ | ✓ | – | – |
 | Austauschprotokoll | – | ✓ | – | – | ✓ |
 | Audit-Log durchsuchen, Integrität prüfen | ✓ | – | – | – | ✓ |
+| Externe Verankerung: Prüfpunkt senden, mit Partnern abgleichen, exportieren | ✓ | – | – | – | ✓ |
 | Audit-Log exportieren | – | – | – | – | ✓ |
 | Systemstatus, Fehlerprotokoll, Sicherungen | ✓ | – | – | – | – |
 | BI-Views anzeigen, neu aufbauen | ✓ | ✓ | – | – | – |
@@ -130,16 +132,16 @@ Tokens der Person ([REST-API](api.md#api-token-erzeugen)).
 | Connector mit Zuordnung (`connectors.get`) | `GET /api/v1/connectors/:id` | `data_steward` |
 | Connector anlegen (`connectors.create`) | `POST /api/v1/connectors` | `data_steward` |
 | Connector ändern (erhöht die Version) (`connectors.update`) | `PATCH /api/v1/connectors/:id` | `data_steward` |
-| Zugangsgeheimnis der API-Quelle setzen oder entfernen (verschlüsselt gespeichert, nie wieder ausgegeben) (`connectors.setSecret`) | `PUT /api/v1/connectors/:id/secret` | `data_steward` |
+| Zugangsgeheimnis der API-Quelle (Token, Schlüssel oder OAuth2-Client-Geheimnis) setzen oder entfernen (verschlüsselt gespeichert, nie wieder ausgegeben) (`connectors.setSecret`) | `PUT /api/v1/connectors/:id/secret` | `data_steward` |
 | Portable Connector-Definition (ohne Geheimnisse) exportieren (`connectors.export`) | `GET /api/v1/connectors/:id/export` | `data_steward` |
 | Connector-Definition importieren (optional mit Datensatz-Struktur) (`connectors.import`) | `POST /api/v1/connectors/import` | `data_steward` |
-| Beispieldatei oder API-Antwort analysieren (Spalten, Beispielzeilen) für die Zuordnung (`connectors.inspect`) | `POST /api/v1/connectors/inspect` | `data_steward` |
+| Beispieldatei (CSV, Excel) oder API-Antwort analysieren (Spalten, Beispielzeilen, Tabellenblätter) für die Zuordnung (`connectors.inspect`) | `POST /api/v1/connectors/inspect` | `data_steward` |
 
 ### Importe
 
 | Vorgang | Methode und Pfad | Berechtigt |
 |---|---|---|
-| Import starten: CSV hochladen (Feld "file") oder API abrufen; erzeugt Vorschau mit Prüfergebnis (`imports.start`) | `POST /api/v1/connectors/:id/runs` | `data_steward` |
+| Import starten: CSV- oder Excel-Datei hochladen (Feld "file") oder API abrufen; erzeugt Vorschau mit Prüfergebnis (`imports.start`) | `POST /api/v1/connectors/:id/runs` | `data_steward` |
 | Importläufe eines Connectors (`imports.list`) | `GET /api/v1/connectors/:id/runs` | `data_steward` |
 | Importlauf mit Vorschau und Fehlerübersicht (`imports.get`) | `GET /api/v1/import-runs/:id` | `data_steward` |
 | Fehlerprotokoll eines Importlaufs (`imports.errors`) | `GET /api/v1/import-runs/:id/errors` | `data_steward` |
@@ -184,6 +186,9 @@ Tokens der Person ([REST-API](api.md#api-token-erzeugen)).
 | Vertrauen bestätigen: Fingerprint muss mit dem außerhalb des Systems abgeglichenen Wert übereinstimmen (`peers.trust`) | `POST /api/v1/peers/:id/trust` | `admin` |
 | Partner sperren (alle Anfragen werden abgelehnt) (`peers.suspend`) | `POST /api/v1/peers/:id/suspend` | `admin` |
 | Anzeigename oder Adresse eines Partners ändern (`peers.update`) | `PATCH /api/v1/peers/:id` | `admin` |
+| Neuen Schlüssel eines Partners aus seiner Knotenkarte eintragen (z. B. nach verpasster Rotationsmitteilung); Status danach "pending" bis zum erneuten Fingerprint-Abgleich (`peers.replaceKey`) | `POST /api/v1/peers/:id/key` | `admin` |
+| Eigener Signaturschlüssel und Stand des letzten Schlüsselwechsels (`node.keyStatus`) | `GET /api/v1/node/key` | `admin` |
+| Knotenschlüssel wechseln: planmäßig mit signierter Mitteilung an alle Partner oder bei Verdacht auf Kompromittierung ohne Mitteilung (`node.rotateKey`) | `POST /api/v1/node/key/rotate` | `admin` |
 | Signierte Verbindungsprüfung (`peers.ping`) | `POST /api/v1/peers/:id/ping` | `admin`, `data_steward` |
 | Ausgehende Mitteilungen (Widerrufe) und Zustellstatus (`outbox.list`) | `GET /api/v1/outbox` | `admin` |
 | Ausstehende Mitteilungen sofort zustellen (`outbox.flush`) | `POST /api/v1/outbox/flush` | `admin`, `data_steward` |
@@ -224,6 +229,10 @@ Tokens der Person ([REST-API](api.md#api-token-erzeugen)).
 | Audit-Log durchsuchen (`audit.list`) | `GET /api/v1/audit` | `auditor`, `admin` |
 | Integrität der Hash-Kette prüfen (`audit.verify`) | `GET /api/v1/audit/verify` | `auditor`, `admin` |
 | Audit-Log exportieren (CSV oder JSON) (`audit.export`) | `GET /api/v1/audit/export` | `auditor` |
+| Externe Verankerung: letzter eigener Prüfpunkt, Zustellung, für Partner verwahrte Prüfpunkte (`anchors.status`) | `GET /api/v1/audit/anchors` | `auditor`, `admin` |
+| Prüfpunkt der Audit-Kette jetzt signieren und an alle vertrauenswürdigen Partner senden (`anchors.create`) | `POST /api/v1/audit/anchors` | `auditor`, `admin` |
+| Letzten signierten Prüfpunkt exportieren (`anchors.latest`) | `GET /api/v1/audit/anchors/latest` | `auditor`, `admin` |
+| Audit-Kette mit den bei Partnern verwahrten Prüfpunkten abgleichen (`anchors.verify`) | `POST /api/v1/audit/anchors/verify` | `auditor`, `admin` |
 
 ### BI
 

@@ -107,6 +107,21 @@ export interface AthleteLookup {
 }
 
 export const PREVIEW_ROWS = 50;
+/** Längster Wert, der in Vorschau und Beispielzeilen angezeigt wird (wie Rohwerte im Fehlerprotokoll) */
+export const PREVIEW_VALUE_CHARS = 500;
+
+/** Lange Texte für Vorschau und Beispielzeilen kürzen (vollständige Werte nur in der Verarbeitung) */
+export function clipValues<T extends string | number | boolean | null | undefined>(
+  record: Readonly<Record<string, T>>,
+): Record<string, T> {
+  const out: Record<string, T> = Object.create(null);
+  for (const [k, v] of Object.entries(record)) {
+    out[k] = (
+      typeof v === 'string' && v.length > PREVIEW_VALUE_CHARS ? `${v.slice(0, PREVIEW_VALUE_CHARS)}…` : v
+    ) as T;
+  }
+  return out;
+}
 export const SAMPLE_ROWS = 10;
 /** Obergrenzen je Quelle (Schutz vor Überlastung des Knotens durch eine einzelne Datei/Antwort) */
 export const MAX_SOURCE_ROWS = 100_000;
@@ -802,8 +817,8 @@ export function summarize(rows: readonly MappedRow[], sourceIssues: readonly Iss
     issues,
     preview: rows.slice(0, PREVIEW_ROWS).map((r) => ({
       rowNumber: r.rowNumber,
-      raw: r.raw,
-      mapped: r.mapped,
+      raw: clipValues(r.raw),
+      mapped: clipValues(r.mapped),
       status: rowStatus(r),
     })),
     valid,

@@ -43,6 +43,12 @@ export const Peer = z.object({
   lastSeenAt: IsoDateTime.nullable(),
   /** Übersetzbarer Fehlercode des letzten Kontaktversuchs */
   lastError: z.string().nullable(),
+  /** Fingerprint des bisherigen Schlüssels nach einem Schlüsselwechsel des Partners (nur in der Übergangszeit) */
+  previousFingerprint: z.string().nullable(),
+  /** bis dahin wird der bisherige Schlüssel noch angenommen */
+  previousKeyValidUntil: IsoDateTime.nullable(),
+  /** letzter Schlüsselwechsel (Mitteilung des Partners oder manueller Austausch) */
+  keyRotatedAt: IsoDateTime.nullable(),
 });
 export type Peer = z.infer<typeof Peer>;
 
@@ -125,12 +131,175 @@ export const OutboxMessage = z.object({
   id: Uuid,
   peerNodeId: z.string(),
   type: z.string(),
+  /** Art der Mitteilung (release_revoked, subjects_withdrawn, key_rotated, audit_checkpoint) */
+  kind: z.string().nullable(),
   status: z.enum(['pending', 'delivered', 'failed']),
   attempts: z.number().int(),
   nextAttemptAt: IsoDateTime,
   lastError: z.string().nullable(),
   createdAt: IsoDateTime,
   deliveredAt: IsoDateTime.nullable(),
+});
+
+/** Eigener Signaturschlüssel und letzter Schlüsselwechsel (ADR 0013) */
+export const NodeKeyStatus = z.object({
+  fingerprint: z.string(),
+  publicKey: z.string(),
+  keyCreatedAt: IsoDateTime,
+  rotation: z
+    .object({
+      id: Uuid,
+      mode: z.enum(['routine', 'compromised']),
+      rotatedAt: IsoDateTime,
+      graceUntil: IsoDateTime,
+      finishedAt: IsoDateTime.nullable(),
+      /** Übergangszeit läuft: Partner ohne Bestätigung erhalten noch mit dem bisherigen Schlüssel Signiertes */
+      running: z.boolean(),
+      previousFingerprint: z.string(),
+      peers: z.array(
+        z.object({
+          peerId: Uuid,
+          nodeId: z.string(),
+          displayName: z.string(),
+          confirmedAt: IsoDateTime.nullable(),
+          deliveryStatus: z.enum(['pending', 'delivered', 'failed']).nullable(),
+          lastError: z.string().nullable(),
+        }),
+      ),
+    })
+    .nullable(),
+});
+
+/** Eigener signierter Prüfpunkt der Audit-Kette (ADR 0014) */
+export const AuditCheckpoint = z.object({
+  seq: z.number().int(),
+  hash: z.string(),
+  at: IsoDateTime,
+  /** Epoche der Kette (neu nach jeder Wiederherstellung) */
+  epoch: Uuid,
+  fingerprint: z.string(),
+  trigger: z.enum(['schedule', 'manual', 'cli']),
+  peers: z.number().int(),
+});
+
+export const AnchorProblem = z.object({
+  seq: z.number().int(),
+  kind: z.enum([
+    'missing',
+    'hash_mismatch',
+    'inconclusive',
+    'lost_by_restore',
+    'beyond_pre_restore',
+    'unknown_epoch',
+  ]),
+  epoch: z.string().nullable().optional(),
+});
+
+export const AnchorFinding = z.object({
+  code: z.enum([
+    'insufficient_partners',
+    'partner_missing',
+    'partner_excused',
+    'partner_not_trusted_in_database',
+    'partner_differs_from_database',
+    'epoch_not_in_profile',
+    'epoch_conflict',
+    'restore_epoch',
+    'lost_by_restore',
+    'unknown_epoch',
+    'inconclusive',
+    'anchor_stale',
+    'legacy_digest_ambiguous',
+  ]),
+  /** fail = nicht ausreichend verankert; review = Klärung nötig; info = Hinweis */
+  severity: z.enum(['fail', 'review', 'info']),
+  nodeId: z.string().optional(),
+  epoch: z.string().optional(),
+  count: z.number().int().optional(),
+  seq: z.number().int().optional(),
+  detail: z.string().optional(),
+});
+
+export const AnchorVerification = z.object({
+  /**
+   * ok = intakt und ausreichend verankert; manipulated = gebrochen, abgeschnitten oder umgeschrieben;
+   * unanchored = nicht ausreichend bestätigt; needs_review = Klärung nötig (z. B. durch eine
+   * Wiederherstellung verlorene Prüfpunkte)
+   */
+  result: z.enum(['ok', 'manipulated', 'unanchored', 'needs_review']),
+  at: IsoDateTime,
+  /** false: Partnerliste und frühere eigene Schlüssel stammen aus der geprüften Datenbank (Oberfläche) */
+  independent: z.boolean(),
+  source: z.enum(['database', 'profile']),
+  profile: z.object({ sha256: z.string(), createdAt: IsoDateTime, minPartners: z.number().int() }).nullable(),
+  requiredPartners: z.number().int(),
+  anchoredPartners: z.number().int(),
+  local: z.object({
+    ok: z.boolean(),
+    checked: z.number().int(),
+    firstBrokenSeq: z.number().int().nullable(),
+    breakKind: z
+      .enum([
+        'seq_gap',
+        'prev_hash_mismatch',
+        'hash_mismatch',
+        'unsequenced',
+        'not_a_table',
+        'column_changed',
+        'invalid_value',
+        'digest_version',
+      ])
+      .nullable(),
+    headSeq: z.number().int().nullable(),
+    /** Einträge je Version der Hash-Eingabe; ambiguousV1 = Version 1 mit '|' in einem Feld */
+    digest: z.object({ v1: z.number().int(), v2: z.number().int(), ambiguousV1: z.number().int() }),
+  }),
+  /** Stand der Verankerung: letzter von genügend Partnern bestätigter Kopf, danach nicht verankerte Einträge */
+  anchoring: z.object({
+    lastAnchoredSeq: z.number().int().nullable(),
+    lastAnchoredAt: IsoDateTime.nullable(),
+    unanchoredEntries: z.number().int(),
+    staleAfterHours: z.number().nullable(),
+  }),
+  epoch: z.object({
+    current: z.string(),
+    history: z.array(
+      z.object({
+        epoch: z.string(),
+        n: z.number().int().nullable(),
+        startedAt: IsoDateTime.nullable(),
+        reason: z.enum(['initial', 'restore']),
+        previousEpoch: z.string().nullable(),
+        restoredSeq: z.number().int().nullable(),
+        inDatabase: z.boolean(),
+        inProfile: z.boolean(),
+      }),
+    ),
+  }),
+  partners: z.array(
+    z.object({
+      peerId: Uuid.nullable(),
+      nodeId: z.string(),
+      displayName: z.string(),
+      fingerprint: z.string(),
+      status: z.enum(['ok', 'mismatch', 'needs_review', 'no_checkpoints', 'unreachable', 'error']),
+      errorCode: z.string().nullable(),
+      excused: z.boolean(),
+      checkpoints: z.number().int(),
+      matched: z.number().int(),
+      latestSeq: z.number().int().nullable(),
+      latestAt: IsoDateTime.nullable(),
+      latestMatchedSeq: z.number().int().nullable(),
+      latestMatchedAt: IsoDateTime.nullable(),
+      invalidSignatures: z.number().int(),
+      problems: z.number().int(),
+      firstProblem: AnchorProblem.nullable(),
+      lostByRestore: z.number().int(),
+      inconclusive: z.number().int(),
+      unknownEpoch: z.number().int(),
+    }),
+  ),
+  findings: z.array(AnchorFinding),
 });
 
 export const federationRoutes = {
@@ -191,6 +360,40 @@ export const federationRoutes = {
       baseUrl: z.url({ protocol: /^https?$/ }).optional(),
     }),
     response: Peer,
+  }),
+  'peers.replaceKey': route({
+    method: 'POST',
+    path: '/api/v1/peers/:id/key',
+    auth: ['admin'],
+    summary:
+      'Neuen Schlüssel eines Partners aus seiner Knotenkarte eintragen (z. B. nach verpasster Rotationsmitteilung); Status danach "pending" bis zum erneuten Fingerprint-Abgleich',
+    tag: 'Partner',
+    params: IdParam,
+    body: z.object({ card: NodeCard }),
+    response: Peer,
+  }),
+  'node.keyStatus': route({
+    method: 'GET',
+    path: '/api/v1/node/key',
+    auth: ['admin'],
+    summary: 'Eigener Signaturschlüssel und Stand des letzten Schlüsselwechsels',
+    tag: 'Partner',
+    response: NodeKeyStatus,
+  }),
+  'node.rotateKey': route({
+    method: 'POST',
+    path: '/api/v1/node/key/rotate',
+    auth: ['admin'],
+    summary:
+      'Knotenschlüssel wechseln: "routine" benachrichtigt alle Partner signiert (Übergangszeit), "compromised" ohne Benachrichtigung (Partner müssen den neuen Fingerprint abgleichen)',
+    tag: 'Partner',
+    body: z.object({
+      mode: z.enum(['routine', 'compromised']),
+      graceDays: z.number().int().min(1).max(30).default(7),
+      /** ausdrückliche Bestätigung der gewählten Art */
+      confirm: z.literal(true),
+    }),
+    response: NodeKeyStatus,
   }),
   'peers.ping': route({
     method: 'POST',
@@ -324,5 +527,68 @@ export const federationRoutes = {
     summary: 'Ausstehende Mitteilungen sofort zustellen',
     tag: 'Partner',
     response: z.object({ delivered: z.number().int(), failed: z.number().int() }),
+  }),
+  'anchors.status': route({
+    method: 'GET',
+    path: '/api/v1/audit/anchors',
+    auth: ['auditor', 'admin'],
+    summary:
+      'Externe Verankerung der Audit-Kette: letzter eigener Prüfpunkt, Zustellung, für Partner verwahrte Prüfpunkte',
+    tag: 'Audit',
+    response: z.object({
+      intervalHours: z.number(),
+      /** aktuelle Epoche der eigenen Kette */
+      epoch: Uuid,
+      latest: AuditCheckpoint.nullable(),
+      pending: z.number().int(),
+      failed: z.number().int(),
+      heldForPartners: z.array(
+        z.object({
+          nodeId: z.string(),
+          displayName: z.string(),
+          count: z.number().int(),
+          latestSeq: z.number().int(),
+          latestReceivedAt: IsoDateTime,
+        }),
+      ),
+    }),
+  }),
+  'anchors.create': route({
+    method: 'POST',
+    path: '/api/v1/audit/anchors',
+    auth: ['auditor', 'admin'],
+    summary: 'Prüfpunkt der Audit-Kette jetzt signieren und an alle vertrauenswürdigen Partner senden',
+    tag: 'Audit',
+    response: z.object({ checkpoint: AuditCheckpoint, created: z.boolean() }),
+  }),
+  'anchors.latest': route({
+    method: 'GET',
+    path: '/api/v1/audit/anchors/latest',
+    auth: ['auditor', 'admin'],
+    summary: 'Letzten signierten Prüfpunkt exportieren (Verankerung außerhalb des Netzes)',
+    tag: 'Audit',
+    response: z.object({
+      format: z.literal('osp-data-mesh/audit-checkpoint-export@1'),
+      nodeId: z.string(),
+      epoch: z.string().nullable().optional(),
+      seq: z.number().int(),
+      hash: z.string(),
+      at: IsoDateTime,
+      statement: z.string(),
+      signature: z.string(),
+      publicKey: z.string(),
+      fingerprint: z.string(),
+    }),
+  }),
+  'anchors.verify': route({
+    method: 'POST',
+    path: '/api/v1/audit/anchors/verify',
+    auth: ['auditor', 'admin'],
+    summary:
+      'Audit-Kette mit den bei Partnern verwahrten Prüfpunkten abgleichen (erkennt Abschneiden und Umschreiben). ' +
+      'Läuft im Server mit der Partnerliste der Datenbank und ist daher nicht unabhängig von ihr; unabhängig: ' +
+      'CLI verify-audit --with-partners --profile',
+    tag: 'Audit',
+    response: AnchorVerification,
   }),
 } as const;

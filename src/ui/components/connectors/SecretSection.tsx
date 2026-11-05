@@ -9,7 +9,7 @@ import { FormActions, FormField } from '../FormField.tsx';
 import { Section } from '../PageHeader.tsx';
 import { useToast } from '../Toast.tsx';
 
-/** true, wenn die Quelle ein Zugangsgeheimnis benötigt (HTTP-API mit Bearer oder eigener Kopfzeile). */
+/** true, wenn die Quelle ein Zugangsgeheimnis benötigt (HTTP-API mit Bearer, eigener Kopfzeile oder OAuth2). */
 export function needsSecret(c: Pick<Connector, 'config'>): boolean {
   return c.config.type === 'http_api' && c.config.auth.type !== 'none';
 }
@@ -46,7 +46,14 @@ export function SecretSection({ connector }: { connector: Connector }) {
       defaultOpen={!connector.hasSecret}
     >
       <form className="form" onSubmit={submit} noValidate>
-        <FormField label={t('connectors.secret')} hint={t('connectors.secretHint')}>
+        <FormField
+          label={
+            connector.config.type === 'http_api' && connector.config.auth.type === 'oauth2_client_credentials'
+              ? t('connectors.secretOauth')
+              : t('connectors.secret')
+          }
+          hint={t('connectors.secretHint')}
+        >
           {(a) => (
             <input
               {...a}

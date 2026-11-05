@@ -94,8 +94,14 @@ function guessTarget(column: string, options: readonly TargetOption[], used: Set
 
 type InspectResult = ApiOutput<'connectors.inspect'>;
 
+/** Dateiauswahl je Art der Quelle */
+export const FILE_ACCEPT: Record<'csv_upload' | 'xlsx_upload', string> = {
+  csv_upload: '.csv,.txt,text/csv,text/plain',
+  xlsx_upload: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
 interface Props {
-  kind: 'csv_upload' | 'http_api';
+  kind: 'csv_upload' | 'xlsx_upload' | 'http_api';
   /** aktuelle Konfiguration (für die Analyse) */
   config: z.input<typeof ConnectorConfig>;
   options: readonly TargetOption[];
@@ -112,6 +118,8 @@ interface Props {
    * (connectorId; der Server nutzt dann deren gespeicherte Adresse) oder einmalig eingegebenes Geheimnis.
    */
   inspectAccess?: { connectorId: string } | { secret: string };
+  /** Excel: anderes Tabellenblatt gewählt (übernimmt es in die Einstellungen der Quelle) */
+  onSheetChange?: (sheet: string) => void;
 }
 
 export function MappingEditor({
@@ -125,6 +133,7 @@ export function MappingEditor({
   invalidValueMaps,
   error,
   inspectAccess,
+  onSheetChange,
 }: Props) {
   const i = useI18n();
   const { t } = i;
@@ -134,13 +143,14 @@ export function MappingEditor({
 
   const inspect = useApiMutation('connectors.inspect');
 
-  const runInspect = () => {
+  const fileKind = kind !== 'http_api';
+  const runInspect = (override?: z.input<typeof ConnectorConfig>) => {
     const fd = new FormData();
-    if (kind === 'csv_upload') {
+    if (fileKind) {
       if (!file) return;
       fd.append('file', file);
     }
-    fd.append('config', JSON.stringify(config));
+    fd.append('config', JSON.stringify(override ?? config));
     if (kind === 'http_api' && inspectAccess) {
       if ('connectorId' in inspectAccess) fd.append('connectorId', inspectAccess.connectorId);
       else fd.append('secret', inspectAccess.secret);
@@ -228,21 +238,24 @@ export function MappingEditor({
   return (
     <div className="stack">
       <p className="field-hint">
-        {kind === 'csv_upload' ? t('connectors.mappingIntroCsv') : t('connectors.mappingIntroApi')}
+        {fileKind ? t('connectors.mappingIntroCsv') : t('connectors.mappingIntroApi')}
       </p>
       {kind === 'http_api' && inspectAccess && 'connectorId' in inspectAccess && (
         <p className="field-hint">{t('connectors.sampleUsesStored')}</p>
       )}
 
       <div className="toolbar">
-        {kind === 'csv_upload' && (
-          <FormField label={t('connectors.sampleFile')} className="field-grow">
+        {kind !== 'http_api' && (
+          <FormField
+            label={kind === 'xlsx_upload' ? t('connectors.sampleFileXlsx') : t('connectors.sampleFile')}
+            className="field-grow"
+          >
             {(a) => (
               <input
                 {...a}
                 className="input"
                 type="file"
-                accept=".csv,.txt,text/csv,text/plain"
+                accept={FILE_ACCEPT[kind]}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
             )}
@@ -251,12 +264,12 @@ export function MappingEditor({
         <button
           type="button"
           className="btn"
-          disabled={inspect.isPending || (kind === 'csv_upload' && !file)}
-          onClick={runInspect}
+          disabled={inspect.isPending || (fileKind && !file)}
+          onClick={() => runInspect()}
         >
           {inspect.isPending
             ? t('connectors.analyzing')
-            : kind === 'csv_upload'
+            : fileKind
               ? t('connectors.analyze')
               : t('connectors.fetchSample')}
         </button>
@@ -273,7 +286,31 @@ export function MappingEditor({
                 {t('connectors.detectedDelimiter', { value: delimiterLabel(i, sample.detectedDelimiter) })}
               </>
             )}
+            {sample.sheet !== undefined && <> {t('connectors.detectedSheet', { name: sample.sheet })}</>}
           </p>
+          {sample.sheets && sample.sheets.length > 1 && onSheetChange && config.type === 'xlsx' && (
+            <FormField label={t('connectors.otherSheet')}>
+              {(a) => (
+                <select
+                  {...a}
+                  className="input"
+                  value={sample.sheet ?? ''}
+                  disabled={inspect.isPending}
+                  onChange={(e) => {
+                    const sheet = e.target.value;
+                    onSheetChange(sheet);
+                    runInspect({ ...config, sheet });
+                  }}
+                >
+                  {(sample.sheets ?? []).map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
+          )}
           {sample.sampleRows.length > 0 && (
             <>
               <h3 className="small">{t('connectors.sampleRows')}</h3>

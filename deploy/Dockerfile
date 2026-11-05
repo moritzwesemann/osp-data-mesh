@@ -58,6 +58,7 @@ RUN set -eux; \
     /usr/lib/postgresql/18/bin/pg_dump --version
 
 ENV NODE_ENV=production \
+    MESH_DEPLOYMENT=docker \
     PATH=/usr/lib/postgresql/18/bin:$PATH \
     MESH_HOST=0.0.0.0 \
     MESH_PORT=4401 \
@@ -75,9 +76,11 @@ COPY migrations ./migrations
 COPY deploy/postgres/bootstrap.sql ./deploy/postgres/bootstrap.sql
 COPY --chmod=0755 deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 
-# Sicherungsverzeichnis (als Volume einbinden); Benutzer "bun" (UID 1000) stammt aus dem Basisabbild
+# Sicherungsverzeichnis; Benutzer "bun" (UID 1000) stammt aus dem Basisabbild. Ein benanntes Volume
+# (docker-compose.yml: "backups") übernimmt beim ersten Einbinden Eigentümer und Rechte von hier.
+# Bewusst keine VOLUME-Anweisung: Sonst legte jeder Container ohne diese Einbindung (z. B. "migrate")
+# ein anonymes Volume an, das nach dem Entfernen des Containers liegen bliebe.
 RUN install -d -o bun -g bun -m 0750 /var/lib/osp-mesh /var/lib/osp-mesh/backups
-VOLUME ["/var/lib/osp-mesh/backups"]
 
 # Benutzer "bun" des Basisabbilds (UID/GID 1000), numerisch angegeben
 USER 1000:1000

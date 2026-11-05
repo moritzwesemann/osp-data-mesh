@@ -35,6 +35,7 @@ Gesamtsynchronisation.
 | `src/ui/` | Web-Oberfläche (React + Vite) |
 | `migrations/` | versionierte SQL-Migrationen `NNNN_name.sql` + `grants.sql` |
 | `tests/unit`, `tests/integration` | automatisierte Tests (`bun test`) |
+| `tests/e2e` | Browser-Abläufe gegen eigene Knoten (`bun run test:e2e`, nicht Teil von `bun test`) |
 | `scripts/` | lokale Cluster, Demo, Mock-Messsystem, Doku-Build, SBOM |
 | `deploy/` | Dockerfile, docker-compose, Caddy, Postgres-Bootstrap, Superset |
 | `docs/` | Dokumentation (Markdown → HTML), ADRs |
@@ -53,7 +54,7 @@ Gesamtsynchronisation.
 | `releases` | `releases.*` | data_release | `services.pep`, `services.offers`, Ereignisse `release.*` | `product.changed` (Stilllegung bzw. Neueinstufung: Freigaben widerrufen) |
 | `bi` | `bi.*` | bi_view, Schemata `bi`/`bi_data` | `services.bi` | `release.*`, `product.changed`, `consent.withdrawn`, `athlete.deleted`, `data.changed`; periodische Aktualisierung (10 min) |
 | `catalog` | `catalog.local` | – (liest Metadaten) | | – |
-| `federation` | `node.card`, `peers.*`, `discovery.search`, `received.*`, `exchange.log`, `outbox.*`, `/federation/v1/*` | peer, federation_nonce, outbox_message, exchange_log, received_product, received_row | `services.federation` | `release.revoked`, `product.changed`, `consent.withdrawn`, `athlete.deleted` (Mitteilungen ins Ausgangspostfach); Ausgangspostfach (5 s), Aufbewahrung (minütlich) |
+| `federation` | `node.*`, `peers.*`, `discovery.search`, `received.*`, `exchange.log`, `outbox.*`, `anchors.*`, `/federation/v1/*` | peer, federation_nonce, outbox_message, exchange_log, received_product, received_row, node_identity (Schlüsselwechsel), node_key_rotation, node_key_rotation_peer, audit_checkpoint, peer_audit_checkpoint, audit_chain_epoch (nur lesend; geschrieben von Migration und `restore`) | `services.federation` | `release.revoked`, `product.changed`, `consent.withdrawn`, `athlete.deleted` (Mitteilungen ins Ausgangspostfach); Ausgangspostfach (5 s, übernimmt dabei einen Schlüsselwechsel aus der CLI), Aufbewahrung und Ende von Schlüsselwechseln (minütlich), Prüfpunkte der Audit-Kette ([ADR 0014](adr/0014-externe-verankerung-audit-kette.md), Standard stündlich) |
 
 Hintergrundaufgaben laufen nur mit `MESH_WORKERS=true` (Standard).
 
@@ -63,7 +64,7 @@ Querbeziehungen laufen über `deps.services` (synchron) oder `deps.events` (Erei
 
 ## Datenfluss
 
-1. **Import**: Connector (CSV-Upload oder HTTP-API) → Parsen → Mapping → Format-/Plausibilitätsprüfung →
+1. **Import**: Connector (CSV- oder Excel-Upload oder HTTP-API) → Parsen → Mapping → Format-/Plausibilitätsprüfung →
    Vorschau mit Fehlerprotokoll → Übernahme (Athletenkern oder `dataset_record`) → Audit.
 2. **Datenprodukt**: Sicht auf einen Datensatz (oder den Athletenkern) mit gewählten Spalten und Basisfilter.
 3. **Freigabe**: Produkt × Empfänger (lokale Rolle, BI oder Partnerknoten), beschränkt nach Spalten,
@@ -147,7 +148,9 @@ Partnerknoten und API-Quellen über injiziertes `deps.fetch`.
 - TLS terminiert am Reverse Proxy (Caddy); Knoten-zu-Knoten zusätzlich Ed25519-Signaturen auf Anfrage und Antwort.
 - Datenbankrollen: `mesh_owner` (Schema, Migrationen, Wiederherstellung; nur CLI), `mesh_app` (Server; Audit-Log nur
   `INSERT`/`SELECT`), `mesh_bi` (nur Views im Schema `bi`, read-only).
-- Audit-Log: Trigger sperren `UPDATE`/`DELETE`/`TRUNCATE`; Hash-Kette, prüfbar mit `audit_verify()`.
+- Audit-Log: Trigger sperren `UPDATE`/`DELETE`/`TRUNCATE`; Hash-Kette, prüfbar mit `audit_verify()`;
+  extern verankert durch signierte Prüfpunkte bei den Partnern ([ADR 0014](adr/0014-externe-verankerung-audit-kette.md)).
+- Knotenschlüssel wechselbar mit signierter Mitteilung an die Partner ([ADR 0013](adr/0013-knotenschluessel-rotation.md)).
 - Passwörter: Argon2id; Sitzungstoken nur als SHA-256 gespeichert; Cookie `__Host-osp_session`
   (HttpOnly/SameSite=Strict/Secure; nur bei lokaler HTTP-Testinstallation `osp_session` ohne Secure); CSRF-Header.
 - Client-Adresse aus `X-Forwarded-For` nur von vertrauenswürdigen Proxys (`MESH_TRUST_PROXY`, `MESH_TRUSTED_PROXIES`).

@@ -10,10 +10,14 @@
  *  2. Knoten-ID prüfen (andere Knoten nur mit allowOtherNode), Schemaversion nicht neuer als dieser Code
  *  3. entschlüsseln in ein temporäres Verzeichnis (0700; GCM-Tag wird vor der Verwendung geprüft)
  *  4. pg_restore --clean --if-exists --no-owner --no-privileges erzeugt daraus ein SQL-Skript
- *  5. psql --single-transaction: BI-Views/-Tabellen entfernen (abgeleitete Daten; die Views hängen an
- *     public.data_release und würden das Neuanlegen blockieren), Skript, Rechte (migrations/grants.sql),
- *     alle Sitzungen beenden (erneute Anmeldung nötig), Audit-Eintrag "backup.restore" mit Kettenprüfung
- *  6. temporäre Dateien löschen, Audit-Kette erneut prüfen
+ *  5. Kopf der Audit-Kette der bisherigen Datenbank festhalten (Epoche, Laufnummer, gespeicherter Hash;
+ *     ADR 0014, Nachtrag 2), dann psql --single-transaction: BI-Views/-Tabellen entfernen (abgeleitete
+ *     Daten; die Views hängen an public.data_release und würden das Neuanlegen blockieren), Skript, Rechte
+ *     (migrations/grants.sql), alle Sitzungen beenden (erneute Anmeldung nötig), neue Epoche der Audit-Kette
+ *     (audit_chain_epoch: vorige Epoche, höchste übernommene Laufnummer, Prüfsumme und Zeitpunkt der
+ *     Sicherung, Kopf davor), Audit-Eintrag "backup.restore" mit Kettenprüfung und Epoche
+ *  6. temporäre Dateien löschen, Audit-Kette im Programm neu berechnen (modules/audit/chain.ts – nicht nur
+ *     audit_verify() der Datenbank, deren Funktion aus der Sicherung stammt) und beide Ergebnisse melden
  *
  * Die CLI prüft vorher, dass der Knoten nicht läuft (runningNodeConnections; --force übergeht das).
  *
@@ -28,8 +32,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import pg from 'pg';
-import { SERVER_APPLICATION_NAME } from '../../core/db.ts';
+import { createDb, SERVER_APPLICATION_NAME } from '../../core/db.ts';
 import { listMigrations, MIGRATIONS_DIR } from '../../core/migrate.ts';
+import { type ChainBreak, recomputeAuditChain } from '../audit/chain.ts';
 import {
   BackupFileError,
   type BackupManifest,
@@ -69,7 +74,21 @@ export interface RestoreResult {
   sha256: string;
   manifestVerified: boolean;
   sessionsEnded: number;
-  audit: { ok: boolean; checked: number; firstBrokenSeq: number | null };
+  /**
+   * Prüfung der Kette nach der Wiederherstellung: im Programm neu berechnet (maßgeblich); `database` =
+   * audit_verify() der wiederhergestellten Datenbank zum Vergleich
+   */
+  audit: {
+    ok: boolean;
+    checked: number;
+    firstBrokenSeq: number | null;
+    breakKind: ChainBreak | null;
+    database: { ok: boolean; checked: number; firstBrokenSeq: number | null };
+  };
+  /** neue Epoche der Audit-Kette (null bei Sicherungen vor Migration 0610) */
+  epoch: { epoch: string; previousEpoch: string | null; restoredSeq: number } | null;
+  /** Kopf der Kette der bisherigen Datenbank unmittelbar vor der Wiederherstellung (null = leer/unbekannt) */
+  preRestore: { epoch: string | null; seq: number; hash: string } | null;
 }
 
 export { BackupFileError };
@@ -112,6 +131,38 @@ begin
       r.nspname, r.relname);
   end loop;
 end $$`;
+
+/**
+ * Kopf der Audit-Kette und aktuelle Epoche der Datenbank, die ersetzt wird (gespeicherter Hash: den haben
+ * Partner in ihren Prüfpunkten). null, wenn die Datenbank (noch) kein Audit-Log hat.
+ */
+async function preRestoreHead(ownerUrl: string): Promise<RestoreResult['preRestore']> {
+  const client = new pg.Client({ connectionString: ownerUrl, application_name: 'osp-data-mesh-restore' });
+  await client.connect();
+  try {
+    const has = await client.query<{ log: boolean; epoch: boolean }>(
+      `select to_regclass('public.audit_log') is not null as log,
+              to_regclass('public.audit_chain_epoch') is not null as epoch`,
+    );
+    if (!has.rows[0]?.log) return null;
+    const head = await client.query<{ seq: string; hash: string }>(
+      // nach der Spalte ordnen (nicht nach dem Textalias)
+      'select a.seq::text as seq, a.hash from public.audit_log a where a.seq is not null order by a.seq desc limit 1',
+    );
+    const h = head.rows[0];
+    if (!h) return null;
+    let epoch: string | null = null;
+    if (has.rows[0]?.epoch) {
+      const e = await client.query<{ epoch: string }>(
+        'select epoch::text as epoch from public.audit_chain_epoch order by n desc limit 1',
+      );
+      epoch = e.rows[0]?.epoch ?? null;
+    }
+    return { epoch, seq: Number(h.seq), hash: h.hash };
+  } finally {
+    await client.end();
+  }
+}
 
 /** SQL-Zeichenkettenliteral (standard_conforming_strings = on) */
 function sqlLiteral(s: string): string {
@@ -168,6 +219,7 @@ export async function restoreBackup(opts: RestoreOptions): Promise<RestoreResult
   // 3. Entschlüsseln (temporäres Verzeichnis nur für diesen Prozess, 0700)
   const tmp = await mkdtemp(join(opts.tmpDir ?? tmpdir(), 'osp-restore-'));
   const fileName = basename(opts.file);
+  let preRestore: RestoreResult['preRestore'] = null;
   try {
     const plain = join(tmp, 'restore.dump');
     await decryptBackupToFile(opts.file, opts.backupKey, plain);
@@ -191,8 +243,10 @@ export async function restoreBackup(opts: RestoreOptions): Promise<RestoreResult
     if (dumpCode !== 0)
       throw new Error(`pg_restore failed (exit ${dumpCode}): ${sanitizeToolOutput(dumpErr)}`);
 
-    // 5. alles in EINER Transaktion als mesh_owner: BI-Objekte entfernen, Schema + Daten, Rechte,
-    //    Sitzungen beenden, Audit-Eintrag (inkl. Prüfung der Kette)
+    // 5. Kopf der bisherigen Kette festhalten (der Knoten ist gestoppt, Knotensperre: CLI), dann alles in
+    //    EINER Transaktion als mesh_owner: BI-Objekte entfernen, Schema + Daten, Rechte, Sitzungen beenden,
+    //    Audit-Eintrag (inkl. Prüfung der Kette)
+    preRestore = await preRestoreHead(opts.ownerUrl);
     const epilogue = join(tmp, 'epilogue.sql');
     const details = JSON.stringify({
       sha256,
@@ -200,17 +254,61 @@ export async function restoreBackup(opts: RestoreOptions): Promise<RestoreResult
       createdAt: header.createdAt,
       schemaVersion: header.schemaVersion,
       manifestVerified,
+      preRestore,
     });
+    const pre = preRestore;
+    const preEpoch = pre?.epoch ? `${sqlLiteral(pre.epoch)}::uuid` : 'null';
+    const preSeq = pre ? `${pre.seq}::bigint` : 'null';
+    const preHash = pre ? sqlLiteral(pre.hash) : 'null';
     await writeFile(
       epilogue,
-      `with s as (delete from user_session returning 1),
-     v as (select checked, first_broken_seq from audit_verify())
-insert into audit_log (actor_type, actor_id, actor_label, action, outcome, object_type, object_id, details)
-select 'system', null, 'cli', 'backup.restore', 'success', 'backup', ${sqlLiteral(fileName)},
-  ${sqlLiteral(details)}::jsonb || jsonb_build_object(
-    'sessionsEnded', (select count(*) from s),
-    'auditOk', (select first_broken_seq is null from v),
-    'auditChecked', (select checked from v));
+      // Neue Epoche der Audit-Kette (ADR 0014): die Sicherung bringt den Epochenverlauf ihres Stands mit; die
+      // Einträge 1..restored_seq stammen aus deren aktueller Epoche, alles danach ist neu. Partner verwahren
+      // Prüfpunkte je Epoche, sodass die neu vergebenen Laufnummern nicht als Widerspruch gelten.
+      // Datenbanken vor Migration 0610 haben keine Epochen: dann ohne (die Migration legt die erste an).
+      `do $restore$
+declare
+  d jsonb := ${sqlLiteral(details)}::jsonb;
+  ended bigint;
+  v record;
+  e jsonb;
+begin
+  delete from user_session;
+  get diagnostics ended = row_count;
+  select checked, first_broken_seq into v from audit_verify();
+  if to_regclass('public.audit_chain_epoch') is not null then
+    if exists (select 1 from pg_attribute where attrelid = 'public.audit_chain_epoch'::regclass
+                and attname = 'pre_restore_seq' and not attisdropped) then
+      -- Migration 0630: Kopf der bisherigen Kette mit festhalten
+      insert into audit_chain_epoch (n, epoch, started_at, reason, previous_epoch, restored_seq,
+                                     backup_sha256, backup_created_at,
+                                     pre_restore_epoch, pre_restore_seq, pre_restore_hash)
+      select coalesce(max(n), 0) + 1, gen_random_uuid(), clock_timestamp(), 'restore',
+             (select epoch from audit_chain_epoch order by n desc limit 1),
+             (select coalesce(max(seq), 0) from audit_log),
+             ${sqlLiteral(sha256)}, ${sqlLiteral(header.createdAt)}::timestamptz,
+             ${preEpoch}, ${preSeq}, ${preHash}
+        from audit_chain_epoch
+      returning jsonb_build_object('epoch', epoch, 'previousEpoch', previous_epoch, 'restoredSeq', restored_seq)
+        into e;
+    else
+      insert into audit_chain_epoch (n, epoch, started_at, reason, previous_epoch, restored_seq,
+                                     backup_sha256, backup_created_at)
+      select coalesce(max(n), 0) + 1, gen_random_uuid(), clock_timestamp(), 'restore',
+             (select epoch from audit_chain_epoch order by n desc limit 1),
+             (select coalesce(max(seq), 0) from audit_log),
+             ${sqlLiteral(sha256)}, ${sqlLiteral(header.createdAt)}::timestamptz
+        from audit_chain_epoch
+      returning jsonb_build_object('epoch', epoch, 'previousEpoch', previous_epoch, 'restoredSeq', restored_seq)
+        into e;
+    end if;
+    d := d || e;
+  end if;
+  insert into audit_log (actor_type, actor_id, actor_label, action, outcome, object_type, object_id, details)
+  values ('system', null, 'cli', 'backup.restore', 'success', 'backup', ${sqlLiteral(fileName)},
+          d || jsonb_build_object('sessionsEnded', ended, 'auditOk', v.first_broken_seq is null,
+                                  'auditChecked', v.checked));
+end $restore$;
 `,
       { mode: 0o600 },
     );
@@ -255,16 +353,41 @@ select 'system', null, 'cli', 'backup.restore', 'success', 'backup', ${sqlLitera
   });
   await client.connect();
   try {
-    const entry = await client.query<{ details: { sessionsEnded?: number } }>(
-      "select details from audit_log where action = 'backup.restore' order by seq desc limit 1",
-    );
+    const entry = await client.query<{
+      details: {
+        sessionsEnded?: number;
+        epoch?: string;
+        previousEpoch?: string | null;
+        restoredSeq?: number;
+      };
+    }>("select details from audit_log where action = 'backup.restore' order by seq desc limit 1");
     const v = await client.query<{ checked: string | number; first_broken_seq: string | number | null }>(
       'select * from audit_verify()',
     );
     const row = v.rows[0];
-    const firstBrokenSeq = row?.first_broken_seq == null ? null : Number(row.first_broken_seq);
-    const audit = { ok: firstBrokenSeq === null, checked: Number(row?.checked ?? 0), firstBrokenSeq };
-    const sessionsEnded = Number(entry.rows[0]?.details.sessionsEnded ?? 0);
+    const dbBroken = row?.first_broken_seq == null ? null : Number(row.first_broken_seq);
+    const database = { ok: dbBroken === null, checked: Number(row?.checked ?? 0), firstBrokenSeq: dbBroken };
+    // maßgeblich: im Programm neu berechnet (audit_verify() stammt aus der wiederhergestellten Datenbank)
+    const db = createDb(opts.ownerUrl, 1);
+    let chain: Awaited<ReturnType<typeof recomputeAuditChain>>;
+    try {
+      chain = await recomputeAuditChain(db);
+    } finally {
+      await db.destroy();
+    }
+    const audit: RestoreResult['audit'] = {
+      ok: chain.ok && database.ok,
+      checked: chain.checked,
+      firstBrokenSeq: chain.firstBrokenSeq ?? database.firstBrokenSeq,
+      breakKind: chain.breakKind,
+      database,
+    };
+    const d = entry.rows[0]?.details;
+    const sessionsEnded = Number(d?.sessionsEnded ?? 0);
+    const epoch =
+      d?.epoch !== undefined
+        ? { epoch: d.epoch, previousEpoch: d.previousEpoch ?? null, restoredSeq: Number(d.restoredSeq ?? 0) }
+        : null;
     log(`${sessionsEnded} sessions ended, audit chain ${audit.ok ? 'ok' : 'BROKEN'}`);
     return {
       fileName,
@@ -275,6 +398,8 @@ select 'system', null, 'cli', 'backup.restore', 'success', 'backup', ${sqlLitera
       manifestVerified,
       sessionsEnded,
       audit,
+      epoch,
+      preRestore,
     };
   } finally {
     await client.end();

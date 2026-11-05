@@ -17,7 +17,7 @@ export async function getPeer(db: DbOrTx, id: string): Promise<Row<'peer'>> {
 }
 
 /** Strikt kodierter Ed25519-Public-Key (base64, genau 32 Byte) */
-function isPublicKey(b64: string): boolean {
+export function isPublicKey(b64: string): boolean {
   if (!/^[A-Za-z0-9+/]{43}=$/.test(b64)) return false;
   const raw = Buffer.from(b64, 'base64');
   return raw.length === 32 && raw.toString('base64') === b64;

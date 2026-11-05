@@ -11,8 +11,8 @@
  *
  * Die Funktionen werden auch von scripts/sbom.ts verwendet.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, extname, join, resolve } from 'node:path';
 
 export const ROOT = resolve(import.meta.dir, '..');
 
@@ -30,6 +30,8 @@ export interface LockPackage {
   integrity: string | null;
   dependencies: string[];
   optionalDependencies: string[];
+  /** nicht optionale Peer-Abhängigkeiten (nur für den Abhängigkeitsgraphen, nicht für die Verwendung) */
+  peerDependencies: string[];
   /** Paket ist auf bestimmte Plattformen beschränkt (os/cpu in bun.lock) */
   platformSpecific: boolean;
   hasBin: boolean;
@@ -38,17 +40,26 @@ export interface LockPackage {
 export interface PackageMeta {
   license: string | null;
   /** Herkunft der Lizenzangabe */
-  licenseSource: 'package.json' | 'inherited' | 'unknown';
+  licenseSource: 'package.json' | 'registry' | 'inherited' | 'unknown';
   inheritedFrom?: string;
   installed: boolean;
   description: string | null;
   author: { name?: string; email?: string; url?: string } | null;
   homepage: string | null;
   repository: string | null;
+  /** Copyright-Vermerke aus LICENSE/COPYING/NOTICE des installierten Pakets (leer, wenn keine) */
+  copyright: string[];
+  /**
+   * Enthält das installierte Paket ausführbaren Code (JavaScript, native Module, WebAssembly,
+   * Programme)? null = nicht installiert, nicht geprüft.
+   */
+  executableCode: boolean | null;
 }
 
 export interface Component extends LockPackage {
   usage: Set<Usage>;
+  /** aufgelöste nicht optionale Peer-Abhängigkeiten (Schlüssel in bun.lock), nur für den Graphen */
+  resolvedPeers: string[];
   direct: boolean;
   meta: PackageMeta;
   /** aufgelöste Abhängigkeiten (Lock-Schlüssel) */
@@ -91,6 +102,10 @@ export function parseLockPackages(lock: LockFile): Map<string, LockPackage> {
     const { name, version } = splitNameVersion(spec);
     const deps = Object.keys((info.dependencies as Record<string, string> | undefined) ?? {});
     const optional = Object.keys((info.optionalDependencies as Record<string, string> | undefined) ?? {});
+    const optionalPeers = new Set((info.optionalPeers as string[] | undefined) ?? []);
+    const peers = Object.keys((info.peerDependencies as Record<string, string> | undefined) ?? {}).filter(
+      (p) => !optionalPeers.has(p),
+    );
     out.set(key, {
       key,
       name,
@@ -98,6 +113,7 @@ export function parseLockPackages(lock: LockFile): Map<string, LockPackage> {
       integrity: typeof integrity === 'string' && integrity.length > 0 ? integrity : null,
       dependencies: deps,
       optionalDependencies: optional,
+      peerDependencies: peers,
       platformSpecific: 'os' in info || 'cpu' in info,
       hasBin: 'bin' in info,
     });
@@ -140,7 +156,7 @@ function nodeModulesPath(root: string, pkg: LockPackage): string {
   return join(root, 'node_modules', parts.join('/node_modules/'), 'package.json');
 }
 
-function normalizeLicense(pj: Record<string, unknown>): string | null {
+export function normalizeLicense(pj: Record<string, unknown>): string | null {
   const lic = pj.license;
   if (typeof lic === 'string' && lic.trim()) return lic.trim();
   if (lic && typeof lic === 'object' && typeof (lic as { type?: unknown }).type === 'string') {
@@ -156,7 +172,7 @@ function normalizeLicense(pj: Record<string, unknown>): string | null {
   return null;
 }
 
-function parseAuthor(a: unknown): PackageMeta['author'] {
+export function parseAuthor(a: unknown): PackageMeta['author'] {
   if (!a) return null;
   if (typeof a === 'string') {
     const m = a.match(/^([^<(]*?)\s*(?:<([^>]+)>)?\s*(?:\(([^)]+)\))?$/);
@@ -178,7 +194,7 @@ function parseAuthor(a: unknown): PackageMeta['author'] {
   return null;
 }
 
-function normalizeRepo(r: unknown): string | null {
+export function normalizeRepo(r: unknown): string | null {
   let url: string | null = null;
   if (typeof r === 'string') url = r;
   else if (r && typeof r === 'object' && typeof (r as { url?: unknown }).url === 'string')
@@ -193,12 +209,134 @@ function normalizeRepo(r: unknown): string | null {
   return url;
 }
 
+const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-._][\w.-]*)?$/i;
+/** Vorlagenzeilen aus Lizenztexten (z. B. Apache-2.0-Anhang, GPL-Hinweis) sind keine Vermerke. */
+const COPYRIGHT_TEMPLATE =
+  /\[yyyy\]|\[name of copyright owner\]|<year>|<name of author>|\{yyyy\}|\{name of copyright owner\}|copyright notice|copyright holders?\b(?! *[:,]?\s*\S+@)|copyright (law|owner|and license)|copyright\s*$/i;
+
+/** Copyright-Zeilen aus einem Lizenztext (ohne Vorlagen), getrimmt und ohne Duplikate. */
+export function extractCopyrightLines(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw
+      .replace(/^[\s*#/>-]+/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    // "Copyright …" mit Jahr oder (c)/©; "© …"; "(c) 2020 …" (ohne Jahr: Aufzählungspunkt im Lizenztext)
+    const isNotice =
+      (/^copyright\b/i.test(line) && /(\d{4}|©|\(c\))/i.test(line)) ||
+      line.startsWith('©') ||
+      /^\(c\)\s*\d{4}/i.test(line);
+    if (!isNotice || COPYRIGHT_TEMPLATE.test(line)) continue;
+    if (line.length > 300) continue;
+    if (!out.includes(line)) out.push(line);
+  }
+  return out;
+}
+
+function readCopyright(dir: string): string[] {
+  const lines: string[] = [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir)
+      .filter((n) => LICENSE_FILE.test(n))
+      .sort();
+  } catch {
+    return [];
+  }
+  for (const n of names) {
+    try {
+      const p = join(dir, n);
+      if (!statSync(p).isFile() || statSync(p).size > 512 * 1024) continue;
+      for (const l of extractCopyrightLines(readFileSync(p, 'utf8'))) if (!lines.includes(l)) lines.push(l);
+    } catch {
+      // nicht lesbare Datei ignorieren
+    }
+  }
+  return lines.slice(0, 20);
+}
+
+/** Dateiendungen mit Code, der direkt oder von einer Laufzeitumgebung ausgeführt wird (TR-03183-2, 8.1.4). */
+const CODE_EXT = new Set([
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.jsx',
+  '.ts',
+  '.mts',
+  '.cts',
+  '.tsx',
+  '.node',
+  '.wasm',
+  '.sh',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.py',
+]);
+const DECLARATION = /\.d\.[mc]?ts$/;
+const NON_CODE_EXT = new Set([
+  '.md',
+  '.markdown',
+  '.txt',
+  '.json',
+  '.map',
+  '.css',
+  '.html',
+  '.yml',
+  '.yaml',
+  '.svg',
+  '.png',
+  '.flow',
+]);
+
+/**
+ * Prüft die Dateien des installierten Pakets (ohne verschachtelte node_modules): ausführbar, sobald eine
+ * Datei Code enthält – Quelltext einer Skriptsprache, native Module, WebAssembly oder eine Datei mit
+ * gesetztem Ausführungsrecht ohne Text-Endung. Reine Typdeklarationen (*.d.ts) sind nicht ausführbar.
+ */
+export function hasExecutableCode(dir: string): boolean {
+  const stack = [dir];
+  let visited = 0;
+  while (stack.length) {
+    const d = stack.pop()!;
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (++visited > 50_000) return true; // sehr große Pakete: sicherheitshalber ausführbar
+      const p = join(d, e.name);
+      if (e.isDirectory()) {
+        if (e.name !== 'node_modules') stack.push(p);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      if (DECLARATION.test(e.name)) continue;
+      const ext = extname(e.name).toLowerCase();
+      if (CODE_EXT.has(ext)) return true;
+      if (!NON_CODE_EXT.has(ext)) {
+        try {
+          if (statSync(p).mode & 0o111) return true;
+        } catch {
+          // ignorieren
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function readMeta(root: string, pkg: LockPackage): PackageMeta {
   const path = nodeModulesPath(root, pkg);
   if (existsSync(path)) {
     const pj = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
     if (pj.version === pkg.version) {
       const license = normalizeLicense(pj);
+      const dir = dirname(path);
       return {
         license,
         licenseSource: license ? 'package.json' : 'unknown',
@@ -207,6 +345,8 @@ function readMeta(root: string, pkg: LockPackage): PackageMeta {
         author: parseAuthor(pj.author),
         homepage: typeof pj.homepage === 'string' ? pj.homepage : null,
         repository: normalizeRepo(pj.repository),
+        copyright: readCopyright(dir),
+        executableCode: hasExecutableCode(dir),
       };
     }
   }
@@ -218,6 +358,8 @@ function readMeta(root: string, pkg: LockPackage): PackageMeta {
     author: null,
     homepage: null,
     repository: null,
+    copyright: [],
+    executableCode: null,
   };
 }
 
@@ -241,8 +383,12 @@ export function buildInventory(root = ROOT): Inventory {
     const resolvedDeps = [...pkg.dependencies, ...pkg.optionalDependencies]
       .map((d) => resolveDep(packages, pkg.key, d))
       .filter((k): k is string => k !== null);
+    const resolvedPeers = pkg.peerDependencies
+      .map((d) => resolveDep(packages, pkg.key, d))
+      .filter((k): k is string => k !== null && !resolvedDeps.includes(k));
     components.set(pkg.key, {
       ...pkg,
+      resolvedPeers,
       usage: new Set(),
       direct: directDeps.includes(pkg.key) || directDev.includes(pkg.key),
       meta: readMeta(root, pkg),
@@ -418,6 +564,21 @@ Veröffentlichung wird empfohlen.
 
 ${table(runtime)}
 
+## Copyright-Vermerke der ausgelieferten Pakete
+
+Aus den Dateien \`LICENSE\`/\`COPYING\`/\`NOTICE\` der installierten Pakete gelesen (auch in der SBOM im Feld
+\`copyright\` je Komponente). Die Lizenztexte selbst liegen in \`node_modules/<paket>/\`; bei einer
+Weitergabe der gebündelten Web-Oberfläche sind Vermerk und Lizenztext der MIT-/ISC-/BSD-Pakete beizufügen.
+
+| Paket | Version | Copyright-Vermerk |
+|---|---|---|
+${runtime
+  .map(
+    (c) =>
+      `| \`${c.name}\` | ${c.version} | ${c.meta.copyright.length ? c.meta.copyright.map(md).join('<br>') : '*kein Vermerk in den Lizenzdateien des Pakets*'} |`,
+  )
+  .join('\n')}
+
 ## Nur für Build und Entwicklung
 
 Diese Pakete werden zum Bauen, Prüfen und Testen verwendet und nicht ausgeliefert. Plattformspezifische
@@ -434,9 +595,9 @@ Nicht automatisch erfasst (nicht in \`bun.lock\`), aber für Betrieb bzw. Contai
 |---|---|---|---|
 ${EXTERNAL_COMPONENTS.map((e) => `| ${md(e.name)} | ${md(e.use)} | ${md(e.license)} | ${e.source} |`).join('\n')}
 
-Für die Container-Abbilder selbst (Betriebssystempakete) kann nach dem Bauen eine eigene SBOM erzeugt
-werden, z. B. \`bun x @cyclonedx/cdxgen -t docker osp-data-mesh:latest\` (nicht lokal verifiziert, da auf der
-Entwicklungsmaschine kein Docker installiert ist).
+Die Betriebssystempakete des Container-Abbilds beschreibt eine eigene Abbild-SBOM
+(\`sbom/osp-data-mesh.image.cdx.json\`, Befehl in [Betrieb](betrieb.md)); die gebaute Web-Oberfläche die
+Build-SBOM (\`bun run sbom -- build-ui\`, siehe [Sicherheitskonzept](sicherheit.md#sbom-und-bsi-tr-03183-2)).
 `;
 }
 

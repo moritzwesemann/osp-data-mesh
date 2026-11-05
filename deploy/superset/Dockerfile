@@ -1,7 +1,6 @@
 # Apache Superset für OSP-Data-Mesh (optional, Profil "bi" in deploy/docker-compose.yml)
-# Das Abbild selbst ist NICHT LOKAL GEBAUT (kein Docker auf der Entwicklungsmaschine); Konfiguration und
-# Einrichtungsskript sind mit Superset 6.1.0 aus PyPI und denselben Abhängigkeitsständen verifiziert
-# (README.md, "Lokal ohne Docker prüfen").
+# Mit Docker 29 (Colima, arm64) gebaut und geprüft: Einrichtung, drei Dashboards mit Daten, HTTPS über
+# Caddy (README.md).
 #
 # Das offizielle Abbild apache/superset:6.1.0 ist das schlanke Abbild ohne Datenbanktreiber;
 # ergänzt wird nur der PostgreSQL-Treiber psycopg2-binary (für die Verbindung als mesh_bi).

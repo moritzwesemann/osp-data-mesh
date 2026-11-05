@@ -15,12 +15,41 @@ export const CsvConfig = z.object({
 });
 export type CsvConfig = z.infer<typeof CsvConfig>;
 
+/**
+ * Excel-Datei (.xlsx). Zahlen- und Datumszellen sind eindeutig und werden unabhängig von den Angaben
+ * unten gelesen; Dezimaltrennzeichen und Datumsformat gelten für Werte, die als Text gespeichert sind.
+ */
+export const XlsxConfig = z.object({
+  type: z.literal('xlsx'),
+  /** Name des Tabellenblatts; leer = erstes Tabellenblatt */
+  sheet: z.string().max(31).default(''),
+  /** Kopfzeile = erste nicht leere Zeile ab dieser Zeilennummer des Blatts (Titelzeilen davor werden übersprungen) */
+  headerRow: z.number().int().min(1).max(1000).default(1),
+  decimalSeparator: z.enum(['.', ',']).default(','),
+  dateFormat: DateFormat.default('DD.MM.YYYY'),
+});
+export type XlsxConfig = z.infer<typeof XlsxConfig>;
+
 export const ApiAuth = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }),
   /** Geheimnis wird separat über connectors.setSecret gesetzt und verschlüsselt gespeichert */
   z.object({ type: z.literal('bearer') }),
   z.object({ type: z.literal('header'), headerName: z.string().regex(/^[A-Za-z0-9-]{1,64}$/) }),
+  /**
+   * OAuth 2.0 Client Credentials (RFC 6749, Abschnitt 4.4): Zugriffstoken vom Token-Endpunkt, als
+   * Bearer-Token gesendet. Das Client-Geheimnis wird separat über connectors.setSecret gesetzt.
+   */
+  z.object({
+    type: z.literal('oauth2_client_credentials'),
+    tokenUrl: z.url({ protocol: /^https?$/ }),
+    clientId: z.string().min(1).max(500),
+    scope: z.string().max(1000).optional(),
+    audience: z.string().max(1000).optional(),
+    /** Übermittlung von Client-Kennung und -Geheimnis: HTTP-Basic (Standard) oder im Formular */
+    clientAuth: z.enum(['basic', 'body']).default('basic'),
+  }),
 ]);
+export type ApiAuth = z.infer<typeof ApiAuth>;
 
 export const ApiPagination = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }),
@@ -54,7 +83,7 @@ export const HttpApiConfig = z.object({
 });
 export type HttpApiConfig = z.infer<typeof HttpApiConfig>;
 
-export const ConnectorConfig = z.discriminatedUnion('type', [CsvConfig, HttpApiConfig]);
+export const ConnectorConfig = z.discriminatedUnion('type', [CsvConfig, XlsxConfig, HttpApiConfig]);
 export type ConnectorConfig = z.infer<typeof ConnectorConfig>;
 
 /**
@@ -70,7 +99,7 @@ export const MappingTarget = z
   );
 
 export const FieldMapping = z.object({
-  /** Spaltenüberschrift (CSV) bzw. Punkt-Pfad im JSON-Eintrag (API) */
+  /** Spaltenüberschrift (CSV, Excel) bzw. Punkt-Pfad im JSON-Eintrag (API) */
   source: z.string().min(1).max(200),
   target: MappingTarget,
   transform: z.enum(['none', 'trim', 'upper', 'lower']).default('trim'),
@@ -89,11 +118,15 @@ export const AthleteMatch = z.discriminatedUnion('strategy', [
 ]);
 export type AthleteMatch = z.infer<typeof AthleteMatch>;
 
+/** Art der Quelle; legt den Konfigurationstyp fest (csv_upload ↔ csv, xlsx_upload ↔ xlsx, http_api ↔ http_api) */
+export const ConnectorKind = z.enum(['csv_upload', 'xlsx_upload', 'http_api']);
+export type ConnectorKind = z.infer<typeof ConnectorKind>;
+
 export const ConnectorInput = z.object({
   slug: z.string().regex(/^[a-z][a-z0-9_-]{1,50}$/),
   name: z.string().min(1).max(200),
   description: z.string().max(2000).default(''),
-  kind: z.enum(['csv_upload', 'http_api']),
+  kind: ConnectorKind,
   targetType: z.enum(['athletes', 'dataset']),
   targetDatasetId: Uuid.nullable().default(null),
   config: ConnectorConfig,
@@ -109,7 +142,7 @@ export const Connector = z.object({
   slug: z.string(),
   name: z.string(),
   description: z.string(),
-  kind: z.enum(['csv_upload', 'http_api']),
+  kind: ConnectorKind,
   targetType: z.enum(['athletes', 'dataset']),
   targetDatasetId: Uuid.nullable(),
   targetDatasetName: z.string().nullable(),
@@ -197,6 +230,12 @@ export const IMPORT_ERROR_CODES = [
   'too_many_columns',
   /** Zeile 0: Quelle hat mehr Zeilen bzw. Einträge als zulässig (params.max) */
   'too_many_rows',
+  /** Zeile 0: Datei ist keine lesbare Excel-Datei (.xlsx) oder überschreitet eine Obergrenze (params.reason) */
+  'invalid_file',
+  /** Zeile 0: Tabellenblatt der Excel-Datei nicht gefunden (params.sheet) */
+  'sheet_not_found',
+  /** Hinweis (warning, Zeile 0): Excel-Kopfzeile automatisch weiter unten erkannt (params.headerRow) */
+  'header_row_detected',
 ] as const;
 
 /** Übersetzbare Gründe für status=failed eines Importlaufs (ImportRun.failureCode) */
@@ -206,6 +245,8 @@ export const IMPORT_FAILURE_CODES = [
   'invalid_response',
   'too_many_columns',
   'too_many_rows',
+  'invalid_file',
+  'sheet_not_found',
 ] as const;
 
 export const ImportError = z.object({
@@ -236,6 +277,9 @@ export const InspectResult = z.object({
   columns: z.array(z.string()),
   sampleRows: z.array(z.record(z.string(), z.string().nullable())),
   detectedDelimiter: z.string().nullable(),
+  /** Excel: Namen aller Tabellenblätter der Datei (in Reihenfolge) und das gelesene Blatt */
+  sheets: z.array(z.string()).optional(),
+  sheet: z.string().optional(),
 });
 
 export const connectorRoutes = {
@@ -297,7 +341,7 @@ export const connectorRoutes = {
     path: '/api/v1/connectors/:id/secret',
     auth: ['data_steward'],
     summary:
-      'Zugangsgeheimnis der API-Quelle setzen oder entfernen (verschlüsselt gespeichert, nie wieder ausgegeben)',
+      'Zugangsgeheimnis der API-Quelle (Token, Schlüssel oder OAuth2-Client-Geheimnis) setzen oder entfernen (verschlüsselt gespeichert, nie wieder ausgegeben)',
     tag: 'Datenquellen',
     params: IdParam,
     body: z.object({ secret: z.string().min(1).max(4000).nullable() }),
@@ -325,7 +369,8 @@ export const connectorRoutes = {
     method: 'POST',
     path: '/api/v1/connectors/inspect',
     auth: ['data_steward'],
-    summary: 'Beispieldatei oder API-Antwort analysieren (Spalten, Beispielzeilen) für die Zuordnung',
+    summary:
+      'Beispieldatei (CSV, Excel) oder API-Antwort analysieren (Spalten, Beispielzeilen, Tabellenblätter) für die Zuordnung',
     tag: 'Datenquellen',
     body: 'multipart',
     response: InspectResult,
@@ -335,7 +380,7 @@ export const connectorRoutes = {
     path: '/api/v1/connectors/:id/runs',
     auth: ['data_steward'],
     summary:
-      'Import starten: CSV hochladen (Feld "file") oder API abrufen; erzeugt Vorschau mit Prüfergebnis',
+      'Import starten: CSV- oder Excel-Datei hochladen (Feld "file") oder API abrufen; erzeugt Vorschau mit Prüfergebnis',
     tag: 'Importe',
     params: IdParam,
     body: 'multipart',

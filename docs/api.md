@@ -261,7 +261,9 @@ curl -s -b steward.txt -c steward.txt "$BASE/api/v1/connector-templates" \
 ```text
 athleten-stammdaten-csv	Athleten-Stammdaten (CSV)
 leistungsdiagnostik-csv	Leistungsdiagnostik (CSV)
+leistungsdiagnostik-xlsx	Leistungsdiagnostik (Excel)
 sprungkraft-api	Sprungkraft-Messsystem (API)
+sprungkraft-oauth2-api	Sprungkraft-Messsystem (API mit OAuth2)
 verletzungen-csv	Verletzungen (CSV)
 ```
 
@@ -508,6 +510,67 @@ Typ und Einheit der Spalten ergeben sich aus dem Datensatz (z. B. `vo2max`: `num
 Kategorie des Produkts ist die des Datensatzes (`performance`). Freigabe und Abruf wie in Schritten 7–10,
 mit einem passenden Zweck (z. B. `performance_diagnostics`).
 
+### Variante: Excel-Datei statt CSV
+
+Die Vorlage `leistungsdiagnostik-xlsx` legt eine Quelle der Art `xlsx_upload` an (gleicher Datensatz,
+gleiche Spalten wie `leistungsdiagnostik-csv`). Ihre Konfiguration:
+
+```json
+{ "type": "xlsx", "sheet": "", "headerRow": 1, "decimalSeparator": ",", "dateFormat": "DD.MM.YYYY" }
+```
+
+`sheet` = Name des Tabellenblatts (leer: erstes Blatt), `headerRow` = Kopfzeile ist die erste nicht leere
+Zeile ab dieser Zeilennummer (Titelzeilen davor werden übersprungen). Zahlen- und Datumszellen werden
+unabhängig von `decimalSeparator` und `dateFormat` richtig gelesen (Datum als ISO 8601); diese gelten
+für Werte, die als Text gespeichert sind. Formeln werden nicht berechnet – übernommen wird das in der
+Datei gespeicherte Ergebnis. Hochladen wie in Schritt 4:
+
+```sh
+# Spalten, Beispielzeilen und Tabellenblätter ansehen (connectors.inspect)
+curl -s -b steward.txt -c steward.txt -H 'X-OSP-CSRF: 1'   -F 'file=@leistungsdiagnostik.xlsx' -F "config=$(jq -c .config connector.json)"   "$BASE/api/v1/connectors/inspect" | jq '{sheets, sheet, columns}'
+# Import starten (imports.start) – Vorschau, Prüfung und Fehlerprotokoll wie bei CSV
+curl -s -b steward.txt -c steward.txt -H 'X-OSP-CSRF: 1' -F 'file=@leistungsdiagnostik.xlsx'   "$BASE/api/v1/connectors/$CONNECTOR_ID/runs" | jq '.run | {status, totalRows, validRows, failureCode}'
+```
+
+Ist die Datei keine lesbare `.xlsx`-Datei, endet der Lauf mit `status: "failed"` und `failureCode:
+"invalid_file"`; der Grund steht im Fehlerprotokoll (`params.reason`: `not_xlsx`, `xls_or_encrypted` – alte
+`.xls`-Datei oder kennwortgeschützt, `xlsx_corrupt`, `xlsx_too_large` – mehr als 100 MB entpackt oder ein
+Zellwert über 1 MB, `xlsx_unsupported` – z. B. ZIP64, `.xlsb`, DTD). Ein nicht vorhandenes Blatt ergibt
+`failureCode: "sheet_not_found"` (`params.sheet`). *Beispiel abrufen* meldet dieselben Gründe als 422
+`import_failed` mit `reason`. Grenzen wie bei CSV: 20 MB Datei, 500 Spalten, 100 000 Zeilen.
+
+### Variante: API-Quelle mit OAuth2 (Client Credentials)
+
+Die Vorlage `sprungkraft-oauth2-api` zeigt die Konfiguration (`config.auth`):
+
+```json
+{ "type": "oauth2_client_credentials", "tokenUrl": "https://login.messsystem.example.org/oauth2/token",
+  "clientId": "osp-data-mesh", "scope": "measurements.read", "clientAuth": "basic" }
+```
+
+`audience` ist optional; `clientAuth` `basic` sendet Client-Kennung und -Geheimnis per HTTP-Basic
+(RFC 6749, 2.3.1), `body` im Formular (`client_id`, `client_secret`). Adressen anpassen
+(`PATCH /api/v1/connectors/{id}`), dann das **Client-Geheimnis** wie jedes Zugangsgeheimnis setzen
+(`connectors.setSecret`; verschlüsselt gespeichert, nie ausgegeben):
+
+```sh
+printf 'Client-Geheimnis: '; read -rs SECRET; echo; export SECRET
+jq -n '{secret: env.SECRET}' | curl -s -b steward.txt -c steward.txt -X PUT   -H 'Content-Type: application/json' -H 'X-OSP-CSRF: 1' --data-binary @-   "$BASE/api/v1/connectors/$CONNECTOR_ID/secret"
+unset SECRET
+curl -s -b steward.txt -c steward.txt -H 'X-OSP-CSRF: 1' -X POST   "$BASE/api/v1/connectors/$CONNECTOR_ID/runs" | jq '.run | {status, totalRows, failureCode}'
+```
+
+Der Knoten holt beim Token-Endpunkt ein Zugriffstoken (`grant_type=client_credentials`) und sendet es als
+`Authorization: Bearer …` an die Quelle; er hält es im Arbeitsspeicher bis 60 Sekunden vor Ablauf
+(`expires_in`, ohne Angabe 5 Minuten, höchstens 1 Stunde) und holt nach einer 401-Antwort der Quelle
+einmal ein neues. Fehler des Token-Abrufs: Lauf `failed` mit `failureCode: "source_unreachable"`
+(`params.reason`: `oauth_invalid_client` – Client-Kennung oder -Geheimnis falsch, `oauth_invalid_scope`,
+`oauth_unauthorized_client`, `token_rejected` mit `params.status`, `token_network`, `token_timeout`,
+`secret_missing`) bzw. `invalid_response` (`token_invalid`). Der Host des Token-Endpunkts muss in
+`MESH_SOURCE_ALLOWED_HOSTS` stehen (sonst 400 `source_not_allowed`, `reason: token_url_not_allowed`); das
+Client-Geheimnis geht nur über HTTPS (bzw. an Loopback-Adressen). Wer Token-Endpunkt oder Client-Kennung
+ändert, muss das Geheimnis neu setzen (es wird verworfen, Audit `connector.secret_cleared`).
+
 ## Weitere häufige Aufrufe
 
 | Zweck | Aufruf | Rolle |
@@ -534,16 +597,16 @@ Server-Log und im Antwort-Header `X-Request-Id`:
 
 | HTTP | Codes | Bedeutung |
 |---|---|---|
-| 400 | `validation_failed`, `password_too_weak`, `source_not_allowed` | Eingabe ungültig (`fields` nennt Feld und Prüfcode, z. B. `"body.slug": "invalid_format"`); **auch ein zu kurzes Passwort** (unter 12 Zeichen) ist `validation_failed` mit `"body.newPassword": "too_small"` (Passwortwechsel) bzw. `"body.password": "too_small"` (Benutzer anlegen, Passwort zurücksetzen). `password_too_weak` = Passwort verletzt eine weitere Regel (`reason`: `equals_email` – gleich der E-Mail-Adresse, `equals_current` – gleich dem bisherigen Passwort). `source_not_allowed` = API-Quelle nicht in `MESH_SOURCE_ALLOWED_HOSTS` bzw. Zugangsgeheimnis über unverschlüsseltes `http://` (`reason: insecure_http`, siehe [Sicherheit](sicherheit.md#schutz-vor-server-side-request-forgery-ssrf)) |
+| 400 | `validation_failed`, `password_too_weak`, `source_not_allowed` | Eingabe ungültig (`fields` nennt Feld und Prüfcode, z. B. `"body.slug": "invalid_format"`); **auch ein zu kurzes Passwort** (unter 12 Zeichen) ist `validation_failed` mit `"body.newPassword": "too_small"` (Passwortwechsel) bzw. `"body.password": "too_small"` (Benutzer anlegen, Passwort zurücksetzen). `password_too_weak` = Passwort verletzt eine weitere Regel (`reason`: `equals_email` – gleich der E-Mail-Adresse, `equals_current` – gleich dem bisherigen Passwort). `source_not_allowed` = API-Quelle nicht in `MESH_SOURCE_ALLOWED_HOSTS` (bei OAuth2 auch der Token-Endpunkt: `reason: token_url_not_allowed`) bzw. Zugangsgeheimnis über unverschlüsseltes `http://` (`reason: insecure_http`, siehe [Sicherheit](sicherheit.md#schutz-vor-server-side-request-forgery-ssrf)) |
 | 401 | `unauthenticated`, `invalid_credentials` | nicht angemeldet, Sitzung abgelaufen, Token ungültig/abgelaufen/widerrufen; Anmeldung fehlgeschlagen – **einheitlich** für unbekannte E-Mail, falsches Passwort, inaktives und vorübergehend gesperrtes Konto (5 Fehlversuche in Folge → 15 Minuten); der tatsächliche Grund steht nur im Audit-Log |
 | 403 | `forbidden`, `csrf_failed`, `access_denied` | Rolle fehlt; `reason: password_change_required` (Initialpasswort noch nicht geändert); `reason: session_required` (Token erzeugen mit einem Token); CSRF-Header fehlt; Freigabe verweigert (`reason` = Ablehnungsgrund, z. B. `purpose_not_allowed`, `expired`, `revoked`) |
 | 404 | `not_found` | Objekt oder Route unbekannt |
 | 409 | `conflict`, `peer_untrusted` | Zustandskonflikt (`reason` z. B. `email_exists`, `slug_exists` – Connector-Kürzel vergeben, `slug_taken` – Produktkürzel vergeben, `last_admin`, `backup_running`), Partner nicht vertrauenswürdig |
 | 413 / 415 | `payload_too_large`, `unsupported_format` | Anfrage zu groß (API 1 MB, Uploads 20 MB; bei *Beispiel abrufen* auch `reason: too_many_columns`, mehr als 500 Spalten) bzw. falscher Inhaltstyp |
-| 422 | `import_failed`, `release_invalid` | Antwort einer API-Quelle unbrauchbar (*Beispiel abrufen*, `reason` z. B. `invalid_response`, `too_many_rows`) bzw. Freigabe fachlich ungültig (`fields`) |
+| 422 | `import_failed`, `release_invalid` | Antwort einer API-Quelle bzw. Excel-Datei unbrauchbar (*Beispiel abrufen*, `reason` z. B. `invalid_response`, `too_many_rows`, `token_invalid`, `not_xlsx`, `sheet_not_found`) bzw. Freigabe fachlich ungültig (`fields`) |
 | 429 | `rate_limited` | zu viele Anmeldeversuche (30 je IP-Adresse in 5 Minuten) bzw. Passwortwechsel (30 je Person in 5 Minuten) |
 | 500 | `internal_error`, `backup_failed` | unerwarteter Fehler (Details nur im Server-Log, Request-ID angeben) bzw. Sicherung fehlgeschlagen |
-| 502 | `source_unreachable`, `peer_unreachable`, `peer_rejected`, `signature_invalid` | Quelle oder Partner nicht erreichbar bzw. Antwort ungültig |
+| 502 | `source_unreachable`, `peer_unreachable`, `peer_rejected`, `signature_invalid` | Quelle oder Partner nicht erreichbar bzw. Antwort ungültig (bei *Beispiel abrufen* einer API-Quelle `reason` z. B. `http_401`, `timeout`, `oauth_invalid_client`) |
 
 Der Code `account_locked` (423) steht aus Kompatibilitätsgründen noch in der festen Liste `ERROR_CODES`,
 wird aber **nicht mehr geliefert**: Ein gesperrtes Konto erhält bei der Anmeldung dieselbe Antwort 401

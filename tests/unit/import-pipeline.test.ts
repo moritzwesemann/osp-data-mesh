@@ -676,7 +676,9 @@ describe('Vorlagen und Demo-Dateien', () => {
     expect(templates.map((t) => t.id)).toEqual([
       'athleten-stammdaten-csv',
       'leistungsdiagnostik-csv',
+      'leistungsdiagnostik-xlsx',
       'sprungkraft-api',
+      'sprungkraft-oauth2-api',
       'verletzungen-csv',
     ]);
     const verletzungen = templates.find((t) => t.id === 'verletzungen-csv')!.definition.dataset!;

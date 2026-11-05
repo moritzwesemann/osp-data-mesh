@@ -5,15 +5,22 @@
 #   docker compose up -d --build    # db → migrate (einmalig) → node → caddy
 #   docker compose run --rm cli create-admin --email it@osp.example --name "IT-Administration"
 #   docker compose --profile bi up -d --build   # zusätzlich Apache Superset (optional)
+#   ./verify-deployment.sh          # TLS, Sicherheits-Header, Netztrennung, Proxy-Vertrauen prüfen
 #
 # Netztrennung (interne und externe Dienste):
 #   frontend  normales Bridge-Netz: Caddy, Knoten, Superset. Nur Caddy veröffentlicht Ports.
 #             Der Knoten braucht ausgehenden Zugang (Partnerknoten, API-Quellen) und ist daher hier.
-#             Festes Subnetz 172.31.252.0/24, Caddy fest 172.31.252.10: nur von dieser Adresse übernimmt
-#             der Knoten die Client-Adresse aus X-Forwarded-For (MESH_TRUSTED_PROXIES). Andere Dienste im
-#             Netz (z. B. Superset) können so keine fremde Adresse vorgeben.
+#             Festes Subnetz <FRONTEND_NET_PREFIX>.0/24 (Standard 172.31.252.0/24), Caddy fest auf .10:
+#             nur von dieser Adresse übernimmt der Knoten die Client-Adresse aus X-Forwarded-For
+#             (MESH_TRUSTED_PROXIES). Andere Dienste im Netz (z. B. Superset) können so keine fremde
+#             Adresse vorgeben.
 #   backend   internes Netz (internal: true, kein Zugang nach außen): Datenbank, Knoten, Migration,
-#             CLI, Superset. Die Datenbank ist von außen nicht erreichbar.
+#             CLI, Superset. Ohne Adresse des Docker-Hosts in diesem Netz (inhibit_ipv4): Die Datenbank
+#             ist weder von außen noch von Prozessen auf dem Docker-Host selbst erreichbar.
+#
+# Zweiter Knoten auf demselben Docker-Host (z. B. Test- oder Wiederherstellungssystem): eigenes
+# Verzeichnis mit eigener .env, darin COMPOSE_PROJECT_NAME, FRONTEND_NET_PREFIX, CADDY_HTTP_PORT und
+# CADDY_HTTPS_PORT abweichend setzen (eigene Volumes, eigenes Netz, eigene Ports).
 #
 # Zugangsdaten: Der Knoten erhält ausschließlich die Laufzeitrolle mesh_app. Das Passwort von
 # mesh_owner erhalten nur die Einmal-Dienste "migrate" und "cli"; Superset erhält nur mesh_bi.
@@ -54,7 +61,7 @@ x-node-env: &node-env
   # Caddy ersetzt X-Forwarded-For durch die echte Client-Adresse; nötig für die Ratenbegrenzung je IP.
   # Ausgewertet nur für Verbindungen von Caddy (feste Adresse im Netz frontend, siehe unten).
   MESH_TRUST_PROXY: "true"
-  MESH_TRUSTED_PROXIES: 172.31.252.10
+  MESH_TRUSTED_PROXIES: ${FRONTEND_NET_PREFIX:-172.31.252}.10
   MESH_LOG_LEVEL: ${MESH_LOG_LEVEL:-info}
   MESH_TIMEZONE: ${MESH_TIMEZONE:-Europe/Berlin}
   MESH_UI_DIR: /app/dist/ui
@@ -134,9 +141,12 @@ services:
 
   # ---------------------------------------------------------------------------------------------
   # TLS-Reverse-Proxy. Einziger Dienst mit veröffentlichten Ports.
-  #   443: HTTPS für den Knoten (CADDY_DOMAIN) und Superset (Profil "bi", eigener Name MESH_BI_DOMAIN,
-  #        Standard bi.<CADDY_DOMAIN>; nie derselbe Name mit anderem Port, sonst erhielte Superset das
-  #        Sitzungs-Cookie des Knotens, siehe Caddyfile); 80: Weiterleitung auf HTTPS und ACME-Prüfung
+  #   CADDY_HTTPS_PORT (Standard 443): HTTPS für den Knoten (CADDY_DOMAIN) und Superset (Profil "bi",
+  #        eigener Name MESH_BI_DOMAIN, Standard bi.<CADDY_DOMAIN>; nie derselbe Name mit anderem Port,
+  #        sonst erhielte Superset das Sitzungs-Cookie des Knotens, siehe Caddyfile)
+  #   CADDY_HTTP_PORT (Standard 80): Weiterleitung auf HTTPS und ACME-Prüfung
+  # Caddy lauscht im Container auf denselben Portnummern wie außen; nur so enthält die Weiterleitung
+  # von HTTP auf HTTPS bei abweichendem Port die richtige Portnummer. ACME (Let's Encrypt) braucht 80/443.
   caddy:
     image: caddy:2.11
     restart: unless-stopped
@@ -146,20 +156,22 @@ services:
     environment:
       CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN in .env setzen}
       CADDY_TLS: ${CADDY_TLS:-internal}
+      CADDY_HTTP_PORT: ${CADDY_HTTP_PORT:-80}
+      CADDY_HTTPS_PORT: ${CADDY_HTTPS_PORT:-443}
       MESH_BI_DOMAIN: ${MESH_BI_DOMAIN:-bi.${CADDY_DOMAIN}}
-    # CADDY_BIND: Adresse der Netzwerkschnittstelle für 80/443 (Standard alle); z. B. nur die LAN-Adresse
+    # CADDY_BIND: Adresse der Netzwerkschnittstelle (Standard alle); z. B. nur die LAN-Adresse
     ports:
-      - "${CADDY_BIND:-0.0.0.0}:80:80"
-      - "${CADDY_BIND:-0.0.0.0}:443:443"
-      - "${CADDY_BIND:-0.0.0.0}:443:443/udp"
+      - "${CADDY_BIND:-0.0.0.0}:${CADDY_HTTP_PORT:-80}:${CADDY_HTTP_PORT:-80}"
+      - "${CADDY_BIND:-0.0.0.0}:${CADDY_HTTPS_PORT:-443}:${CADDY_HTTPS_PORT:-443}"
+      - "${CADDY_BIND:-0.0.0.0}:${CADDY_HTTPS_PORT:-443}:${CADDY_HTTPS_PORT:-443}/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
       frontend:
-        # feste Adresse = MESH_TRUSTED_PROXIES des Knotens (bei Änderung beide anpassen)
-        ipv4_address: 172.31.252.10
+        # feste Adresse = MESH_TRUSTED_PROXIES des Knotens (beide aus FRONTEND_NET_PREFIX)
+        ipv4_address: ${FRONTEND_NET_PREFIX:-172.31.252}.10
 
   # ---------------------------------------------------------------------------------------------
   # Betriebs-Kommandozeile (Profil "tools"): docker compose run --rm cli <kommando> [optionen]
@@ -182,7 +194,9 @@ services:
 
   # ---------------------------------------------------------------------------------------------
   # Optional: Apache Superset mit Referenz-Dashboards (Profil "bi"), liest nur als mesh_bi.
-  # NICHT LOKAL VERIFIZIERT (siehe superset/README.md).
+  # Mit Docker 29 geprüft: Abbild, Einrichtung, drei Dashboards mit Daten, HTTPS über Caddy
+  # (superset/README.md; Prüfung: docker compose --profile bi run --rm superset-bootstrap
+  # python /app/osp/bootstrap_superset.py --verify).
   superset-init:
     image: osp-data-mesh-superset:6.1.0
     build:
@@ -247,12 +261,18 @@ volumes:
   superset_home:
 
 networks:
-  # festes Subnetz: Caddy hat darin die feste Adresse 172.31.252.10 (MESH_TRUSTED_PROXIES)
+  # festes Subnetz <FRONTEND_NET_PREFIX>.0/24 (Standard 172.31.252.0/24): Caddy hat darin die feste
+  # Adresse .10 (MESH_TRUSTED_PROXIES)
   frontend:
     ipam:
       config:
-        - subnet: 172.31.252.0/24
-          # dynamische Adressen nur aus der oberen Hälfte: 172.31.252.10 (Caddy) wird nie an andere Container vergeben
-          ip_range: 172.31.252.128/25
+        - subnet: ${FRONTEND_NET_PREFIX:-172.31.252}.0/24
+          # dynamische Adressen nur aus der oberen Hälfte: .10 (Caddy) wird nie an andere Container vergeben
+          ip_range: ${FRONTEND_NET_PREFIX:-172.31.252}.128/25
   backend:
     internal: true
+    driver_opts:
+      # Keine Adresse des Docker-Hosts in diesem Netz (die Container brauchen kein Gateway, das Netz ist
+      # intern). Ohne diese Option erreichten Prozesse auf dem Docker-Host die Datenbank über ihre
+      # Container-Adresse (geprüft mit verify-deployment.sh).
+      com.docker.network.bridge.inhibit_ipv4: "true"

@@ -24,6 +24,10 @@ Beweise sichern, gesetzliche Meldefristen einhalten, Wiederholung verhindern.
 | Quelle | Hinweis auf |
 |---|---|
 | `verify-audit` ≠ 0 bzw. *Audit › Integrität prüfen* nicht ok | Manipulation des Audit-Logs oder Datenbankbeschädigung |
+| `verify-audit --with-partners` Exit 1 bzw. *Audit › Mit Partnern abgleichen*: „Manipulation erkannt“ | Audit-Log abgeschnitten oder umgeschrieben (Eigentümer- bzw. Superuser-Rechte an der Datenbank) |
+| `verify-audit --with-partners` Exit 4 bzw. „Klärung nötig“ | jeden Hinweis erklären: „durch Wiederherstellung verloren“ und „Epoche nicht im Profil“ nur mit einer dokumentierten Wiederherstellung (Protokoll, Audit `backup.restore`, beim Partner `audit.checkpoint.epoch_changed`) – sonst vorgetäuschte Wiederherstellung, also Manipulation; „nicht beweiskräftig“ = Abweichung mit einem als kompromittiert abgelösten Schlüssel signiert (Fälschung mit dem gestohlenen Schlüssel oder Manipulation – Abgleich mit Prüfpunkten anderer Schlüssel und Exporten); „Partner in der Datenbank nicht vertrauenswürdig“ bzw. „weicht vom Profil ab“ ohne bekannte Änderung = Partnerliste manipuliert |
+| `verify-audit --with-partners` ohne `--profile` „ok“, mit Profil nicht | Partnerliste, Partneradressen/-schlüssel oder eigener Schlüsselverlauf in der Datenbank verändert (Prüfung ohne Profil ist nicht unabhängig von der Datenbank) |
+| beim Partner `audit.checkpoint.conflict` oder abgelehnte Rotationsmitteilungen (`peer.key_rotation.rejected`) | widersprüchliche Prüfpunkte bzw. gefälschte oder veraltete Schlüsselwechsel des Partners – beim Partner nachfragen |
 | Audit-Log: gehäufte `auth.login` mit `outcome = denied`, `rate_limited`, Kontosperren | Passwort-Angriffe |
 | Audit-Log: `access.forbidden`, `exchange.pull.denied`, ungewöhnliche `access.data`-Mengen oder Zeiten | Rechteausweitung, Datenabfluss, kompromittiertes Konto oder API-Token |
 | Austauschprotokoll: Abrufe eines Partners außerhalb üblicher Zeiten oder Zwecke | kompromittierter Partnerknoten |
@@ -76,7 +80,8 @@ Gesundheitsdaten (Art. 9) erhöhen das Risiko für Betroffene; im Zweifel höher
 | API-Token | Token widerrufen (oder Passwort zurücksetzen, widerruft alle Tokens der Person); Zugriffe im Audit-Log prüfen: Akteur ist die Person, Datenabrufe tragen `details.via = token`; welches Token zuletzt benutzt wurde, zeigt `lastUsedAt` unter *Konto › API-Tokens* |
 | Datenbankpasswort | neue Passwörter, `bootstrap.sql` erneut ausführen, `MESH_DB_URL` anpassen, Neustart ([Betrieb](betrieb.md#datenbankpasswörter-ändern)) |
 | `MESH_MASTER_KEY` | Master-Key rotieren ([Betrieb](betrieb.md#master-key-rotieren)); da der private Knotenschlüssel und die Zugangsdaten der API-Quellen mit dem alten Schlüssel entschlüsselbar waren: Zugangsdaten der Quellen beim Quellsystem erneuern und neu setzen; Knotenschlüssel wie in der nächsten Zeile behandeln |
-| Ed25519-Knotenschlüssel | Partner sperren den Knoten sofort. Ein Schlüsselwechsel ist im Prototyp nicht als Kommando umgesetzt: neue Knotenidentität einrichten (Neuinstallation mit neuer `MESH_NODE_ID` und Datenübernahme per Sicherung mit `--allow-other-node` nach Abstimmung, oder Entwicklungsunterstützung anfordern), danach neue Knotenkarte und Fingerprint-Abgleich mit allen Partnern |
+| Ed25519-Knotenschlüssel | Partner telefonisch informieren, sie sperren den Knoten sofort. **Keinen planmäßigen Wechsel** verwenden (dessen Mitteilung wäre mit dem verdächtigen Schlüssel signiert), sondern den Schlüssel ohne Mitteilung ersetzen: *Partner › Schlüssel wechseln* mit Anlass „Verdacht auf Kompromittierung“ bzw. `rotate-node-key --compromised --yes`. Neue Knotenkarte an alle Partner; sie tragen sie unter *Neuen Schlüssel eintragen* ein und bestätigen das Vertrauen erst nach telefonischem Abgleich des neuen Fingerprints ([Betrieb](betrieb.md#knotenschlüssel-ed25519), [ADR 0013](adr/0013-knotenschluessel-rotation.md)) |
+| Audit-Log (Verdacht auf Abschneiden oder Umschreiben) | `verify-audit --with-partners --profile <offline verwahrtes Anker-Profil>` mit unveränderter Software von einem sauberen Rechner aus (nicht die Oberfläche: sie nutzt die Partnerliste der verdächtigen Datenbank); Prüfsumme des Profils mit dem notierten Wert vergleichen; erste Abweichung (Laufnummer, Epoche) notieren; Partner um die bei ihnen verwahrten Prüfpunkte und Einträge `audit.checkpoint.conflict` bzw. `audit.checkpoint.epoch_changed` bitten; Sicherungen vor dem Zeitpunkt mit `verify-audit --checkpoint … --profile …` gegen exportierte Prüfpunkte prüfen ([ADR 0014](adr/0014-externe-verankerung-audit-kette.md)) |
 | `MESH_BACKUP_KEY` | neuen Schlüssel setzen; vorhandene Sicherungskopien an allen Ablageorten als offengelegt betrachten, ggf. löschen und neu sichern |
 | TLS-Schlüssel | Caddy-Datenverzeichnis löschen bzw. Zertifikat widerrufen; Caddy stellt neu aus |
 
@@ -85,7 +90,12 @@ Gesundheitsdaten (Art. 9) erhöhen das Risiko für Betroffene; im Zweifel höher
 1. Ursache beseitigen (Schwachstelle schließen, Update, Konfiguration korrigieren).
 2. Bei manipulierten oder zerstörten Daten: **Wiederherstellung aus einer Sicherung vor dem Vorfall**
    ([Betrieb › Wiederherstellung](betrieb.md#wiederherstellung)). Danach Löschungen und Widerrufe seit dem
-   Sicherungszeitpunkt wiederholen, Audit-Kette prüfen.
+   Sicherungszeitpunkt wiederholen, Audit-Kette prüfen. Die Wiederherstellung beginnt eine neue **Epoche**
+   der Audit-Kette; die bei Partnern verwahrten Prüfpunkte nach dem Sicherungszeitpunkt gelten danach als
+   „durch Wiederherstellung verloren“ (`verify-audit --with-partners` Exit 4). Wiederherstellung im
+   Vorfallbericht dokumentieren (Datei, SHA-256, neue Epoche, übernommene Laufnummer aus der Ausgabe von
+   `restore`), Partner informieren und das Anker-Profil neu exportieren (`audit-anchor-profile --previous`).
+   Eine neue Epoche ohne solche Dokumentation ist selbst ein Vorfall.
 3. Bei kompromittiertem Host: auf frischem System neu installieren ([Installation](installation.md)),
    Daten aus Sicherung zurückspielen, alle Schlüssel und Passwörter erneuern.
 4. Funktionsprüfung (`readyz`, Anmeldung, `verify-audit`, Partner-`ping`), Partner über Wiederaufnahme

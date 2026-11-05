@@ -1,5 +1,5 @@
 /**
- * Importläufe: Quelle lesen (CSV-Upload oder API), Pipeline ausführen, Vorschau mit Fehlerprotokoll
+ * Importläufe: Quelle lesen (CSV- oder Excel-Upload oder API), Pipeline ausführen, Vorschau mit Fehlerprotokoll
  * speichern (Status "previewed"), Übernahme (Athletenkern bzw. dataset_record) oder Verwerfen.
  *
  * Datenschutz: Die Rohdatei wird nicht gespeichert (nur SHA-256 und Größe). Vorgemerkte Zeilen
@@ -10,7 +10,7 @@
  */
 import { sql } from 'kysely';
 import type { Scalar } from '../../../shared/contract/common.ts';
-import type { ConnectorInput, ImportRun } from '../../../shared/contract/connectors.ts';
+import type { ConnectorInput, HttpApiConfig, ImportRun } from '../../../shared/contract/connectors.ts';
 import type { Actor } from '../../core/audit.ts';
 import { sha256Hex } from '../../core/crypto.ts';
 import { type DbOrTx, pgCode } from '../../core/db.ts';
@@ -52,8 +52,13 @@ import {
   subjectsOf,
   withoutRows,
 } from './retention.ts';
-import { checkSource, fetchApiItems, hostOf, type SourceDenial, sourceNameOf } from './source-http.ts';
+import { checkSource, deniedHost, fetchApiItems, type SourceDenial, sourceNameOf } from './source-http.ts';
+import { createOAuthSession, type OAuthSession, tokenCacheOf } from './source-oauth.ts';
 import { type ConvertOptions, localDate } from './validate.ts';
+import { readXlsx } from './xlsx.ts';
+
+/** Excel: so viele Zeilen unter der eingestellten Kopfzeile werden nach der eigentlichen Kopfzeile durchsucht */
+const HEADER_SEARCH_ROWS = 10;
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const CHUNK = 500;
@@ -64,9 +69,32 @@ export const secretAad = (connectorId: string) => `connector.secret:${connectorI
 
 /** Abweisung einer API-Quelle (Host nicht freigegeben oder Geheimnis über unverschlüsseltes http) */
 export function sourceDenied(denial: SourceDenial): AppError {
-  return denial === 'insecure_http'
-    ? new AppError('source_not_allowed', { reason: 'insecure_http' })
-    : new AppError('source_not_allowed');
+  if (denial === 'insecure_http') return new AppError('source_not_allowed', { reason: 'insecure_http' });
+  if (denial === 'token_url_not_allowed') {
+    return new AppError('source_not_allowed', { reason: 'token_url_not_allowed' });
+  }
+  return new AppError('source_not_allowed');
+}
+
+/**
+ * Token-Bezug für OAuth2-Quellen (sonst undefined). cacheKey = Connector-ID: Tokens werden bis kurz vor
+ * Ablauf wiederverwendet; ohne cacheKey (Beispielabruf mit einmaligem Geheimnis) nicht.
+ */
+export function oauthFor(
+  deps: Deps,
+  config: HttpApiConfig,
+  secret: string | null,
+  cacheKey: string | null,
+): OAuthSession | undefined {
+  if (config.auth.type !== 'oauth2_client_credentials') return undefined;
+  return createOAuthSession({
+    fetch: deps.fetch,
+    auth: config.auth,
+    secret,
+    timeoutMs: config.timeoutMs,
+    now: deps.now,
+    ...(cacheKey ? { cache: { store: tokenCacheOf(deps), key: cacheKey } } : {}),
+  });
 }
 
 export interface RequestContext {
@@ -109,8 +137,22 @@ function isFile(v: unknown): v is File {
   return typeof v === 'object' && v !== null && typeof (v as Blob).arrayBuffer === 'function';
 }
 
-function safeFileName(name: string): string {
-  return (name.split(/[\\/]/).pop() ?? '').slice(0, 200) || 'upload.csv';
+function safeFileName(name: string, fallback: string): string {
+  return (name.split(/[\\/]/).pop() ?? '').slice(0, 200) || fallback;
+}
+
+/** hochgeladene Datei aus dem Formular (Feld "file"), höchstens MAX_UPLOAD_BYTES */
+async function uploadedFile(form: FormData, fallbackName: string) {
+  const file = form.get('file');
+  if (!isFile(file)) throw invalid({ 'body.file': 'required' });
+  if (file.size > MAX_UPLOAD_BYTES) throw new AppError('payload_too_large');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const source = {
+    name: safeFileName(file.name, fallbackName),
+    sha256: sha256Hex(bytes),
+    size: bytes.byteLength,
+  };
+  return { bytes, source };
 }
 
 function summarizeIssues(issues: readonly Pick<Issue, 'code' | 'field'>[]) {
@@ -149,12 +191,9 @@ export async function startRun(
   const sourceIssues: Issue[] = [];
 
   if (input.config.type === 'csv') {
-    const file = form.get('file');
-    if (!isFile(file)) throw invalid({ 'body.file': 'required' });
-    if (file.size > MAX_UPLOAD_BYTES) throw new AppError('payload_too_large');
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    source = { name: safeFileName(file.name), sha256: sha256Hex(bytes), size: bytes.byteLength };
-    const decoded = decodeText(bytes, input.config.encoding);
+    const upload = await uploadedFile(form, 'upload.csv');
+    source = upload.source;
+    const decoded = decodeText(upload.bytes, input.config.encoding);
     if (decoded.fallback) {
       sourceIssues.push({
         rowNumber: 0,
@@ -172,6 +211,62 @@ export async function startRun(
       dateFormat: input.config.dateFormat,
       ...base,
     };
+  } else if (input.config.type === 'xlsx') {
+    const cfg = input.config;
+    const upload = await uploadedFile(form, 'upload.xlsx');
+    source = upload.source;
+    const read = readXlsx(upload.bytes, {
+      sheet: cfg.sheet,
+      headerRow: cfg.headerRow,
+      decimalSeparator: cfg.decimalSeparator,
+    });
+    if (!read.ok) {
+      return persistRun(rc, connector, {
+        status: 'failed',
+        failureCode: read.code,
+        source,
+        columns: [],
+        totalRows: 0,
+        issues: [
+          {
+            rowNumber: 0,
+            field: null,
+            code: read.code,
+            severity: 'error',
+            rawValue: null,
+            params: read.params,
+          },
+        ],
+      });
+    }
+    table = read.table;
+    // Titelzeilen über der Tabelle (häufig in Excel): enthält die eingestellte Kopfzeile nicht alle
+    // zugeordneten Spalten, die nächsten Zeilen als Kopfzeile versuchen und die erste passende nehmen
+    if (!table.limit && missingColumns(table.columns, input.mapping).length > 0) {
+      for (let row = cfg.headerRow + 1; row <= Math.min(cfg.headerRow + HEADER_SEARCH_ROWS, 1000); row++) {
+        const retry = readXlsx(upload.bytes, {
+          sheet: cfg.sheet,
+          headerRow: row,
+          decimalSeparator: cfg.decimalSeparator,
+        });
+        if (!retry.ok || retry.table.limit) break;
+        if (retry.table.columns.length === 0) break;
+        if (missingColumns(retry.table.columns, input.mapping).length === 0) {
+          table = retry.table;
+          sourceIssues.push({
+            rowNumber: 0,
+            field: null,
+            code: 'header_row_detected',
+            severity: 'warning',
+            rawValue: null,
+            params: { headerRow: String(retry.headerRow ?? row) },
+          });
+          break;
+        }
+      }
+    }
+    if (table.limit) return persistLimit(rc, connector, source, table, sourceIssues);
+    convert = { decimalSeparator: cfg.decimalSeparator, dateFormat: cfg.dateFormat, ...base };
   } else {
     const cfg = input.config;
     const secret = connector.secret_enc ? deps.box.open(connector.secret_enc, secretAad(connector.id)) : null;
@@ -183,7 +278,10 @@ export async function startRun(
         outcome: 'denied',
         objectType: 'connector',
         objectId: connector.id,
-        details: { reason: denial, host: hostOf(cfg.url) },
+        details: {
+          reason: denial,
+          host: deniedHost(cfg, denial, deps.config.MESH_SOURCE_ALLOW_INSECURE_HTTP),
+        },
         ip: rc.ip,
         requestId: rc.requestId,
       });
@@ -191,6 +289,7 @@ export async function startRun(
     }
     const res = await fetchApiItems(deps.fetch, cfg, secret, {
       allowInsecureHttp: deps.config.MESH_SOURCE_ALLOW_INSECURE_HTTP,
+      oauth: oauthFor(deps, cfg, secret, connector.id),
     });
     source = { name: sourceNameOf(cfg.url), sha256: res.sha256, size: res.size };
     if (!res.ok) {
@@ -229,7 +328,9 @@ export async function startRun(
 
   // Fehlende Quellspalten machen den ganzen Lauf unbrauchbar (bei leerer API-Antwort gibt es keine Spalten)
   const missing =
-    input.config.type === 'csv' || table.rows.length > 0 ? missingColumns(table.columns, input.mapping) : [];
+    input.config.type !== 'http_api' || table.rows.length > 0
+      ? missingColumns(table.columns, input.mapping)
+      : [];
   if (missing.length > 0) {
     return persistRun(rc, connector, {
       status: 'failed',

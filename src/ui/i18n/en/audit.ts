@@ -32,6 +32,76 @@ export const audit: Messages['audit'] = {
   verifying: 'Verifying …',
   verifyOk: 'Hash chain intact: {checked} {checked|entry|entries} checked.',
   verifyBroken: 'Hash chain broken from sequence {seq} ({checked} entries checked).',
+  verifyLocalOnly:
+    'This checks the internal sequence of entries. Whether someone with database rights cut off the end or recomputed the chain is only shown by comparing with partners (external anchoring).',
+  anchorsTitle: 'External anchoring',
+  anchorsIntro:
+    'This node regularly signs the sequence number and hash of the latest entry (checkpoint) and deposits them with all trusted partners. Comparing against them also detects truncation or rewriting by someone with database rights.',
+  anchorsLatest: 'Latest checkpoint: sequence {seq}, {date}',
+  anchorsNone: 'No checkpoint yet',
+  anchorsInterval: 'automatically every {hours} h',
+  anchorsManualOnly: 'on request only',
+  anchorsDelivery: 'Delivery: {pending} pending, {failed} failed',
+  anchorsDelivered: 'delivered to all partners',
+  anchorsFailedCount: '{count} not delivered',
+  anchorsCreate: 'Send checkpoint now',
+  anchorsCreating: 'Sending …',
+  anchorsCreated: 'Checkpoint {seq} sent to {peers} partner(s).',
+  anchorsExisting: 'A checkpoint for sequence {seq} already exists.',
+  anchorsVerify: 'Compare with partners',
+  anchorsVerifying: 'Comparing …',
+  anchorsDownload: 'Download checkpoint',
+  anchorsLocalOk: 'Internal sequence of the chain intact ({checked} entries).',
+  anchorsCheckpoints: 'Checkpoints',
+  anchorsLatestSeq: 'Latest sequence',
+  anchorsNoPartners: 'No trusted partners.',
+  anchorsProblemMissing:
+    'Sequence {seq} is missing here: the end of the chain was cut off ({count} {count|deviation|deviations}).',
+  anchorsProblemHash:
+    'Sequence {seq} has a different hash here: the chain was rewritten ({count} {count|deviation|deviations}).',
+  anchorsHeldTitle: 'Checkpoints held for partners',
+  anchorsHeldIntro: 'Checkpoints that partners have deposited with this node (no personal data).',
+  anchorsHeld: '{count} {count|checkpoint|checkpoints}, latest sequence {seq}',
+  anchorResult: {
+    ok: 'Anchored and intact: the chain contains exactly the checkpoints deposited with partners.',
+    manipulated:
+      'Tampering detected: the chain deviates from the checkpoints deposited with partners or is broken. Follow the incident response procedure.',
+    unanchored: 'Not anchored: no partner could confirm a checkpoint (unreachable or none deposited yet).',
+    needs_review:
+      'Needs review: no evidence of tampering, but findings that must be explained and documented (see below).',
+  },
+  anchorStatus: {
+    ok: 'Matches',
+    mismatch: 'Deviation',
+    needs_review: 'Needs review',
+    no_checkpoints: 'No checkpoint deposited yet',
+    unreachable: 'Unreachable',
+    error: 'Error',
+  },
+  anchorsNotIndependent:
+    'This comparison runs inside the server: the partner list, partner addresses and keys, and earlier own keys come from the same database as the audit log. It is therefore not independent of it – whoever can change the database can also influence this result. The command line with an anchoring profile checks independently: verify-audit --with-partners --profile <file> (Operations › Audit chain verification).',
+  anchorsEpoch: 'Chain epoch: {epoch}',
+  anchorsFindings: 'Findings',
+  anchorsLostByRestore:
+    '{count} {count|checkpoint|checkpoints} at {node} lost by a restore (earlier epoch, after the restored sequence). Check the restore against its record.',
+  anchorsUnknownEpoch: '{count} {count|checkpoint|checkpoints} at {node} with an unknown epoch.',
+  anchorsInconclusive:
+    '{count} {count|deviation|deviations} at {node}, signed with a key retired as compromised: not conclusive, review.',
+  anchorsRestoreEpoch: 'Restore on {date}: entries up to sequence {seq} restored, new epoch.',
+  anchorsInsufficient: 'Only {count} of at least {required} partners confirm the chain.',
+  anchorsOtherFinding: 'Finding {code}{node}.',
+  anchorsStale:
+    'The newest checkpoint confirmed by partners (sequence {seq}, {date}) is older than {hours} hours; {count} {count|entry after it is|entries after it are} not anchored and could have been changed or deleted unnoticed. Check the scheduler and delivery.',
+  anchorsLegacyAmbiguous:
+    '{count} old {count|entry|entries} (hash version 1) {count|contains|contain} “|” in a field: a shift between neighbouring fields would not be detectable there.',
+  anchorsLostUndocumented:
+    '{count} {count|checkpoint|checkpoints} at {node} would be lost by a restore the anchoring profile does not document: treated as truncation.',
+  anchorsProblemPreRestore:
+    'Sequence {seq} lies beyond the head recorded before the restore: chain truncated beforehand or restore data invented ({count} {count|deviation|deviations}).',
+  anchorsUnanchored:
+    'Anchored up to sequence {seq} ({date}); {count} {count|entry|entries} after it not yet anchored.',
+  anchorsUnanchoredNone:
+    'No checkpoint confirmed by partners yet; {count} {count|entry|entries} not anchored.',
   exportCsv: 'CSV',
   exportJson: 'JSON',
   exportHint: 'Export for the selected time range:',
@@ -59,6 +129,8 @@ export const audit: Messages['audit'] = {
     federation_message: 'Partner message',
     import_run: 'Import run',
     master_key: 'Master key',
+    node_key: 'Node key',
+    audit_checkpoint: 'Audit chain checkpoint',
     outbox: 'Outbox',
     outbox_message: 'Notice to partner',
     peer: 'Partner node',

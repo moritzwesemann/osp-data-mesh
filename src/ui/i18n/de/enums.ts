@@ -157,6 +157,7 @@ export const enums = {
   },
   connectorKind: {
     csv_upload: 'CSV-Upload',
+    xlsx_upload: 'Excel-Upload (.xlsx)',
     http_api: 'HTTP-API',
   },
   targetType: {

@@ -75,6 +75,22 @@ const COMPUTED_REASONS = [
   'unexpected_column',
   'audit_failed',
   'session_required',
+  // Excel-Dateien (connectors/xlsx.ts) und OAuth2-Token-Abruf (connectors/source-oauth.ts)
+  'not_xlsx',
+  'xls_or_encrypted',
+  'xlsx_corrupt',
+  'xlsx_too_large',
+  'xlsx_unsupported',
+  'sheet_not_found',
+  'token_url_not_allowed',
+  'token_network',
+  'token_timeout',
+  'token_rejected',
+  'token_invalid',
+  'oauth_invalid_client',
+  'oauth_invalid_scope',
+  'oauth_unauthorized_client',
+  'secret_missing',
 ];
 
 describe('UI: Übersetzung aller Server-Codes', () => {

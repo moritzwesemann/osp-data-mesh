@@ -9,13 +9,23 @@
 #                               öffentlich erreichbare Domain (Ports 80/443 aus dem Internet erreichbar)
 #   MESH_BI_DOMAIN eigener DNS-Name für Apache Superset (Profil "bi"), Standard bi.<CADDY_DOMAIN>
 #                 (Vorgabe in docker-compose.yml); nie der Name des Knotens (siehe unten)
+#   CADDY_HTTPS_PORT / CADDY_HTTP_PORT  Ports für HTTPS bzw. HTTP (Standard 443/80; ACME braucht 443/80).
+#                 Der HTTPS-Port steht in der Adresse der Websites: Nur so leitet Caddy http:// auf die
+#                 richtige Portnummer um (bei https_port lässt Caddy den Port in der Umleitung weg).
 #
 # Native Installation (ohne Docker): Upstream "node:4401" durch "127.0.0.1:4401" und "superset:8088"
 # durch die Superset-Adresse ersetzen bzw. den zweiten Block entfernen; MESH_BI_DOMAIN selbst setzen.
 # Caddy verbindet sich dann von 127.0.0.1 bzw. ::1 (Standard von MESH_TRUSTED_PROXIES).
-
+#
 # Die Verwaltungs-API von Caddy lauscht nur innerhalb des Containers (localhost:2019) und wird nicht
 # veröffentlicht; Änderungen an dieser Datei: docker compose restart caddy
+#
+# Globale Optionen: HTTP-Port (Weiterleitung, ACME); bei "tls internal" nicht versuchen, Caddys
+# Wurzelzertifikat in den Zertifikatsspeicher des Containers bzw. Servers einzutragen
+{
+	http_port {$CADDY_HTTP_PORT:80}
+	skip_install_trust
+}
 
 (common) {
 	tls {$CADDY_TLS:internal}
@@ -29,7 +39,7 @@
 }
 
 # Knoten: Web-Oberfläche, REST-API, Föderationsprotokoll, Doku (/hilfe/), /healthz, /readyz
-{$CADDY_DOMAIN:localhost} {
+{$CADDY_DOMAIN:localhost}:{$CADDY_HTTPS_PORT:443} {
 	import common
 
 	# Anfragen: CSV-Uploads bis 20 MiB, Föderationsanfragen bis 2 MiB, sonst 1 MiB; der Knoten prüft die
@@ -57,7 +67,7 @@
 # aller angemeldeten Personen des Knotens. An einen anderen Hostnamen sendet der Browser es nicht.
 # Der Name braucht einen DNS-Eintrag (bei ACME öffentlich auflösbar); ohne laufenden Superset-Dienst
 # antwortet er mit 502.
-{$MESH_BI_DOMAIN:bi.localhost} {
+{$MESH_BI_DOMAIN:bi.localhost}:{$CADDY_HTTPS_PORT:443} {
 	import common
 	reverse_proxy superset:8088
 }

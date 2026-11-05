@@ -281,7 +281,8 @@ describe('Migration 0500', () => {
         }
 
         const applied = await migrate(t.urls.owner);
-        expect(applied.applied).toEqual(['0500_exchange_delivery_basis']);
+        // 0500 zuerst; spätere Migrationen (0600 ff.) laufen danach mit
+        expect(applied.applied[0]).toBe('0500_exchange_delivery_basis');
         const rows = await sql<{
           release_id: string;
           outcome: string;

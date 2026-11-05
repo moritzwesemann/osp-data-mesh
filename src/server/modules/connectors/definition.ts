@@ -5,6 +5,13 @@ import type { ConnectorInput } from '../../../shared/contract/connectors.ts';
 import { invalid } from '../../core/errors.ts';
 import { type DatasetShape, requiredTargets } from './pipeline.ts';
 
+/** Art der Quelle je Konfigurationstyp */
+const KIND_OF_CONFIG: Record<ConnectorInput['config']['type'], ConnectorInput['kind']> = {
+  csv: 'csv_upload',
+  xlsx: 'xlsx_upload',
+  http_api: 'http_api',
+};
+
 /** Zielfelder des Athletenkerns, die bei Ziel "Datensatz" nur zur Personenzuordnung dienen */
 const MATCH_TARGETS = new Set([
   'athlete.last_name',
@@ -25,8 +32,7 @@ export function validateConnectorInput(
   const errors: Record<string, string> = {};
   const p = (path: string) => (prefix ? `${prefix}.${path}` : path);
 
-  if ((input.kind === 'csv_upload') !== (input.config.type === 'csv'))
-    errors[p('config.type')] = 'kind_mismatch';
+  if (KIND_OF_CONFIG[input.config.type] !== input.kind) errors[p('config.type')] = 'kind_mismatch';
 
   const normalized: ConnectorInput = {
     ...input,

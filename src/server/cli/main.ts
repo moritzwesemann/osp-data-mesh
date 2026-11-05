@@ -28,13 +28,40 @@ Befehle / commands:
                                    Sicherung wiederherstellen (MESH_DB_OWNER_URL, MESH_BACKUP_KEY, MESH_NODE_ID).
                                    Der Knoten MUSS dabei gestoppt sein: bricht ab, solange der Server mit der
                                    Datenbank verbunden ist (außer mit --force). Alle Sitzungen werden beendet.
-  verify-audit                     Hash-Kette des Audit-Logs prüfen (Exit 1 bei Bruch)
+  verify-audit [--with-partners [--profile <profil.json> [--excuse <knoten,…> --reason "<grund>"]]
+               | --checkpoint <datei.json> [--profile <profil.json>]]
+                                   Hash-Kette des Audit-Logs im Programm neu berechnen (nicht audit_verify() der
+                                   Datenbank; Exit 1 bei Bruch). --with-partners: zusätzlich mit den bei Partnern
+                                   verwahrten Prüfpunkten abgleichen (erkennt Abschneiden und Umschreiben; Server-
+                                   Umgebung .env). Ohne --profile stammen Partner und frühere Schlüssel aus der
+                                   Datenbank (NICHT unabhängig); mit --profile nur aus dem Anker-Profil, jeder
+                                   Partner des Profils muss bestätigen (--excuse mit --reason für begründet
+                                   fehlende). --checkpoint: gegen einen exportierten Prüfpunkt prüfen
+  audit-checkpoint [--out <datei.json>]
+                                   Prüfpunkt der Audit-Kette signieren, an alle Partner senden (Ausgangspostfach)
+                                   und exportieren (Datei oder Ausgabe)
+  audit-anchor-profile --out <profil.json> [--min-partners 1] [--previous <altes-profil.json>
+                       [--accept-partner-changes] [--accept-key-changes] [--accept-epochs]]
+                                   Anker-Profil für die unabhängige Prüfung exportieren (Partner mit Adresse und
+                                   Fingerprint, eigene Schlüssel mit Gültigkeitszeitraum, Epochen der Kette mit
+                                   Sicherung und Kopf vor der Wiederherstellung); offline neben dem
+                                   Sicherungsschlüssel verwahren, Prüfsumme notieren. Mit --previous: Mindestzahl
+                                   bleibt, Abweichungen werden angezeigt und müssen je Art angenommen werden
+                                   (sonst Abbruch, Exit 4)
+  rotate-node-key --routine [--grace-days 7] | --compromised --yes
+                                   Ed25519-Knotenschlüssel wechseln. --routine: Partner werden signiert benachrichtigt
+                                   (alter und neuer Schlüssel), Übergangszeit 1–30 Tage. --compromised: bei Verdacht
+                                   auf Kompromittierung, ohne Benachrichtigung; Partner nehmen die neue Karte auf und
+                                   gleichen den Fingerprint telefonisch ab (docs/betrieb.md)
   rotate-master-key                Geheimnisse mit neuem Master-Key neu verschlüsseln
                                    (MESH_MASTER_KEY = neu, MESH_MASTER_KEY_PREVIOUS = alt, MESH_DB_URL)
   node-card                        Knotenkarte (JSON) für die Vertrauensaufnahme ausgeben
   help                             diese Hilfe
 
-Exit-Codes: 0 ok, 1 Fehler / failure, 2 falscher Aufruf / usage error
+Exit-Codes: 0 ok, 1 Fehler / failure (verify-audit: Manipulation), 2 falscher Aufruf / usage error,
+            3 nicht ausreichend verankert / not anchored (verify-audit --with-partners),
+            4 Klärung nötig / needs review (verify-audit, z. B. durch Wiederherstellung verlorene Prüfpunkte;
+              audit-anchor-profile --previous: Abweichungen nicht angenommen)
 `;
 
 export async function runCli(argv: string[]): Promise<number> {

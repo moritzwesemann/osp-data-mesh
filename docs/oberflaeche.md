@@ -65,7 +65,7 @@ Löschung um.
 
 ## Quellen und Importe
 
-*Quellen* verwaltet Connectoren für CSV-Uploads und HTTP-APIs (Messsysteme): Konfiguration,
+*Quellen* verwaltet Connectoren für CSV- und Excel-Uploads und HTTP-APIs (Messsysteme): Konfiguration,
 Feldzuordnung, Zuordnung zu Personen und das Ziel (Athletenkern oder Datensatz). Die Detailseite einer
 Quelle beginnt mit *Import starten*; darunter stehen ein kurzer Überblick und die Zuordnung „Quellspalte →
 Zielfeld“. Feldpfade, Umwandlungen, Trennzeichen, Zeichenkodierung und ähnliche Einstellungen sind
@@ -74,6 +74,27 @@ JSON exportieren und in anderen Knoten importieren (ohne Zugangsgeheimnisse). *B
 ersten Zeilen einer Quelle für die Zuordnung. Im Formular stehen die üblichen Angaben vorn; selten
 geänderte Optionen liegen unter *Erweiterte Einstellungen* und öffnen sich, wenn sie vom Standard
 abweichen oder einen Fehler enthalten.
+
+**Excel-Dateien (.xlsx):** Als *Art der Quelle* „Excel-Upload (.xlsx)“ wählen; die Vorlage
+*Leistungsdiagnostik (Excel)* ist ein Beispiel. Die zugeklappten *Excel-Einstellungen* zeigen in der
+Kopfzeile, was gilt (Standard: erstes Tabellenblatt, Kopfzeile ab Zeile 1, Dezimalkomma, `DD.MM.YYYY`):
+*Tabellenblatt* (Name; leer = erstes Blatt), *Kopfzeile ab Zeile* (Titelzeilen davor werden
+übersprungen; fehlen in dieser Zeile zugeordnete Spalten, sucht der Import die Kopfzeile in den nächsten
+10 Zeilen selbst und weist im Prüfergebnis darauf hin) sowie Dezimaltrennzeichen und Datumsformat für Werte, die als Text gespeichert sind.
+Zahlen- und Datumszellen liest der Knoten unabhängig davon richtig; Formeln werden nicht berechnet,
+übernommen wird das in der Datei gespeicherte Ergebnis, leere Zeilen werden übersprungen. *Datei
+analysieren* nennt das gelesene Tabellenblatt; enthält die Datei mehrere, lässt sich dort ein anderes
+wählen (es wird in die Einstellungen übernommen). Unter *Import starten* wird die `.xlsx`-Datei
+hochgeladen; Vorschau, Prüfungen und Fehlerprotokoll sind dieselben wie bei CSV. Alte `.xls`-Dateien,
+kennwortgeschützte oder beschädigte Dateien ergeben einen fehlgeschlagenen Lauf mit verständlichem Grund.
+
+**OAuth2 bei API-Quellen:** Unter *Authentifizierung* „OAuth2 (Client Credentials)“ wählen und
+*Token-Endpunkt*, *Client-Kennung* und bei Bedarf *Scope* eintragen; *Audience* und die Übermittlung der
+Client-Zugangsdaten (HTTP-Basic oder im Formular) liegen unter *Weitere Abrufeinstellungen*. Das
+*Client-Geheimnis* wird wie jedes Zugangsgeheimnis verschlüsselt gespeichert und nie wieder angezeigt.
+Der Host des Token-Endpunkts muss wie die Adresse der Quelle für Abrufe freigegeben sein. Die Vorlage
+*Sprungkraft-Messsystem (API mit OAuth2)* enthält Platzhalter-Adressen, die durch die des Herstellers zu
+ersetzen sind.
 
 ![Importlauf als Vorschau mit Zählern, Fehlern und Vorschauzeilen](screenshots/04-quelle-import-vorschau.png)
 
@@ -182,6 +203,15 @@ aufnehmen*, Fingerprint telefonisch abgleichen, *Vertrauen bestätigen*
 ([Installation](installation.md#vertrauen-mit-einem-partnerknoten-herstellen)). *Jetzt zustellen* stellt
 ausstehende und fehlgeschlagene Mitteilungen sofort zu.
 
+*Schlüssel wechseln* an der Knotenkarte (nur `admin`) fragt zuerst nach dem Anlass: **planmäßig** (Partner
+werden mit einer Mitteilung benachrichtigt, die alter und neuer Schlüssel unterschreiben; Übergangszeit
+wählbar) oder **Verdacht auf Kompromittierung** (keine Mitteilung; die Schritte für die telefonische
+Neuaufnahme werden angezeigt). Während der Übergangszeit zeigt die Knotenkarte, wie viele Partner den
+neuen Schlüssel bestätigt haben. Hat ein Partner seinen Schlüssel gewechselt, stehen in seinen Details
+*Schlüssel gewechselt* und – bis zum Ende seiner Übergangszeit – der bisherige Fingerprint; *Neuen
+Schlüssel eintragen* übernimmt eine neue Knotenkarte des Partners (danach erneut *Vertrauen bestätigen*)
+([Betrieb](betrieb.md#knotenschlüssel-ed25519)).
+
 ## Audit, System und Benutzer
 
 ![Audit-Log nach erfolgreicher Prüfung der Hash-Kette, mit Filtern und Export](screenshots/12-audit.png)
@@ -191,6 +221,13 @@ ausstehende und fehlgeschlagene Mitteilungen sofort zu.
 gewählten Zeitraum als CSV oder JSON (nur `auditor`). Jede Zeile lässt sich aufklappen (Ergebnis,
 Akteursart, Objekt-ID, Sequenz, IP, Request-ID, Hash, Details). Der Reiter *Austauschprotokoll* zeigt jede
 Lieferung an und von Partnern; Spalten, Zeilenzahl und Prüfsumme stehen in den aufklappbaren Details.
+Der Abschnitt **Externe Verankerung** (aufklappbar) zeigt den letzten bei den Partnern hinterlegten
+Prüfpunkt der Audit-Kette und bietet *Mit Partnern abgleichen* (Ergebnis je Partner mit Fingerprint;
+erkennt Abschneiden und Umschreiben der Kette; „Klärung nötig“ z. B. nach einer Wiederherstellung),
+*Prüfpunkt jetzt senden* und *Prüfpunkt herunterladen*. Der Abgleich läuft im Server mit der Partnerliste
+der Datenbank; die Oberfläche weist darauf hin, dass er deshalb nicht unabhängig von ihr ist, und verweist
+auf die Prüfung mit Anker-Profil über die Kommandozeile
+([Betrieb](betrieb.md#externe-verankerung-bei-den-partnern)).
 
 ![Systemstatus „Alles in Ordnung“ mit Zustandspunkten und Sicherungen](screenshots/13-system.png)
 

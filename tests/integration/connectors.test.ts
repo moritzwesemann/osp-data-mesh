@@ -79,7 +79,9 @@ describe('Vorlagen und Rollen', () => {
     expect(r.json.items.map((t) => t.id)).toEqual([
       'athleten-stammdaten-csv',
       'leistungsdiagnostik-csv',
+      'leistungsdiagnostik-xlsx',
       'sprungkraft-api',
+      'sprungkraft-oauth2-api',
       'verletzungen-csv',
     ]);
     expect(r.json.items[0]!.name).toBe('Athleten-Stammdaten (CSV)');

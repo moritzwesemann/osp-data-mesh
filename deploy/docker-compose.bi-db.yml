@@ -1,14 +1,20 @@
 # Optional: PostgreSQL für BI-Werkzeuge (Excel, Power BI, Tableau, Python) im internen Netz des OSP
 # erreichbar machen. Nur die nur-lesende Rolle mesh_bi darf von außen und nur per TLS zugreifen.
-# NICHT LOKAL VERIFIZIERT (kein Docker auf der Entwicklungsmaschine).
+# Mit Docker 29 geprüft (deploy/verify-deployment.sh, Abschnitt 7): mesh_bi mit TLS angemeldet,
+# mesh_bi ohne TLS sowie mesh_app, mesh_owner und postgres abgelehnt; die Datenbank hat auch mit dieser
+# Datei keinen Zugang nach außen.
 #
 # Voraussetzungen (siehe docs/bi.md):
-#   - in deploy/.env: BI_DB_BIND=<interne IP-Adresse des Servers>, z. B. 10.0.5.10 (nie 0.0.0.0 im Internet)
+#   - in deploy/.env: BI_DB_BIND=<interne IP-Adresse des Servers>, z. B. 10.0.5.10 (nie 0.0.0.0 im Internet),
+#     optional BI_DB_PORT (Port auf dem Server, Standard 5432)
 #   - TLS-Zertifikat für den Datenbank-Hostnamen:
 #       deploy/postgres/tls/server.crt und server.key (Schlüssel: chown 999:999, chmod 600;
 #       UID 999 = Benutzer postgres im Abbild)
 #
-# Start:  docker compose -f docker-compose.yml -f docker-compose.bi-db.yml up -d
+# Aktivieren: in deploy/.env COMPOSE_FILE=docker-compose.yml:docker-compose.bi-db.yml setzen, dann
+# docker compose up -d. So gilt die Datei auch für alle späteren Befehle (Updates, Wiederherstellung);
+# mit "-f docker-compose.yml -f docker-compose.bi-db.yml" nur für diesen einen Aufruf – ein späteres
+# "docker compose up -d" ohne -f setzte die Datenbank wieder ohne TLS und ohne BI-Port auf.
 
 services:
   db:
@@ -23,7 +29,8 @@ services:
       - -c
       - hba_file=/etc/osp-db-hba/pg_hba.conf
     ports:
-      - "${BI_DB_BIND:?BI_DB_BIND (interne IP-Adresse) in .env setzen}:5432:5432"
+      # BI_DB_PORT: Port auf dem Server; im Container bleibt es 5432
+      - "${BI_DB_BIND:?BI_DB_BIND (interne IP-Adresse) in .env setzen}:${BI_DB_PORT:-5432}:5432"
     volumes:
       - ./postgres/tls:/etc/osp-db-tls:ro
       - ./postgres/pg_hba.bi.conf:/etc/osp-db-hba/pg_hba.conf:ro
@@ -37,6 +44,11 @@ networks:
       config:
         - subnet: 172.31.251.0/24
   bi_access:
+    driver_opts:
+      # Kein NAT für Verbindungen aus diesem Netz: Ein veröffentlichter Port braucht ein nicht internes Netz,
+      # über das die Datenbank sonst ins Internet verbinden könnte. Ohne NAT erhalten solche Verbindungen
+      # keine Antwort; eingehende Verbindungen zum BI-Port sind nicht betroffen.
+      com.docker.network.bridge.enable_ip_masquerade: "false"
     ipam:
       config:
         - subnet: 172.31.250.0/24

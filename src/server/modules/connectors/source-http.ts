@@ -4,11 +4,14 @@
  *
  * Zugangsgeheimnisse gehen nur über https:// (oder an Loopback-Adressen bzw. mit
  * MESH_SOURCE_ALLOW_INSECURE_HTTP=true) und nur an das gespeicherte Ziel ihres Connectors (siehe index.ts).
+ * Bei OAuth2 (Client Credentials) gelten Freigabeliste und HTTPS-Regel auch für den Token-Endpunkt; das
+ * Zugriffstoken liefert eine OAuthSession (source-oauth.ts), nach 401 wird es einmal erneuert.
  */
 import { createHash } from 'node:crypto';
 import type { ConnectorConfig, HttpApiConfig } from '../../../shared/contract/connectors.ts';
 import type { Deps } from '../../core/deps.ts';
 import { getPath, MAX_SOURCE_ROWS } from './pipeline.ts';
+import type { OAuthSession } from './source-oauth.ts';
 import type { IssueParams } from './validate.ts';
 
 export { MAX_SOURCE_ROWS };
@@ -34,36 +37,72 @@ export function sendsSecret(config: HttpApiConfig, secret: string | null): boole
   return !!secret && config.auth.type !== 'none';
 }
 
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin.toLowerCase();
+  } catch {
+    return url;
+  }
+}
+
+/** Token-Endpunkt ohne Abfrageteil (Origin in Kleinbuchstaben, Pfad unverändert) */
+function endpointOf(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin.toLowerCase()}${u.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Ziel, an das ein gespeichertes Geheimnis gebunden ist: Origin (Schema, Host, Port) und Art der
- * Authentifizierung. Ändert sich das Ziel, wird das Geheimnis verworfen. CSV-Quellen: null.
+ * Authentifizierung, bei OAuth2 zusätzlich Token-Endpunkt und Client-Kennung. Ändert sich das Ziel,
+ * wird das Geheimnis verworfen. Datei-Quellen: null.
  */
 export function secretTarget(config: ConnectorConfig): string | null {
   if (config.type !== 'http_api') return null;
-  let origin: string;
-  try {
-    origin = new URL(config.url).origin.toLowerCase();
-  } catch {
-    origin = config.url;
-  }
+  const a = config.auth;
   const auth =
-    config.auth.type === 'header' ? `header:${config.auth.headerName.toLowerCase()}` : config.auth.type;
-  return `${origin}|${auth}`;
+    a.type === 'header'
+      ? `header:${a.headerName.toLowerCase()}`
+      : a.type === 'oauth2_client_credentials'
+        ? `oauth2:${endpointOf(a.tokenUrl)}:${a.clientId}`
+        : a.type;
+  return `${originOf(config.url)}|${auth}`;
 }
 
-export type SourceDenial = 'source_not_allowed' | 'insecure_http';
+export type SourceDenial = 'source_not_allowed' | 'token_url_not_allowed' | 'insecure_http';
 
-/** Prüfung vor jedem Abruf: Host freigegeben, Geheimnis nur über sichere Verbindung */
+/** Prüfung vor jedem Abruf: Hosts freigegeben, Geheimnis bzw. Token nur über sichere Verbindung */
 export function checkSource(
   config: HttpApiConfig,
   secret: string | null,
   cfg: { MESH_SOURCE_ALLOWED_HOSTS: readonly string[]; MESH_SOURCE_ALLOW_INSECURE_HTTP: boolean },
 ): SourceDenial | null {
   if (!isHostAllowed(config.url, cfg.MESH_SOURCE_ALLOWED_HOSTS)) return 'source_not_allowed';
+  if (config.auth.type === 'oauth2_client_credentials') {
+    // Der Token-Endpunkt erhält das Client-Geheimnis: dieselben Regeln wie für die Datenadresse
+    if (!isHostAllowed(config.auth.tokenUrl, cfg.MESH_SOURCE_ALLOWED_HOSTS)) return 'token_url_not_allowed';
+    if (secret && !secureTransport(config.auth.tokenUrl, cfg.MESH_SOURCE_ALLOW_INSECURE_HTTP)) {
+      return 'insecure_http';
+    }
+  }
   if (sendsSecret(config, secret) && !secureTransport(config.url, cfg.MESH_SOURCE_ALLOW_INSECURE_HTTP)) {
     return 'insecure_http';
   }
   return null;
+}
+
+/** Host, um den es bei einer Abweisung geht (für das Audit) */
+export function deniedHost(config: HttpApiConfig, denial: SourceDenial, allowInsecureHttp: boolean): string {
+  if (config.auth.type === 'oauth2_client_credentials') {
+    if (denial === 'token_url_not_allowed') return hostOf(config.auth.tokenUrl);
+    if (denial === 'insecure_http' && !secureTransport(config.auth.tokenUrl, allowInsecureHttp)) {
+      return hostOf(config.auth.tokenUrl);
+    }
+  }
+  return hostOf(config.url);
 }
 
 /** host[:port] der URL steht in MESH_SOURCE_ALLOWED_HOSTS (Vergleich in Kleinbuchstaben) */
@@ -135,11 +174,19 @@ export async function fetchApiItems(
   fetchFn: Deps['fetch'],
   config: HttpApiConfig,
   secret: string | null,
-  opts: { maxPages?: number; allowInsecureHttp?: boolean } = {},
+  opts: { maxPages?: number; allowInsecureHttp?: boolean; oauth?: OAuthSession } = {},
 ): Promise<ApiFetchResult> {
   // Absicherung: Aufrufer prüfen vorher mit checkSource (Audit, verständlicher Fehler)
-  if (sendsSecret(config, secret) && !secureTransport(config.url, opts.allowInsecureHttp ?? false)) {
+  const insecure = opts.allowInsecureHttp ?? false;
+  if (sendsSecret(config, secret) && !secureTransport(config.url, insecure)) {
     throw new Error('refusing to send source credentials over insecure transport');
+  }
+  const oauth = config.auth.type === 'oauth2_client_credentials' ? opts.oauth : undefined;
+  if (config.auth.type === 'oauth2_client_credentials') {
+    if (!oauth) throw new Error('oauth2 source without token session');
+    if (secret && !secureTransport(config.auth.tokenUrl, insecure)) {
+      throw new Error('refusing to send client secret over insecure transport');
+    }
   }
   const hash = createHash('sha256');
   let size = 0;
@@ -163,6 +210,13 @@ export async function fetchApiItems(
     sha256: hash.copy().digest('hex'),
     size,
   });
+  if (oauth) {
+    const t = await oauth.token(false);
+    if (!t.ok) return fail(t.code, t.params);
+    headers.authorization = `Bearer ${t.token}`;
+  }
+  /** nach 401 höchstens einmal je Abruf ein neues Token */
+  let refreshed = false;
 
   while (pages < maxPages) {
     const url = new URL(config.url);
@@ -185,6 +239,14 @@ export async function fetchApiItems(
     } catch (err) {
       const name = (err as { name?: string })?.name;
       return fail('source_unreachable', { reason: name === 'TimeoutError' ? 'timeout' : 'network' });
+    }
+    if (res.status === 401 && oauth && !refreshed) {
+      await res.body?.cancel().catch(() => {});
+      refreshed = true;
+      const t = await oauth.token(true);
+      if (!t.ok) return fail(t.code, t.params);
+      headers.authorization = `Bearer ${t.token}`;
+      continue; // dieselbe Seite erneut
     }
     if (res.status < 200 || res.status > 299) {
       await res.body?.cancel().catch(() => {});

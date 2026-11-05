@@ -6,6 +6,7 @@ import {
   type Connector,
   ConnectorInput,
   type CsvConfig,
+  type XlsxConfig,
 } from '../../shared/contract/index.ts';
 import {
   ApiConfigFields,
@@ -16,6 +17,9 @@ import {
   csvDiffers,
   DEFAULT_API,
   DEFAULT_CSV,
+  DEFAULT_XLSX,
+  XlsxConfigFields,
+  xlsxDiffers,
 } from '../components/connectors/ConfigFields.tsx';
 import {
   buildMapping,
@@ -96,6 +100,9 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
   const [csv, setCsv] = useState<CsvConfig>(
     connector?.config.type === 'csv' ? connector.config : DEFAULT_CSV,
   );
+  const [xlsx, setXlsx] = useState<XlsxConfig>(
+    connector?.config.type === 'xlsx' ? connector.config : DEFAULT_XLSX,
+  );
   const [apiState, setApiState] = useState<ApiState>(
     connector?.config.type === 'http_api' ? apiStateFrom(connector.config) : DEFAULT_API,
   );
@@ -150,6 +157,7 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
           : undefined;
   const fe = useFieldErrors(clientError, mutation.error);
   const csvOpen = useOpenWhen(csvDiffers(csv) || Boolean(fe('config')));
+  const xlsxOpen = useOpenWhen(xlsxDiffers(xlsx) || Boolean(fe('config')));
   const advancedOpen = useOpenWhen(
     onError !== 'skip_row' || !active || Boolean(fe('onError') ?? fe('active')),
   );
@@ -158,7 +166,8 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
   const selectedDataset = datasetItems.find((d) => d.id === datasetId) ?? null;
   const options = targetOptions(i, targetType === 'dataset' ? selectedDataset : null);
   const apiBuilt = buildApiConfig(apiState);
-  const config: z.input<typeof ConnectorInput>['config'] = kind === 'csv_upload' ? csv : apiBuilt.config;
+  const config: z.input<typeof ConnectorInput>['config'] =
+    kind === 'csv_upload' ? csv : kind === 'xlsx_upload' ? xlsx : apiBuilt.config;
 
   const mappedTargets = new Set(drafts.map((d) => d.target).filter(Boolean));
   const missing = REQUIRED_FOR[strategy].filter((x) => !mappedTargets.has(x));
@@ -269,9 +278,16 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
                   {...a}
                   className="input"
                   value={kind}
-                  onChange={(e) => setKind(e.target.value === 'http_api' ? 'http_api' : 'csv_upload')}
+                  onChange={(e) =>
+                    setKind(
+                      e.target.value === 'http_api' || e.target.value === 'xlsx_upload'
+                        ? e.target.value
+                        : 'csv_upload',
+                    )
+                  }
                 >
                   <option value="csv_upload">{t('connectorKind.csv_upload')}</option>
+                  <option value="xlsx_upload">{t('connectorKind.xlsx_upload')}</option>
                   <option value="http_api">{t('connectorKind.http_api')}</option>
                 </select>
               )}
@@ -355,6 +371,31 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
           >
             <CsvConfigFields value={csv} onChange={setCsv} fe={fe} />
           </Section>
+        ) : kind === 'xlsx_upload' ? (
+          <Section
+            title={
+              <>
+                {t('connectors.sectionXlsx')}
+                <span className="title-note">
+                  {[
+                    xlsx.sheet.trim() ? `„${xlsx.sheet.trim()}“` : t('connectors.sheetFirst'),
+                    t('connectors.headerRowValue', {
+                      row: Number.isNaN(xlsx.headerRow) ? '–' : xlsx.headerRow,
+                    }),
+                    xlsx.decimalSeparator === ','
+                      ? t('connectors.decimalComma')
+                      : t('connectors.decimalPoint'),
+                    dateFormatLabel(i, xlsx.dateFormat),
+                  ].join(' · ')}
+                </span>
+              </>
+            }
+            description={t('connectors.xlsxSettingsHint')}
+            collapsible
+            defaultOpen={xlsxOpen}
+          >
+            <XlsxConfigFields value={xlsx} onChange={setXlsx} fe={fe} />
+          </Section>
         ) : (
           <Section title={t('connectors.sectionApi')}>
             <ApiConfigFields
@@ -379,6 +420,7 @@ function ConnectorEditor({ connector }: { connector: Connector | null }) {
             invalidValueMaps={invalidValueMaps}
             error={fe('mapping')}
             inspectAccess={inspectAccess}
+            onSheetChange={kind === 'xlsx_upload' ? (sheet) => setXlsx((x) => ({ ...x, sheet })) : undefined}
           />
         </Section>
 

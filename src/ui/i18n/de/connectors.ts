@@ -1,7 +1,7 @@
 /** Quellen (Connectoren), Feldzuordnung und Importläufe. */
 export const connectors = {
   listTitle: 'Quellen',
-  listIntro: 'CSV-Dateien und Schnittstellen, aus denen Daten importiert werden.',
+  listIntro: 'CSV- und Excel-Dateien sowie Schnittstellen, aus denen Daten importiert werden.',
   create: 'Quelle anlegen',
   importDefinition: 'Definition importieren',
   empty: 'Es sind noch keine Quellen angelegt.',
@@ -58,6 +58,19 @@ export const connectors = {
   dateFormat: 'Datumsformat',
   dateFormatIso: 'Zeitstempel (ISO 8601)',
 
+  sectionXlsx: 'Excel-Einstellungen',
+  xlsxSettingsHint:
+    'Zahlen- und Datumszellen werden immer richtig gelesen; Dezimaltrennzeichen und Datumsformat gelten nur für Werte, die als Text gespeichert sind. Formeln werden nicht berechnet: übernommen wird das in der Datei gespeicherte Ergebnis.',
+  sheet: 'Tabellenblatt',
+  sheetHint: 'Name des Blatts; leer lassen für das erste Tabellenblatt.',
+  sheetFirst: 'Erstes Tabellenblatt',
+  headerRow: 'Kopfzeile ab Zeile',
+  headerRowHint:
+    'Kopfzeile ist die erste nicht leere Zeile ab dieser Zeile. Fehlen dort zugeordnete Spalten, sucht der Import die Kopfzeile in den nächsten 10 Zeilen selbst.',
+  headerRowValue: 'Kopfzeile ab Zeile {row}',
+  textDecimalSeparator: 'Dezimaltrennzeichen bei Text-Zahlen',
+  textDateFormat: 'Datumsformat bei Text-Daten',
+
   sectionApi: 'API-Einstellungen',
   url: 'Adresse (URL)',
   urlHint: 'Nur für Abrufe freigegebene Hosts sind erreichbar.',
@@ -68,6 +81,17 @@ export const connectors = {
   authNone: 'Keine',
   authBearer: 'Bearer-Token',
   authHeader: 'Eigene Kopfzeile',
+  authOauth2: 'OAuth2 (Client Credentials)',
+  tokenUrl: 'Token-Endpunkt (URL)',
+  tokenUrlHint: 'Der Host muss wie die Adresse für Abrufe freigegeben sein.',
+  clientId: 'Client-Kennung (client_id)',
+  scope: 'Scope',
+  scopeHint: 'Optional; mehrere Werte durch Leerzeichen trennen.',
+  audience: 'Audience',
+  audienceHint: 'Optional; nur angeben, wenn der Anbieter sie verlangt.',
+  clientAuth: 'Übermittlung der Client-Zugangsdaten',
+  clientAuthBasic: 'HTTP-Basic (Standard)',
+  clientAuthBody: 'Im Formular (client_secret_post)',
   headerName: 'Name der Kopfzeile',
   pagination: 'Seitenweiser Abruf',
   paginationNone: 'Keiner',
@@ -88,6 +112,7 @@ export const connectors = {
 
   sectionSecret: 'Zugangsgeheimnis',
   secret: 'Geheimnis (Token oder Schlüssel)',
+  secretOauth: 'Client-Geheimnis (client_secret)',
   secretHint: 'Wird verschlüsselt gespeichert und nie wieder angezeigt.',
   secretStored: 'Ein Zugangsgeheimnis ist hinterlegt.',
   secretMissing: 'Es ist kein Zugangsgeheimnis hinterlegt; authentifizierte Abrufe schlagen fehl.',
@@ -106,6 +131,9 @@ export const connectors = {
   sampleUsesStored:
     'Der Beispielabruf nutzt die gespeicherte Adresse und das gespeicherte Zugangsgeheimnis; eine geänderte Adresse gilt erst nach dem Speichern.',
   sampleFile: 'Beispieldatei (CSV)',
+  sampleFileXlsx: 'Beispieldatei (Excel, .xlsx)',
+  detectedSheet: 'Gelesen: Tabellenblatt „{name}“.',
+  otherSheet: 'Anderes Tabellenblatt lesen',
   analyze: 'Datei analysieren',
   fetchSample: 'Beispiel abrufen',
   analyzing: 'Wird analysiert …',
@@ -171,6 +199,7 @@ export const connectors = {
   runApiHint:
     'Ruft die Daten jetzt ab. Sie sehen zuerst eine geprüfte Vorschau; gespeichert wird erst nach Ihrer Bestätigung.',
   importFile: 'CSV-Datei',
+  importFileXlsx: 'Excel-Datei (.xlsx)',
   startImport: 'Import starten',
   fetchNow: 'Jetzt abrufen',
   starting: 'Daten werden geprüft …',

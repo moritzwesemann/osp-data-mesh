@@ -13,7 +13,7 @@ import {
   type RequestEnvelope,
   type ResponseEnvelope,
 } from '../../../shared/contract/federation-wire.ts';
-import type { NodeIdentity } from '../../core/node-identity.ts';
+import type { Signer as NodeSigner } from '../../core/node-identity.ts';
 
 export const HEADER_NODE = 'x-mesh-node';
 export const HEADER_SIGNATURE = 'x-mesh-signature';
@@ -53,7 +53,7 @@ export interface Signed<E> {
   signature: string;
 }
 
-type Signer = Pick<NodeIdentity, 'nodeId' | 'sign'>;
+type Signer = Pick<NodeSigner, 'nodeId' | 'sign'>;
 
 export function signRequest(
   identity: Signer,

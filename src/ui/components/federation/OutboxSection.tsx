@@ -35,7 +35,8 @@ export function OutboxSection({ peerNames }: { peerNames?: ReadonlyMap<string, s
     {
       key: 'type',
       header: t('partners.messageType'),
-      render: (m) => tx(`partners.messageTypes.${m.type}`) ?? <span className="mono">{m.type}</span>,
+      render: (m) =>
+        tx(`partners.messageTypes.${m.kind ?? m.type}`) ?? <span className="mono">{m.kind ?? m.type}</span>,
     },
     {
       key: 'peer',

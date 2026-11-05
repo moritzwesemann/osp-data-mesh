@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { Peer } from '../../shared/contract/index.ts';
 import { ConfirmDialog } from '../components/Dialog.tsx';
 import { AddPeerDialog } from '../components/federation/AddPeerDialog.tsx';
 import { EditPeerDialog } from '../components/federation/EditPeerDialog.tsx';
 import { NodeCardPanel } from '../components/federation/NodeCardPanel.tsx';
 import { OutboxSection } from '../components/federation/OutboxSection.tsx';
+import { ReplaceKeyDialog } from '../components/federation/ReplaceKeyDialog.tsx';
 import { TrustDialog } from '../components/federation/TrustDialog.tsx';
 import { DateTime, DescriptionList, Details } from '../components/Misc.tsx';
 import { PageHeader, Section } from '../components/PageHeader.tsx';
@@ -24,7 +25,7 @@ import { useSession } from '../lib/session.tsx';
  */
 export function Partners() {
   const i = useI18n();
-  const { t } = i;
+  const { t, fmt } = i;
   const session = useSession();
   const toast = useToast();
   const peers = useApiQuery('peers.list', {});
@@ -32,6 +33,7 @@ export function Partners() {
   const [trusting, setTrusting] = useState<Peer | null>(null);
   const [editing, setEditing] = useState<Peer | null>(null);
   const [suspending, setSuspending] = useState<Peer | null>(null);
+  const [replacing, setReplacing] = useState<Peer | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const ping = useApiMutation('peers.ping', { invalidate: ['peers.list'] });
@@ -72,7 +74,10 @@ export function Partners() {
   const canSuspend = (p: Peer) => session.can('peers.suspend') && p.status !== 'suspended';
   /** Weitere Aktionen in den Zeilendetails (Verbindung prüfen, falls nicht schon Hauptaktion; Bearbeiten; Sperren) */
   const moreActions = (p: Peer) =>
-    (canTrust(p) && canPing(p)) || session.can('peers.update') || canSuspend(p);
+    (canTrust(p) && canPing(p)) ||
+    session.can('peers.update') ||
+    canSuspend(p) ||
+    session.can('peers.replaceKey');
 
   const pingButton = (p: Peer) => {
     const pinging = ping.isPending && ping.variables?.params.id === p.id;
@@ -159,6 +164,29 @@ export function Partners() {
               {p.fingerprint}
             </span>,
           ],
+          ...(p.keyRotatedAt
+            ? [
+                [t('partners.keyRotatedAt'), <DateTime key="rot" value={p.keyRotatedAt} />] satisfies [
+                  ReactNode,
+                  ReactNode,
+                ],
+              ]
+            : []),
+          ...(p.previousFingerprint
+            ? [
+                [
+                  t('partners.previousFingerprint'),
+                  <span key="prev" className="stack-sm">
+                    <span className="mono break">{p.previousFingerprint}</span>
+                    {p.previousKeyValidUntil && (
+                      <span className="small muted">
+                        {t('partners.previousValidUntil', { date: fmt.dateTime(p.previousKeyValidUntil) })}
+                      </span>
+                    )}
+                  </span>,
+                ] satisfies [ReactNode, ReactNode],
+              ]
+            : []),
         ]}
       />
       {moreActions(p) && (
@@ -167,6 +195,11 @@ export function Partners() {
           {session.can('peers.update') && (
             <button type="button" className="btn btn-sm" onClick={() => setEditing(p)}>
               {t('common.edit')}
+            </button>
+          )}
+          {session.can('peers.replaceKey') && (
+            <button type="button" className="btn btn-sm" onClick={() => setReplacing(p)}>
+              {t('partners.replaceKey')}
             </button>
           )}
           {canSuspend(p) && (
@@ -216,6 +249,7 @@ export function Partners() {
             <li>{t('partners.step4')}</li>
           </ol>
           <p className="muted small">{t('partners.suspendNote')}</p>
+          <p className="muted small">{t('partners.keyChangeNote')}</p>
         </Details>
       </Section>
 
@@ -226,6 +260,11 @@ export function Partners() {
       <AddPeerDialog open={adding} onClose={() => setAdding(false)} />
       <TrustDialog peer={trusting} onClose={() => setTrusting(null)} />
       <EditPeerDialog peer={editing} onClose={() => setEditing(null)} />
+      <ReplaceKeyDialog
+        peer={replacing}
+        onClose={() => setReplacing(null)}
+        onReplaced={(p) => setTrusting(p)}
+      />
       <ConfirmDialog
         open={suspending !== null}
         title={t('partners.suspendTitle')}

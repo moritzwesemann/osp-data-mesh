@@ -71,6 +71,64 @@ export const partners: Messages['partners'] = {
   messageTypes: {
     release_revoked: 'Release revocation',
     subjects_withdrawn: 'Erasure notice for persons',
+    key_rotated: 'Key change notice',
+    audit_checkpoint: 'Audit chain checkpoint',
     notice: 'Notice',
   },
+  rotateKey: 'Change key',
+  rotateTitle: 'Change node key',
+  rotateIntro:
+    'The node key identifies this node to all partners. After the change, the node card shows a new fingerprint.',
+  rotateMode: 'Reason',
+  rotateRoutine: 'Routine change',
+  rotateRoutineHint:
+    'For example periodically or after a person with access has left. All partners automatically receive a notice signed with both the old and the new key.',
+  rotateCompromised: 'Suspected compromise',
+  rotateCompromisedHint:
+    'The old key may be in the wrong hands. A notice signed with it would not be trustworthy – none is sent.',
+  graceDays: 'Grace period (days)',
+  graceDaysHint:
+    'Partners that have not yet confirmed the notice keep receiving messages signed with the old key until then. Afterwards it is deleted.',
+  graceDaysInvalid: 'Please enter 1 to 30 days.',
+  rotateRoutineInfo:
+    'Notices go through the outbox and are retried if needed. Partners that have not confirmed by the end of the grace period must add the new node card and compare the fingerprint by phone.',
+  rotateConfirmRoutine: 'There is no suspicion that the old key has fallen into the wrong hands.',
+  compromisedTitle: 'Procedure for a suspected compromise',
+  compromisedStep1: 'Inform all partners immediately via a second channel (phone): they suspend this node.',
+  compromisedStep2: 'Change the key here; the old one is discarded immediately.',
+  compromisedStep3: 'Send the new node card to every partner; they enter it under “Enter new key”.',
+  compromisedStep4:
+    'Compare the new fingerprint by phone; only then does the partner confirm trust again. Continue with incident response.',
+  rotateConfirmCompromised:
+    'I will inform all partners myself; no exchange is possible until they have compared the new fingerprint.',
+  rotateSubmit: 'Change key and notify partners',
+  rotateSubmitCompromised: 'Replace key now',
+  rotating: 'Changing …',
+  rotated: 'Key changed. New fingerprint: {fingerprint}',
+  keyCreatedAt: 'Key created',
+  rotationRunning:
+    'Key change in progress until {date}: {confirmed} of {total} partners have confirmed the new key.',
+  rotationUnconfirmed: '{count} {count|partner has|partners have} not confirmed the key change.',
+  rotationUnconfirmedHint:
+    'These partners can no longer verify messages from this node. They must add the new node card and compare the fingerprint by phone.',
+  rotationPeerPending: 'notice not yet confirmed',
+  previousFingerprintLabel: 'Previous fingerprint: {fingerprint}',
+  compromisedDone: 'Key replaced on {date} because of a suspected compromise.',
+  compromisedDoneHint:
+    'Partners were not notified automatically. Every partner must add the new node card and compare the fingerprint by phone.',
+  keyRotatedAt: 'Key changed',
+  previousFingerprint: 'Previous fingerprint',
+  previousValidUntil: 'still accepted until {date}',
+  keyChangeNote:
+    'When a partner changes its key routinely, this node takes over the new key automatically from the signed notice. If a partner missed the notice or replaced its key after a compromise, enter its new node card under “Enter new key” and compare the fingerprint by phone.',
+  replaceKey: 'Enter new key',
+  replaceKeyTitle: 'Enter new key: {name}',
+  replaceKeyIntro: 'Upload the new node card the partner sent you.',
+  replaceKeyWarning:
+    'The old key stops being accepted immediately, and the partner is “Pending” until you have compared the new fingerprint by phone and confirmed trust.',
+  replaceKeyCurrent: 'Previous fingerprint',
+  replaceKeyNew: 'New fingerprint according to the card',
+  replaceKeyOtherNode: 'The card belongs to another node ({nodeId}).',
+  replaceKeySubmit: 'Enter key',
+  keyReplaced: 'New key entered for {name}; please compare the fingerprint now.',
 };

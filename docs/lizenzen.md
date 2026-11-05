@@ -17,15 +17,15 @@ Auftraggeber bzw. Moritz getroffen (siehe [ADR 0012](adr/0012-lizenz-eupl.md)).
 
 ## Zusammenfassung
 
-- Pakete insgesamt (direkt und transitiv, laut `bun.lock`): **109**
-- davon zur Laufzeit ausgeliefert (Server oder gebündelt in der Web-Oberfläche): **26**
-- davon nur für Build und Entwicklung: **83**
+- Pakete insgesamt (direkt und transitiv, laut `bun.lock`): **111**
+- davon zur Laufzeit ausgeliefert (Server oder gebündelt in der Web-Oberfläche): **27**
+- davon nur für Build und Entwicklung: **84**
 - Pakete ohne ermittelbare Lizenz: **0**
 
 | Lizenz | Anzahl Pakete |
 |---|---|
-| MIT | 60 |
-| Apache-2.0 | 22 |
+| MIT | 61 |
+| Apache-2.0 | 23 |
 | MPL-2.0 | 12 |
 | MIT OR Apache-2.0 | 11 |
 | ISC | 3 |
@@ -47,6 +47,7 @@ Veröffentlichung wird empfohlen.
 | `@tanstack/query-core` | 5.106.0 | MIT | Web-Oberfläche (gebündelt) | transitiv |
 | `@tanstack/react-query` | 5.106.0 | MIT | Web-Oberfläche (gebündelt) | direkt |
 | `cookie-es` | 3.1.1 | MIT | Web-Oberfläche (gebündelt) | transitiv |
+| `fflate` | 0.8.3 | MIT | Server (Laufzeit) | direkt |
 | `hono` | 4.13.16 | MIT | Server (Laufzeit) | direkt |
 | `kysely` | 0.29.8 | MIT | Server (Laufzeit) | direkt |
 | `papaparse` | 5.7.0 | MIT | Server (Laufzeit) | direkt |
@@ -69,6 +70,42 @@ Veröffentlichung wird empfohlen.
 | `split2` | 4.2.0 | ISC | Server (Laufzeit) | transitiv |
 | `xtend` | 4.0.2 | MIT | Server (Laufzeit) | transitiv |
 | `zod` | 4.6.7 | MIT | Server (Laufzeit), Web-Oberfläche (gebündelt) | direkt |
+
+## Copyright-Vermerke der ausgelieferten Pakete
+
+Aus den Dateien `LICENSE`/`COPYING`/`NOTICE` der installierten Pakete gelesen (auch in der SBOM im Feld
+`copyright` je Komponente). Die Lizenztexte selbst liegen in `node_modules/<paket>/`; bei einer
+Weitergabe der gebündelten Web-Oberfläche sind Vermerk und Lizenztext der MIT-/ISC-/BSD-Pakete beizufügen.
+
+| Paket | Version | Copyright-Vermerk |
+|---|---|---|
+| `@remix-run/route-pattern` | 0.22.1 | Copyright (c) 2025 Shopify Inc. |
+| `@tanstack/query-core` | 5.106.0 | Copyright (c) 2021-present Tanner Linsley |
+| `@tanstack/react-query` | 5.106.0 | Copyright (c) 2021-present Tanner Linsley |
+| `cookie-es` | 3.1.1 | Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com><br>Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com><br>Copyright (c) 2015 Nathan Friedly <nathan@nfriedly.com> (http://nfriedly.com/) |
+| `fflate` | 0.8.3 | Copyright (c) 2026 Arjun Barrett |
+| `hono` | 4.13.16 | Copyright (c) 2021 - present, Yusuke Wada and Hono contributors |
+| `kysely` | 0.29.8 | Copyright (c) 2022 Sami Koskimäki |
+| `papaparse` | 5.7.0 | Copyright (c) 2015 Matthew Holt |
+| `pg` | 8.23.1 | Copyright (c) 2010 - 2021 Brian Carlson |
+| `pg-cloudflare` | 1.4.1 | Copyright (c) 2010 - 2021 Brian Carlson |
+| `pg-connection-string` | 2.14.1 | Copyright (c) 2014 Iced Development |
+| `pg-int8` | 1.0.1 | Copyright © 2017, Charmander <~@charmander.me> |
+| `pg-pool` | 3.14.0 | Copyright (c) 2017 Brian M. Carlson |
+| `pg-protocol` | 1.16.1 | Copyright (c) 2010 - 2021 Brian Carlson |
+| `pg-types` | 2.2.0 | *kein Vermerk in den Lizenzdateien des Pakets* |
+| `pgpass` | 1.0.5 | *kein Vermerk in den Lizenzdateien des Pakets* |
+| `postgres-array` | 2.0.0 | Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me) |
+| `postgres-bytea` | 1.0.1 | Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me) |
+| `postgres-date` | 1.0.7 | Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me) |
+| `postgres-interval` | 1.2.0 | Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me) |
+| `react` | 19.3.1 | Copyright (c) Meta Platforms, Inc. and affiliates. |
+| `react-dom` | 19.3.1 | Copyright (c) Meta Platforms, Inc. and affiliates. |
+| `react-router` | 8.5.1 | Copyright (c) React Training LLC 2015-2019<br>Copyright (c) Remix Software Inc. 2020-2021<br>Copyright (c) Shopify Inc. 2022-2023 |
+| `scheduler` | 0.28.0 | Copyright (c) Meta Platforms, Inc. and affiliates. |
+| `split2` | 4.2.0 | Copyright (c) 2014-2018, Matteo Collina <hello@matteocollina.com> |
+| `xtend` | 4.0.2 | Copyright (c) 2012-2014 Raynos. |
+| `zod` | 4.6.7 | Copyright (c) 2025 Colin McDonnell |
 
 ## Nur für Build und Entwicklung
 
@@ -154,6 +191,7 @@ installiert; ihre Lizenz wurde vom einbindenden Paket übernommen.
 | `nanoid` | 3.3.20 | MIT | Build/Entwicklung | transitiv |
 | `picocolors` | 1.1.1 | ISC | Build/Entwicklung | transitiv |
 | `picomatch` | 4.0.7 | MIT | Build/Entwicklung | transitiv |
+| `playwright-core` | 1.61.1 | Apache-2.0 | Build/Entwicklung | direkt |
 | `postcss` | 8.5.32 | MIT | Build/Entwicklung | transitiv |
 | `rolldown` | 1.2.16 | MIT | Build/Entwicklung | transitiv |
 | `source-map-js` | 1.2.2 | BSD-3-Clause | Build/Entwicklung | transitiv |
@@ -175,6 +213,6 @@ Nicht automatisch erfasst (nicht in `bun.lock`), aber für Betrieb bzw. Containe
 | Apache Superset (optional, Profil „bi“) | BI-Referenz-Dashboards | Apache-2.0 | https://superset.apache.org |
 | psycopg2-binary (optional, im Superset-Abbild) | PostgreSQL-Treiber für Superset | LGPL-3.0-or-later (mit Ausnahmen) | https://www.psycopg.org |
 
-Für die Container-Abbilder selbst (Betriebssystempakete) kann nach dem Bauen eine eigene SBOM erzeugt
-werden, z. B. `bun x @cyclonedx/cdxgen -t docker osp-data-mesh:latest` (nicht lokal verifiziert, da auf der
-Entwicklungsmaschine kein Docker installiert ist).
+Die Betriebssystempakete des Container-Abbilds beschreibt eine eigene Abbild-SBOM
+(`sbom/osp-data-mesh.image.cdx.json`, Befehl in [Betrieb](betrieb.md)); die gebaute Web-Oberfläche die
+Build-SBOM (`bun run sbom -- build-ui`, siehe [Sicherheitskonzept](sicherheit.md#sbom-und-bsi-tr-03183-2)).

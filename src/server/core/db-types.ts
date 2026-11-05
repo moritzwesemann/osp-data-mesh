@@ -231,6 +231,10 @@ export interface PeerTable {
   last_seen_at: Date | null;
   last_error: string | null;
   updated_at: Timestamp;
+  /** bisheriger Schlüssel nach einer Rotationsmitteilung, angenommen bis previous_key_valid_until (Migration 0600) */
+  previous_public_key: string | null;
+  previous_key_valid_until: Date | null;
+  key_rotated_at: Date | null;
 }
 
 export interface DataReleaseTable {
@@ -381,6 +385,79 @@ export interface AuditLogTable {
   request_id: string | null;
   prev_hash: Generated<string>;
   hash: Generated<string>;
+  /** Version der Hash-Eingabe (Migration 0620; der Trigger setzt 2) */
+  digest_version: Generated<number>;
+}
+
+/** Eigene Schlüsselwechsel (Migration 0600) */
+export interface NodeKeyRotationTable {
+  id: string;
+  mode: 'routine' | 'compromised';
+  old_public_key: string;
+  new_public_key: string;
+  old_private_key_enc: string | null;
+  statement: string | null;
+  signature_old: string | null;
+  signature_new: string | null;
+  rotated_at: TimestampReq;
+  grace_until: TimestampReq;
+  finished_at: Date | null;
+  rotated_by: string | null;
+}
+
+export interface NodeKeyRotationPeerTable {
+  rotation_id: string;
+  peer_id: string;
+  outbox_message_id: string | null;
+  confirmed_at: Date | null;
+}
+
+/** Eigene signierte Prüfpunkte der Audit-Kette (Migration 0600) */
+export interface AuditCheckpointTable {
+  id: Generated<string>;
+  seq: number;
+  hash: string;
+  at: TimestampReq;
+  statement: string;
+  signature: string;
+  public_key: string;
+  trigger: 'schedule' | 'manual' | 'cli';
+  peers: Generated<number>;
+  created_at: Timestamp;
+  /** Epoche der Audit-Kette (Migration 0610) */
+  epoch: string;
+}
+
+/** Von Partnern erhaltene Prüfpunkte ihrer Audit-Kette (Migration 0600) */
+export interface PeerAuditCheckpointTable {
+  id: Generated<string>;
+  peer_id: string;
+  seq: number;
+  hash: string;
+  checkpoint_at: TimestampReq;
+  statement: string;
+  signature: string;
+  public_key: string;
+  message_id: string | null;
+  received_at: Timestamp;
+  /** Epoche aus der Aussage; null bei Aussagen ohne Epoche (Knoten vor Migration 0610) */
+  epoch: string | null;
+}
+
+/** Epochen der eigenen Audit-Kette; eine Wiederherstellung beginnt eine neue (Migration 0610) */
+export interface AuditChainEpochTable {
+  n: number;
+  epoch: string;
+  started_at: Timestamp;
+  reason: 'initial' | 'restore';
+  previous_epoch: string | null;
+  restored_seq: number | null;
+  backup_sha256: string | null;
+  backup_created_at: Date | null;
+  /** Kopf der Kette unmittelbar vor der Wiederherstellung (Migration 0630) */
+  pre_restore_epoch: string | null;
+  pre_restore_seq: number | null;
+  pre_restore_hash: string | null;
 }
 
 export interface SchemaMigrationTable {
@@ -418,6 +495,11 @@ export interface DB {
   backup_run: BackupRunTable;
   audit_log: AuditLogTable;
   schema_migration: SchemaMigrationTable;
+  node_key_rotation: NodeKeyRotationTable;
+  node_key_rotation_peer: NodeKeyRotationPeerTable;
+  audit_checkpoint: AuditCheckpointTable;
+  peer_audit_checkpoint: PeerAuditCheckpointTable;
+  audit_chain_epoch: AuditChainEpochTable;
 }
 
 export type Row<T extends keyof DB> = Selectable<DB[T]>;

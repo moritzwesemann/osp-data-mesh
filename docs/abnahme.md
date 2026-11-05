@@ -82,7 +82,11 @@ Protokoll der Neuinstallation (Befehle, Ausgaben, Abweichungen):
 
 ## AK4 – Tests für Sicherheit, Backup, Wiederherstellung, Fehlerbehandlung
 
-Nachweis: `bun test` (lokaler Testcluster auf Port 55434, wird automatisch angelegt).
+Nachweis: `bun test` (lokaler Testcluster auf Port 55434, wird automatisch angelegt). Die
+Oberflächen-Ablauftests laufen getrennt mit `bun run test:e2e` (Chromium über `playwright-core`, einmalig
+vorher `bun x playwright-core install chromium`): eigener Cluster auf Port 55471 in einem temporären
+Verzeichnis, zwei Knoten auf 4451–4452, Oberfläche frisch gebaut; danach wird alles gestoppt und gelöscht,
+Bildschirmfotos fehlgeschlagener Tests und Server-Logs bleiben in `.local/e2e/artefakte/`.
 
 | # | Prüfschritt | Erwartet | Ergebnis | Bemerkung |
 |---|---|---|---|---|
@@ -93,6 +97,7 @@ Nachweis: `bun test` (lokaler Testcluster auf Port 55434, wird automatisch angel
 | 4.5 | `bun test tests/unit/crypto.test.ts tests/unit/release-engine.test.ts` | Kryptografie, Freigaberegeln | | |
 | 4.6 | `bun test tests/unit/federation-protocol.test.ts tests/integration/federation-protocol.test.ts tests/integration/federation-exchange.test.ts tests/integration/core.test.ts` | Signaturen, Replay-Schutz, Widerruf und Löschmitteilungen; Unveränderlichkeit und Hash-Kette des Audit-Logs | | |
 | 4.7 | `bun test fix-` (alle Dateien `tests/**/fix-*.test.ts`) | Korrekturen aus der Sicherheitsprüfung: einheitliche Anmeldefehler, Token-Widerruf bei Zugangswechsel, Schutz der Föderation vor Überflutung, Mitteilungen gesperrter Datenhalter, erneute Zustellung, Bindung von Quellgeheimnissen, Import-Grenzen und Löschung in Importläufen, Neueinstufung von Datensätzen, Liefersperre der BI, Abrufstatistik nur für Datenverantwortliche, eigener Hostname für Superset | | |
+| 4.8 | `bun run test:e2e` | alle Oberflächen-Abläufe in Chromium bestanden: Anmeldung (falsches Passwort, Abmelden beendet die Sitzung), CSV-Import mit Vorschau und Fehlerprotokoll, Athletenseite mit Verlauf, Freigabe mit „Wirkung prüfen“, Meine Daten mit CSV-Download, Abruf und Widerruf zwischen zwei Knoten, Audit-Integrität, Zugriffsschutz (Oberfläche und API), Smartphone-Ansicht ohne waagerechten Überlauf; keine Konsolenfehler oder unerwarteten API-Fehler; Laufzeit notieren | | |
 
 ## Ergebnis
 
@@ -111,12 +116,13 @@ Unterschriften:
 
 ## Interner Vorabnahme-Durchlauf (Entwicklung, 05.11.2026)
 
-Kein Ersatz für die Abnahme durch den Auftraggeber; Ergebnisse der Entwicklungsumgebung (macOS, Bun 1.4.3,
-PostgreSQL 18.6, kein Docker). Einzelnachweise: [Anforderungen und Nachverfolgbarkeit](requirements.md).
+Kein Ersatz für die Abnahme durch den Auftraggeber; Ergebnisse der Entwicklungsumgebung (macOS arm64,
+Bun 1.4.3, PostgreSQL 18.6; Docker 29.5 / Compose 5.7 in Colima). Einzelnachweise:
+[Anforderungen und Nachverfolgbarkeit](requirements.md).
 
 | Kriterium | Ergebnis | Bemerkung |
 |---|---|---|
-| AK1 | bestanden | `bun run demo`: 5 CSV-Dateien und 1 API-Quelle bis Freigabe, BI und Austausch (57 Prüfungen bestanden) |
-| AK2 | bestanden (lokal) | 3 Knoten mit je eigenem PostgreSQL-Cluster, gegenseitigem Vertrauen und Austausch; nicht an Pilotstandorten |
-| AK3 | nativ bestanden, Docker offen | Installation aus einem Quellcode-Export in ein leeres Verzeichnis nur nach dieser Dokumentation, inkl. Sicherung, Wiederherstellung und zweitem Knoten; gefundene Dokumentationsmängel behoben; Docker-Variante, systemd und Caddy nicht geprüft |
-| AK4 | bestanden | `bun test`: 637 Tests in 42 Dateien bestanden (Sicherheit, Sicherung/Wiederherstellung, Fehlerbehandlung u. a.) |
+| AK1 | bestanden | `bun run demo`: 5 CSV-Dateien und 1 API-Quelle bis Freigabe, BI und Austausch (57 Prüfungen bestanden); zusätzlich Excel-Import (`connectors-xlsx.test.ts`) und OAuth2-Quelle (`connectors-oauth2.test.ts`) |
+| AK2 | bestanden (lokal) | 3 Knoten mit je eigenem PostgreSQL-Cluster, gegenseitigem Vertrauen und Austausch; zwei Docker-Knoten mit Austausch über HTTPS; nicht an Pilotstandorten |
+| AK3 | bestanden | nativ und mit Docker (Variante B wörtlich nach Dokumentation) aus einem Quellcode-Export in eine leere Umgebung, inkl. Sicherung und Wiederherstellung; gefundene Mängel behoben; systemd nicht geprüft |
+| AK4 | bestanden | `bun test`: 843 Tests in 56 Dateien bestanden; `bun run test:e2e`: 10 Browser-Abläufe bestanden; `deploy/verify-deployment.sh` (TLS, Netztrennung, BI-Zugang, Superset) bestanden |

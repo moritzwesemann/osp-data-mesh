@@ -12,7 +12,9 @@ import type { Deps } from '../../core/deps.ts';
 import type { Handlers } from '../../core/http.ts';
 import { assertDeliveryLock } from '../../core/locks.ts';
 import { writeTx } from '../../core/tx.ts';
+import { CHECKPOINT_TICK_MS, scheduledCheckpoint } from './anchors.ts';
 import { errorCodeOf, sendSigned } from './client.ts';
+import { rotationForNotice, runKeyMaintenance } from './keys.ts';
 import { toOutboxMessage } from './mappers.ts';
 import { NONCE_TTL_MS } from './protocol.ts';
 import { clearReceivedCopies, logExchange, NOTICE_REF } from './store.ts';
@@ -33,8 +35,14 @@ export function backoffMs(previousAttempts: number): number {
   return Math.min(2 ** previousAttempts * BASE_DELAY_MS, MAX_DELAY_MS);
 }
 
-export async function enqueueNotice(trx: DbOrTx, peerId: string, body: NoticeBody, now: Date): Promise<void> {
-  await trx
+/** Stellt eine Mitteilung ins Ausgangspostfach; liefert die id der Nachricht. */
+export async function enqueueNotice(
+  trx: DbOrTx,
+  peerId: string,
+  body: NoticeBody,
+  now: Date,
+): Promise<string> {
+  const row = await trx
     .insertInto('outbox_message')
     .values({
       peer_id: peerId,
@@ -43,7 +51,9 @@ export async function enqueueNotice(trx: DbOrTx, peerId: string, body: NoticeBod
       next_attempt_at: now,
       created_at: now,
     })
-    .execute();
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  return row.id;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -274,21 +284,64 @@ async function deliver(
     await markFailedAttempt(deps, peer, { ...m, attempts: MAX_ATTEMPTS - 1 }, 'bad_request');
     return 'failed';
   }
+  // Rotationsmitteilung: mit dem bisherigen Schlüssel signiert (Kontinuität, ADR 0013); nach Ende der
+  // Übergangszeit ist er gelöscht und die Mitteilung nicht mehr zustellbar
+  let rotation: Awaited<ReturnType<typeof rotationForNotice>> = null;
+  if (notice.data.kind === 'key_rotated') {
+    rotation = await rotationForNotice(deps, notice.data);
+    if (!rotation) {
+      await markFailedAttempt(deps, peer, { ...m, attempts: MAX_ATTEMPTS - 1 }, 'key_rotation_expired');
+      return 'failed';
+    }
+  }
   try {
-    const reply = await sendSigned(deps, peer, 'notice', notice.data, { schema: NoticeResponse });
+    const reply = await sendSigned(deps, peer, 'notice', notice.data, {
+      schema: NoticeResponse,
+      signer: rotation?.signer,
+    });
     const now = deps.now();
+    const data = notice.data;
     await writeTx(deps, async (trx) => {
       await trx
         .updateTable('outbox_message')
         .set({ status: 'delivered', delivered_at: now, attempts: m.attempts + 1, last_error: null })
         .where('id', '=', m.id)
         .execute();
+      if (data.kind === 'key_rotated') {
+        // signierte Bestätigung des Partners: ab jetzt für ihn mit dem neuen Schlüssel signieren
+        const confirmed = await trx
+          .updateTable('node_key_rotation_peer')
+          .set({ confirmed_at: now })
+          .where('rotation_id', '=', rotation?.rotationId ?? '')
+          .where('peer_id', '=', peer.id)
+          .where('confirmed_at', 'is', null)
+          .executeTakeFirst();
+        await deps.audit.record(
+          {
+            actor: SYSTEM_ACTOR,
+            action: 'node.key_rotation.confirmed',
+            objectType: 'node_key',
+            objectId: rotation?.rotationId ?? null,
+            details: {
+              peerNodeId: peer.node_id,
+              outboxMessageId: m.id,
+              applied: reply.body.affectedRows > 0,
+              newlyConfirmed: Number(confirmed.numUpdatedRows) > 0,
+              attempts: m.attempts + 1,
+            },
+          },
+          trx,
+        );
+        return;
+      }
+      // Prüfpunkte der Audit-Kette: Empfang protokolliert der Partner; hier genügt der Zustellstatus
+      if (data.kind === 'audit_checkpoint') return;
       await logExchange(trx, {
         direction: 'outgoing',
         peer_id: peer.id,
         peer_node_id: peer.node_id,
-        release_id: notice.data.releaseId,
-        product_ref: NOTICE_REF[notice.data.kind],
+        release_id: data.releaseId,
+        product_ref: NOTICE_REF[data.kind],
         outcome: 'delivered',
         row_count: reply.body.affectedRows,
         payload_sha256: sha256Hex(reply.rawText),
@@ -302,8 +355,8 @@ async function deliver(
           objectType: 'outbox_message',
           objectId: m.id,
           details: {
-            kind: notice.data.kind,
-            releaseId: notice.data.releaseId,
+            kind: data.kind,
+            releaseId: data.releaseId,
             peerNodeId: peer.node_id,
             affectedRows: reply.body.affectedRows,
             attempts: m.attempts + 1,
@@ -477,8 +530,14 @@ function every(deps: Deps, name: string, ms: number, task: () => Promise<unknown
 }
 
 export function startWorkers(deps: Deps): void {
-  every(deps, 'outbox', FLUSH_INTERVAL_MS, () => flushOutbox(deps));
+  // Schlüsselwechsel aus einem anderen Prozess (CLI) übernehmen, bevor zugestellt wird
+  every(deps, 'outbox', FLUSH_INTERVAL_MS, async () => {
+    await deps.identity.refresh(deps.db, deps.box);
+    return flushOutbox(deps);
+  });
   every(deps, 'retention', RETENTION_INTERVAL_MS, () => runRetention(deps));
+  every(deps, 'keys', RETENTION_INTERVAL_MS, () => runKeyMaintenance(deps));
+  every(deps, 'checkpoint', CHECKPOINT_TICK_MS, () => scheduledCheckpoint(deps));
 }
 
 export function stopWorkers(): void {

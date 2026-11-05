@@ -2,7 +2,7 @@ import type { Messages } from '../de.ts';
 
 export const connectors: Messages['connectors'] = {
   listTitle: 'Sources',
-  listIntro: 'CSV files and APIs that data is imported from.',
+  listIntro: 'CSV and Excel files and APIs that data is imported from.',
   create: 'Create source',
   importDefinition: 'Import definition',
   empty: 'No sources have been created yet.',
@@ -57,6 +57,19 @@ export const connectors: Messages['connectors'] = {
   dateFormat: 'Date format',
   dateFormatIso: 'Timestamp (ISO 8601)',
 
+  sectionXlsx: 'Excel settings',
+  xlsxSettingsHint:
+    'Number and date cells are always read correctly; decimal separator and date format only apply to values stored as text. Formulas are not calculated: the result stored in the file is used.',
+  sheet: 'Worksheet',
+  sheetHint: 'Name of the sheet; leave empty for the first worksheet.',
+  sheetFirst: 'First worksheet',
+  headerRow: 'Header row from row',
+  headerRowHint:
+    'The header is the first non-empty row from this row on. If mapped columns are missing there, the import looks for the header in the next 10 rows itself.',
+  headerRowValue: 'Header from row {row}',
+  textDecimalSeparator: 'Decimal separator for numbers stored as text',
+  textDateFormat: 'Date format for dates stored as text',
+
   sectionApi: 'API settings',
   url: 'Address (URL)',
   urlHint: 'Only hosts allowed for retrieval can be reached.',
@@ -66,6 +79,17 @@ export const connectors: Messages['connectors'] = {
   authNone: 'None',
   authBearer: 'Bearer token',
   authHeader: 'Custom header',
+  authOauth2: 'OAuth2 (client credentials)',
+  tokenUrl: 'Token endpoint (URL)',
+  tokenUrlHint: 'Its host must be permitted for fetching, like the address.',
+  clientId: 'Client ID (client_id)',
+  scope: 'Scope',
+  scopeHint: 'Optional; separate several values with spaces.',
+  audience: 'Audience',
+  audienceHint: 'Optional; only if the provider requires it.',
+  clientAuth: 'Sending the client credentials',
+  clientAuthBasic: 'HTTP Basic (default)',
+  clientAuthBody: 'In the form body (client_secret_post)',
   headerName: 'Header name',
   pagination: 'Paged retrieval',
   paginationNone: 'None',
@@ -86,6 +110,7 @@ export const connectors: Messages['connectors'] = {
 
   sectionSecret: 'Access secret',
   secret: 'Secret (token or key)',
+  secretOauth: 'Client secret (client_secret)',
   secretHint: 'Stored encrypted and never shown again.',
   secretStored: 'An access secret is stored.',
   secretMissing: 'No access secret is stored; authenticated retrievals will fail.',
@@ -103,6 +128,9 @@ export const connectors: Messages['connectors'] = {
   sampleUsesStored:
     'The sample fetch uses the stored address and the stored access secret; a changed address applies only after saving.',
   sampleFile: 'Sample file (CSV)',
+  sampleFileXlsx: 'Sample file (Excel, .xlsx)',
+  detectedSheet: 'Read: worksheet “{name}”.',
+  otherSheet: 'Read another worksheet',
   analyze: 'Analyse file',
   fetchSample: 'Fetch sample',
   analyzing: 'Analysing …',
@@ -167,6 +195,7 @@ export const connectors: Messages['connectors'] = {
   runApiHint:
     'Retrieves the data now. You first see a validated preview; data is stored only after your confirmation.',
   importFile: 'CSV file',
+  importFileXlsx: 'Excel file (.xlsx)',
   startImport: 'Start import',
   fetchNow: 'Fetch now',
   starting: 'Checking data …',

@@ -60,12 +60,15 @@ describe('Superset unter eigenem Hostnamen', () => {
     // Werte wie in docker-compose.yml (Standard MESH_BI_DOMAIN = bi.<CADDY_DOMAIN>) und ohne Umgebung
     for (const env of [
       { CADDY_DOMAIN: 'mesh.osp.example.de', MESH_BI_DOMAIN: 'bi.mesh.osp.example.de' },
+      { CADDY_DOMAIN: 'mesh.lan', MESH_BI_DOMAIN: 'bi.mesh.lan', CADDY_HTTPS_PORT: '8443' },
       {} as Record<string, string>,
     ]) {
       const n = hostOf(substitute(node[0]!.address, env));
       const s = hostOf(substitute(superset[0]!.address, env));
       expect(s.host).not.toBe(n.host);
-      expect(s.port).toBeNull();
+      // gleicher (konfigurierbarer) HTTPS-Port wie der Knoten, nie ein eigener Port für Superset
+      expect(s.port).toBe(n.port);
+      expect(s.port).toBe(env.CADDY_HTTPS_PORT ?? '443');
     }
     expect(superset[0]!.address).toContain('{$MESH_BI_DOMAIN');
     expect(superset[0]!.address).not.toContain('CADDY_DOMAIN');
@@ -78,7 +81,14 @@ describe('Superset unter eigenem Hostnamen', () => {
     const caddy = compose.services.caddy;
     // biome-ignore lint/suspicious/noTemplateCurlyInString: Compose-Platzhalter, kein JS-Template
     expect(caddy.environment.MESH_BI_DOMAIN).toBe('${MESH_BI_DOMAIN:-bi.${CADDY_DOMAIN}}');
-    const published = caddy.ports.map((p) => p.split(':').at(-1)!.replace('/udp', ''));
+    // Compose-Platzhalter ${VAR:-standard} mit ihrem Standardwert auflösen
+    const published = caddy.ports.map((p) =>
+      p
+        .replace(/\$\{[A-Z_]+:-([^}]*)\}/g, '$1')
+        .split(':')
+        .at(-1)!
+        .replace('/udp', ''),
+    );
     expect([...new Set(published)].sort()).toEqual(['443', '80']);
   });
 });

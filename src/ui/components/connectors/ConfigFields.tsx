@@ -1,8 +1,13 @@
 /**
- * Eingabefelder für die Quellkonfiguration: CSV-Upload oder HTTP-API.
+ * Eingabefelder für die Quellkonfiguration: CSV- oder Excel-Upload oder HTTP-API.
  */
 import type { z } from 'zod';
-import { type CsvConfig, DateFormat, type HttpApiConfig } from '../../../shared/contract/index.ts';
+import {
+  type CsvConfig,
+  DateFormat,
+  type HttpApiConfig,
+  type XlsxConfig,
+} from '../../../shared/contract/index.ts';
 import { useI18n } from '../../i18n/index.tsx';
 import { FormField } from '../FormField.tsx';
 import { Details, useOpenWhen } from '../Misc.tsx';
@@ -18,12 +23,26 @@ export const DEFAULT_CSV: CsvConfig = {
   dateFormat: 'YYYY-MM-DD',
 };
 
+export const DEFAULT_XLSX: XlsxConfig = {
+  type: 'xlsx',
+  sheet: '',
+  headerRow: 1,
+  decimalSeparator: ',',
+  dateFormat: 'DD.MM.YYYY',
+};
+
 /** Bearbeitungszustand der API-Konfiguration (Zahlen als Text, Parameter als Zeilen). */
 export interface ApiState {
   url: string;
   itemsPath: string;
-  authType: 'none' | 'bearer' | 'header';
+  authType: HttpApiConfig['auth']['type'];
   headerName: string;
+  /** OAuth2 (Client Credentials) */
+  tokenUrl: string;
+  clientId: string;
+  scope: string;
+  audience: string;
+  clientAuth: 'basic' | 'body';
   paginationType: 'none' | 'page' | 'cursor';
   pageParam: string;
   sizeParam: string;
@@ -42,6 +61,11 @@ export const DEFAULT_API: ApiState = {
   itemsPath: '',
   authType: 'none',
   headerName: '',
+  tokenUrl: '',
+  clientId: '',
+  scope: '',
+  audience: '',
+  clientAuth: 'basic',
   paginationType: 'none',
   pageParam: 'page',
   sizeParam: '',
@@ -56,12 +80,18 @@ export const DEFAULT_API: ApiState = {
 };
 
 export function apiStateFrom(cfg: HttpApiConfig): ApiState {
+  const oauth = cfg.auth.type === 'oauth2_client_credentials' ? cfg.auth : null;
   const s: ApiState = {
     ...DEFAULT_API,
     url: cfg.url,
     itemsPath: cfg.itemsPath,
     authType: cfg.auth.type,
     headerName: cfg.auth.type === 'header' ? cfg.auth.headerName : '',
+    tokenUrl: oauth?.tokenUrl ?? '',
+    clientId: oauth?.clientId ?? '',
+    scope: oauth?.scope ?? '',
+    audience: oauth?.audience ?? '',
+    clientAuth: oauth?.clientAuth ?? 'basic',
     paginationType: cfg.pagination.type,
     queryText: formatKv(cfg.query),
     dateFormat: cfg.dateFormat,
@@ -84,6 +114,16 @@ export function apiStateFrom(cfg: HttpApiConfig): ApiState {
 
 const num = (s: string): number => (s.trim() === '' ? Number.NaN : Number(s));
 
+/** true, wenn eine Excel-Einstellung vom Standard abweicht (dann ist der Abschnitt aufgeklappt). */
+export function xlsxDiffers(c: XlsxConfig): boolean {
+  return (
+    c.sheet !== DEFAULT_XLSX.sheet ||
+    c.headerRow !== DEFAULT_XLSX.headerRow ||
+    c.decimalSeparator !== DEFAULT_XLSX.decimalSeparator ||
+    c.dateFormat !== DEFAULT_XLSX.dateFormat
+  );
+}
+
 /** true, wenn eine CSV-Einstellung vom Standard abweicht (dann ist der Abschnitt aufgeklappt). */
 export function csvDiffers(c: CsvConfig): boolean {
   return (
@@ -95,6 +135,8 @@ export function csvDiffers(c: CsvConfig): boolean {
 }
 
 const API_ADVANCED: readonly (keyof ApiState)[] = [
+  'audience',
+  'clientAuth',
   'itemsPath',
   'paginationType',
   'pageParam',
@@ -109,6 +151,8 @@ const API_ADVANCED: readonly (keyof ApiState)[] = [
   'timeoutMs',
 ];
 const API_ADVANCED_ERRORS = [
+  'config.auth.audience',
+  'config.auth.clientAuth',
   'config.itemsPath',
   'config.pagination',
   'config.query',
@@ -122,8 +166,18 @@ export function buildApiConfig(s: ApiState): {
   queryInvalid: boolean;
 } {
   const query = parseKv(s.queryText);
-  const auth: z.input<typeof HttpApiConfig>['auth'] =
-    s.authType === 'header' ? { type: 'header', headerName: s.headerName.trim() } : { type: s.authType };
+  let auth: z.input<typeof HttpApiConfig>['auth'];
+  if (s.authType === 'header') auth = { type: 'header', headerName: s.headerName.trim() };
+  else if (s.authType === 'oauth2_client_credentials') {
+    auth = {
+      type: 'oauth2_client_credentials',
+      tokenUrl: s.tokenUrl.trim(),
+      clientId: s.clientId.trim(),
+      scope: s.scope.trim() || undefined,
+      audience: s.audience.trim() || undefined,
+      clientAuth: s.clientAuth,
+    };
+  } else auth = { type: s.authType };
   let pagination: z.input<typeof HttpApiConfig>['pagination'] = { type: 'none' };
   if (s.paginationType === 'page') {
     pagination = {
@@ -161,14 +215,16 @@ function DateFormatSelect({
   value,
   onChange,
   fe,
+  label,
 }: {
   value: DateFormat;
   onChange: (v: DateFormat) => void;
   fe: FieldErr;
+  label?: string;
 }) {
   const i = useI18n();
   return (
-    <FormField label={i.t('connectors.dateFormat')} error={fe('config.dateFormat')}>
+    <FormField label={label ?? i.t('connectors.dateFormat')} error={fe('config.dateFormat')}>
       {(a) => (
         <select
           {...a}
@@ -258,6 +314,72 @@ export function CsvConfigFields({
   );
 }
 
+/** Excel: Tabellenblatt, Kopfzeile sowie Dezimaltrennzeichen und Datumsformat für Werte, die als Text gespeichert sind. */
+export function XlsxConfigFields({
+  value,
+  onChange,
+  fe,
+}: {
+  value: XlsxConfig;
+  onChange: (v: XlsxConfig) => void;
+  fe: FieldErr;
+}) {
+  const i = useI18n();
+  const { t } = i;
+  return (
+    <div className="form-grid">
+      <FormField label={t('connectors.sheet')} hint={t('connectors.sheetHint')} error={fe('config.sheet')}>
+        {(a) => (
+          <input
+            {...a}
+            className="input"
+            maxLength={31}
+            placeholder={t('connectors.sheetFirst')}
+            value={value.sheet}
+            onChange={(e) => onChange({ ...value, sheet: e.target.value })}
+          />
+        )}
+      </FormField>
+      <FormField
+        label={t('connectors.headerRow')}
+        hint={t('connectors.headerRowHint')}
+        error={fe('config.headerRow')}
+      >
+        {(a) => (
+          <input
+            {...a}
+            className="input"
+            type="number"
+            min={1}
+            max={1000}
+            value={Number.isNaN(value.headerRow) ? '' : value.headerRow}
+            onChange={(e) => onChange({ ...value, headerRow: num(e.target.value) })}
+          />
+        )}
+      </FormField>
+      <FormField label={t('connectors.textDecimalSeparator')} error={fe('config.decimalSeparator')}>
+        {(a) => (
+          <select
+            {...a}
+            className="input"
+            value={value.decimalSeparator}
+            onChange={(e) => onChange({ ...value, decimalSeparator: e.target.value === '.' ? '.' : ',' })}
+          >
+            <option value=",">{t('connectors.decimalComma')}</option>
+            <option value=".">{t('connectors.decimalPoint')}</option>
+          </select>
+        )}
+      </FormField>
+      <DateFormatSelect
+        label={t('connectors.textDateFormat')}
+        value={value.dateFormat}
+        onChange={(dateFormat) => onChange({ ...value, dateFormat })}
+        fe={fe}
+      />
+    </div>
+  );
+}
+
 export function ApiConfigFields({
   value,
   onChange,
@@ -312,10 +434,23 @@ export function ApiConfigFields({
             <option value="none">{t('connectors.authNone')}</option>
             <option value="bearer">{t('connectors.authBearer')}</option>
             <option value="header">{t('connectors.authHeader')}</option>
+            <option value="oauth2_client_credentials">{t('connectors.authOauth2')}</option>
           </select>
         )}
       </FormField>
-      {value.authType === 'header' ? (
+      {value.authType === 'oauth2_client_credentials' ? (
+        <FormField label={t('connectors.clientId')} required error={fe('config.auth.clientId')}>
+          {(a) => (
+            <input
+              {...a}
+              className="input mono"
+              autoComplete="off"
+              value={value.clientId}
+              onChange={(e) => set('clientId', e.target.value)}
+            />
+          )}
+        </FormField>
+      ) : value.authType === 'header' ? (
         <FormField label={t('connectors.headerName')} required error={fe('config.auth.headerName')}>
           {(a) => (
             <input
@@ -330,8 +465,54 @@ export function ApiConfigFields({
       ) : (
         <div />
       )}
+      {value.authType === 'oauth2_client_credentials' && (
+        <>
+          <FormField
+            className="span-2"
+            label={t('connectors.tokenUrl')}
+            required
+            hint={t('connectors.tokenUrlHint')}
+            error={fe('config.auth.tokenUrl')}
+          >
+            {(a) => (
+              <input
+                {...a}
+                className="input mono"
+                type="url"
+                inputMode="url"
+                placeholder="https://"
+                value={value.tokenUrl}
+                onChange={(e) => set('tokenUrl', e.target.value)}
+              />
+            )}
+          </FormField>
+          <FormField
+            className="span-2"
+            label={t('connectors.scope')}
+            hint={t('connectors.scopeHint')}
+            error={fe('config.auth.scope')}
+          >
+            {(a) => (
+              <input
+                {...a}
+                className="input mono"
+                value={value.scope}
+                onChange={(e) => set('scope', e.target.value)}
+              />
+            )}
+          </FormField>
+        </>
+      )}
       {secret && value.authType !== 'none' && (
-        <FormField className="span-2" label={t('connectors.secret')} hint={t('connectors.secretHint')}>
+        <FormField
+          className="span-2"
+          label={
+            value.authType === 'oauth2_client_credentials'
+              ? t('connectors.secretOauth')
+              : t('connectors.secret')
+          }
+          hint={t('connectors.secretHint')}
+        >
           {(a) => (
             <input
               {...a}
@@ -346,6 +527,37 @@ export function ApiConfigFields({
       )}
       <Details summary={t('connectors.advancedApi')} defaultOpen={advancedOpen} className="span-2">
         <div className="form-grid">
+          {value.authType === 'oauth2_client_credentials' && (
+            <>
+              <FormField
+                label={t('connectors.audience')}
+                hint={t('connectors.audienceHint')}
+                error={fe('config.auth.audience')}
+              >
+                {(a) => (
+                  <input
+                    {...a}
+                    className="input mono"
+                    value={value.audience}
+                    onChange={(e) => set('audience', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('connectors.clientAuth')} error={fe('config.auth.clientAuth')}>
+                {(a) => (
+                  <select
+                    {...a}
+                    className="input"
+                    value={value.clientAuth}
+                    onChange={(e) => set('clientAuth', e.target.value === 'body' ? 'body' : 'basic')}
+                  >
+                    <option value="basic">{t('connectors.clientAuthBasic')}</option>
+                    <option value="body">{t('connectors.clientAuthBody')}</option>
+                  </select>
+                )}
+              </FormField>
+            </>
+          )}
           <FormField
             className="span-2"
             label={t('connectors.itemsPath')}

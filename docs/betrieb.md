@@ -98,7 +98,10 @@ Aufbewahrung der Logs regelt das System (journald bzw. Docker-Logtreiber, z. B. 
 | `GET /healthz` | 200 `{"status":"ok"}` | Prozess hängt oder läuft nicht (keine Datenbankprüfung) |
 | `GET /readyz` | 200 `{"status":"ok","db":true,"schema":true}` | 503 mit `degraded`: Datenbank nicht erreichbar (`db:false`) oder Migrationen fehlen (`schema:false`) |
 | *System*-Seite bzw. `GET /api/v1/system/status` (Rolle `admin`) | `audit.ok = true`, letzte Sicherung `ok` und jünger als 2 × Intervall, `outbox.failed = 0`, `bi.errors = 0` | siehe unten |
-| `bun run cli verify-audit` (z. B. täglich per Timer) | Exit-Code 0 | Exit 1: Hash-Kette gebrochen → [Incident Response](incident-response.md) |
+| `bun run cli verify-audit` (z. B. täglich per Timer) | Exit-Code 0 | Exit 1: Hash-Kette gebrochen (im Programm neu berechnet) → [Incident Response](incident-response.md) |
+| `bun run cli verify-audit --with-partners --profile <profil.json>` (z. B. wöchentlich; ohne `--profile` nicht unabhängig von der Datenbank) | Exit-Code 0 | Exit 1: Kette abgeschnitten oder umgeschrieben → [Incident Response](incident-response.md); Exit 3: nicht verankert (Partner des Profils nicht erreichbar bzw. zu wenige bestätigen); Exit 4: Klärung nötig (z. B. durch eine Wiederherstellung verlorene Prüfpunkte, nicht dokumentierte Epoche) |
+| *Audit › Externe Verankerung* | Prüfpunkte zugestellt | nicht zugestellte Prüfpunkte (Partner prüfen, *Jetzt zustellen*) |
+| *Partner › Eigene Knotenkarte* während eines Schlüsselwechsels | alle Partner bestätigt | Partner ohne Bestätigung vor Ende der Übergangszeit ansprechen |
 | Plattenplatz Sicherungsverzeichnis und Datenbank | > 20 % frei | Sicherungen schlagen fehl |
 | Zertifikatslaufzeit | > 14 Tage | Caddy erneuert automatisch; Fehler im Caddy-Log |
 
@@ -174,8 +177,8 @@ des OSP); die Dateien sind verschlüsselt. Den `MESH_BACKUP_KEY` **getrennt** vo
 ```sh
 # nativ
 rsync -a /opt/osp-data-mesh/backups/ sicherung@backup.osp.intern:/srv/osp-mesh/
-# Docker: Volume-Inhalt kopieren
-docker compose cp node:/var/lib/osp-mesh/backups ./backups-export
+# Docker: Volume-Inhalt kopieren ("/." kopiert den Inhalt, nicht das Verzeichnis selbst)
+mkdir -p ./backups-export && docker compose cp node:/var/lib/osp-mesh/backups/. ./backups-export/
 ```
 
 ## Wiederherstellung
@@ -214,12 +217,29 @@ sudo systemctl start osp-data-mesh
 curl -s https://<domain>/readyz
 ```
 
-**Ablauf Docker:**
+**Ablauf Docker** (im Verzeichnis `deploy/`; mit Docker 29 geprüft: Wiederherstellung bei laufendem
+Knoten abgelehnt, nach `stop node` erfolgreich, später angelegte Daten verschwunden, Sitzungen beendet,
+Audit-Kette ok):
 
 ```sh
+docker compose run --rm --no-deps --entrypoint ls cli -l /var/lib/osp-mesh/backups   # Dateinamen
 docker compose stop node
 docker compose run --rm cli restore --file /var/lib/osp-mesh/backups/osp-beispiel-20261104T020000.000Z.mbk --yes
 docker compose up -d                                   # migrate läuft automatisch, dann node
+```
+
+Die Hinweiszeile „Weiter / next: bun … run cli migrate“ am Ende von `restore` gilt für die native
+Installation; unter Docker erledigt das `docker compose up -d`.
+
+*Sicherung von außerhalb einspielen* (z. B. vom Sicherungsserver auf einen neuen Server): Datei und
+Manifest **über den Dienst `cli`** in das Volume schreiben. So gehören sie dem Benutzer des Abbilds (UID
+1000) und haben die Rechte `0600`. `docker compose cp` übernähme dagegen Eigentümer und Rechte der Quelle;
+der Knoten könnte die Datei dann nicht lesen.
+
+```sh
+for f in osp-beispiel-20261104T020000.000Z.mbk osp-beispiel-20261104T020000.000Z.mbk.json; do
+  docker compose run --rm -T --no-deps --entrypoint sh cli -c "umask 077 && cat > /var/lib/osp-mesh/backups/$f" < "$f"
+done
 ```
 
 Prüfungen der Kommandozeile: keine Verbindungen des laufenden Servers (sonst Abbruch; `--force` siehe
@@ -240,6 +260,34 @@ Exit-Code 0 nur, wenn die Audit-Kette danach intakt ist.
 4. Wurde der Master-Key seit der Sicherung rotiert, beim Start `MESH_MASTER_KEY_PREVIOUS` (alter Schlüssel)
    setzen und anschließend `rotate-master-key` ausführen (siehe unten).
 5. BI-Views werden beim Start neu aufgebaut (oder *System › BI-Schnittstelle › Views aktualisieren*).
+6. **Audit-Kette: neue Epoche.** Die Laufnummern nach dem Sicherungszeitpunkt werden neu vergeben, ihre
+   Hashes unterscheiden sich von denen, die Partner aus der Zeit vor der Wiederherstellung verwahren.
+   `restore` beginnt deshalb in derselben Transaktion eine neue Epoche (`audit_chain_epoch`: vorige Epoche,
+   höchste übernommene Laufnummer, SHA-256 und Zeitpunkt der Sicherung, **Kopf der Kette unmittelbar vor der
+   Wiederherstellung** – Epoche, Laufnummer, Hash; Audit `backup.restore` mit `epoch`, `previousEpoch`,
+   `restoredSeq`, `preRestore`) und gibt das alles aus („Sicherung / backup SHA-256 …“, „Kopf vor der
+   Wiederherstellung …“, „Neue Epoche der Audit-Kette … übernommen bis seq …“). Die wiederhergestellte
+   Datenbank brächte sonst den alten Stand mit. Partner nehmen Prüfpunkte der neuen Epoche an (dort Audit
+   `audit.checkpoint.epoch_changed`); der erste geht kurz nach dem Start hinaus.
+   - Die Kette prüft `restore` danach **im Programm** (wie `verify-audit`) und nennt zum Vergleich das
+     Ergebnis von `audit_verify()` der wiederhergestellten Datenbank – diese Funktion stammt aus der
+     Sicherung. Maßgeblich ist die Neuberechnung; Exit 1, wenn sie einen Bruch findet.
+   - `verify-audit --with-partners` vergleicht Prüfpunkte früherer Epochen weiter **bis zur übernommenen
+     Laufnummer** (Abweichung = Manipulation) und meldet die dahinter als **„durch Wiederherstellung
+     verloren“**: ohne Profil „Klärung nötig“, Exit 4 – nie still „ok“. Liegt ein solcher Prüfpunkt hinter
+     dem festgehaltenen Kopf vor der Wiederherstellung, ist das Manipulation (Exit 1).
+   - Die Wiederherstellung dokumentieren (Datum, Sicherungsdatei, **SHA-256 und Zeitpunkt der Sicherung,
+     Kopf davor**, neue Epoche, übernommene Laufnummer, Anlass) und danach das **Anker-Profil neu
+     exportieren**: `bun --env-file=.env run cli audit-anchor-profile --out profil-neu.json --previous
+     profil-alt.json --accept-epochs` – vorher ohne `--accept-epochs` aufrufen, die angezeigte neue Epoche
+     (Sicherung, Kopf davor) mit der Dokumentation abgleichen. Mit dem neuen Profil sind die verlorenen
+     Prüfpunkte erklärt (nur noch Hinweis, Exit 0). **Mit dem alten Profil** meldet die Prüfung bis dahin
+     „Manipulation“ (Exit 1): ein Verlust durch eine nicht im Profil dokumentierte Wiederherstellung ist nicht
+     erklärt.
+   - Eine Epoche, die nicht im Profil steht und zu keiner dokumentierten Wiederherstellung gehört, ist
+     Manipulation ([Incident Response](incident-response.md)).
+   - Sicherungen von vor Migration 0610 kennen keine Epochen; nach `migrate` beginnt eine neue erste Epoche,
+     Prüfpunkte von vorher gelten dann als „unbekannte Epoche“ (Klärung nötig, Profil mit `--previous`).
 
 ### Wiederherstellungstest (vierteljährlich empfohlen)
 
@@ -271,16 +319,21 @@ Produktivdatenbank lesen (siehe [Installation](installation.md#vorbereitung-beid
 | `MESH_MASTER_KEY` | privaten Knotenschlüssel, Pseudonym-Schlüssel, Zugangsdaten der API-Quellen (AES-256-GCM in der Datenbank) | Passwortverwaltung + versiegelte Offline-Kopie (Tresor), Vier-Augen-Prinzip | Knoten startet nicht mehr; neue Identität und neue Vertrauensaufnahme bei allen Partnern nötig |
 | `MESH_BACKUP_KEY` | Sicherungsdateien | wie oben, **getrennt** von den Sicherungen | Sicherungen nicht wiederherstellbar |
 | Passwörter `mesh_owner`, `mesh_app`, `mesh_bi`, `postgres` | Datenbankzugänge | Passwortverwaltung | Zurücksetzen per `bootstrap.sql` (idempotent) |
-| Ed25519-Knotenschlüssel | Identität gegenüber Partnern | nur verschlüsselt in der Datenbank, nie exportiert | siehe Master-Key |
+| Ed25519-Knotenschlüssel | Identität gegenüber Partnern | nur verschlüsselt in der Datenbank, nie exportiert; der bisherige nach einem Wechsel nur während der Übergangszeit | siehe Master-Key; Wechsel siehe [Knotenschlüssel](#knotenschlüssel-ed25519) |
 | Zugangsgeheimnisse von API-Quellen | Zugang zu Messsystemen | verschlüsselt in der Datenbank (AAD `connector.secret:<id>`), nie ausgegeben | in der Oberfläche neu setzen |
 
 ### Zugangsgeheimnisse von API-Quellen
 
-Ein gespeichertes Geheimnis (Bearer-Token oder Header-Wert) ist an das Ziel des Connectors gebunden:
+Ein gespeichertes Geheimnis (Bearer-Token, Header-Wert oder OAuth2-Client-Geheimnis) ist an das Ziel des
+Connectors gebunden:
 
 - Ändert sich der **Origin** der URL (Schema, Host, Port) oder die **Art der Authentifizierung**
-  (einschließlich des Header-Namens), wird das Geheimnis gelöscht (Audit `connector.secret_cleared`) und
-  muss für das neue Ziel neu gesetzt werden. Pfad, Abfrageparameter und Paginierung dürfen sich ändern.
+  (einschließlich des Header-Namens, bei OAuth2 Token-Endpunkt und Client-Kennung), wird das Geheimnis
+  gelöscht (Audit `connector.secret_cleared`) und muss für das neue Ziel neu gesetzt werden. Pfad,
+  Abfrageparameter und Paginierung dürfen sich ändern.
+- OAuth2 (Client Credentials): Der Host des Token-Endpunkts muss ebenfalls in `MESH_SOURCE_ALLOWED_HOSTS`
+  stehen. Zugriffstokens hält der Knoten nur im Arbeitsspeicher (bis kurz vor Ablauf); nach einem
+  Neustart holt er beim nächsten Abruf ein neues. Ein neues Client-Geheimnis gilt ab dem nächsten Abruf.
 - *Beispiel abrufen* mit einem gespeicherten Connector verwendet ausschließlich dessen gespeicherte URL und
   Authentifizierung.
 - Geheimnisse werden nur über **https://** gesendet. Ausnahmen: Loopback-Adressen (`127.0.0.1`, `::1`,
@@ -342,10 +395,58 @@ ON_ERROR_STOP=1 -v db_name=mesh -v owner_password=… -v app_password=… -v bi_
 ### Knotenschlüssel (Ed25519)
 
 Der Schlüssel entsteht beim ersten Start, der private Teil liegt nur verschlüsselt in der Datenbank.
-Partner vertrauen genau diesem öffentlichen Schlüssel (Fingerprint). Ein Schlüsselwechsel ist im Prototyp
-**nicht als Kommando umgesetzt** (das Datenmodell sieht `previous_public_key` vor). Bei Verdacht auf
-Kompromittierung des Knotenschlüssels: Vorgehen nach [Incident Response](incident-response.md)
-(Partner sperren lassen, neue Identität, erneuter Fingerprint-Abgleich).
+Partner vertrauen genau diesem öffentlichen Schlüssel (Fingerprint). Ein Wechsel ist auf zwei Arten möglich,
+die sich bewusst unterscheiden ([ADR 0013](adr/0013-knotenschluessel-rotation.md)):
+
+**Planmäßiger Wechsel** – z. B. jährlich oder nach dem Ausscheiden einer Person mit Zugang zu Master-Key
+und Datenbank, **nur ohne Verdacht auf Kompromittierung**:
+
+1. Oberfläche *Partner › Eigene Knotenkarte › Schlüssel wechseln*, Anlass „Planmäßiger Wechsel“,
+   Übergangszeit wählen (1–30 Tage, Standard 7), bestätigen (Rolle `admin`). Alternativ nativ
+   `bun --env-file=.env run cli rotate-node-key --routine [--grace-days 7]`, Docker
+   `docker compose run --rm cli rotate-node-key --routine`; das geht auch bei laufendem Knoten (er
+   übernimmt den neuen Schlüssel innerhalb weniger Sekunden) – ohne laufenden Knoten gehen die
+   Mitteilungen beim nächsten Start hinaus.
+2. Jeder vertrauenswürdige (und gesperrte) Partner erhält über das Ausgangspostfach eine Mitteilung, die mit
+   dem bisherigen und dem neuen Schlüssel signiert ist, und übernimmt den neuen Schlüssel selbsttätig
+   (Audit dort `peer.key_rotated`, hier `node.key_rotate` und je Partner `node.key_rotation.confirmed`).
+   Bis zur Bestätigung erhält ein Partner weiter mit dem bisherigen Schlüssel Signiertes; der Austausch
+   läuft ohne Unterbrechung.
+3. Stand verfolgen: *Partner › Eigene Knotenkarte* zeigt, wie viele Partner bestätigt haben; nicht
+   zugestellte Mitteilungen stehen im Ausgangspostfach (*Jetzt zustellen* nach einer Störung).
+4. Nach der Übergangszeit wird der bisherige private Schlüssel gelöscht (Audit
+   `node.key_rotation.finished`; bei Partnern ohne Bestätigung `outcome = error` mit deren Knoten-IDs).
+   Diese Partner lehnen Nachrichten des Knotens danach ab. Ihnen die neue Knotenkarte senden: Sie tragen
+   sie unter *Partner › (Partner) › Neuen Schlüssel eintragen* ein, gleichen den Fingerprint telefonisch ab
+   und bestätigen das Vertrauen.
+
+Ein weiterer planmäßiger Wechsel ist erst nach dem Ende der Übergangszeit möglich.
+
+Trägt ein Partner, der die Mitteilung verpasst hat, die neue Knotenkarte schon während der Übergangszeit
+manuell ein, lehnt er mit dem bisherigen Schlüssel Signiertes ab. Der Knoten wiederholt eine solche
+abgelehnte Anfrage einmal mit dem neuen Schlüssel; gelingt sie, gilt der Partner als bestätigt
+(`node.key_rotation.confirmed`, `via: new_key_accepted`) und erhält ab dann nur noch neu Signiertes – der
+Austausch läuft ohne Warten auf das Ende der Übergangszeit weiter. Nach jedem Wechsel das
+[Anker-Profil](#anker-profil-unabhängige-prüfung) neu exportieren.
+
+**Verdacht auf Kompromittierung** (Schlüssel, Master-Key oder Datenbank könnten in fremden Händen sein):
+Eine Mitteilung mit dem bisherigen Schlüssel wäre dann nicht vertrauenswürdig – ein Angreifer könnte
+dieselbe senden. Deshalb ohne Mitteilung:
+
+1. Alle Partner telefonisch informieren; sie sperren den Knoten (*Partner › Sperren*).
+2. Ursache klären und ggf. zuerst den Master-Key rotieren ([Master-Key rotieren](#master-key-rotieren)).
+3. Schlüssel ersetzen: Oberfläche mit Anlass „Verdacht auf Kompromittierung“ oder
+   `bun --env-file=.env run cli rotate-node-key --compromised --yes`. Der bisherige Schlüssel wird sofort
+   verworfen (auch ein laufender planmäßiger Wechsel endet); es gibt keine Übergangszeit.
+4. Neue Knotenkarte (`bun --env-file=.env run cli node-card` bzw. *Karte herunterladen*) an jeden Partner;
+   dieser trägt sie unter *Neuen Schlüssel eintragen* ein, gleicht den **neuen Fingerprint telefonisch** ab
+   und bestätigt das Vertrauen. Erst dann ist wieder Austausch möglich.
+5. Weiter nach [Incident Response](incident-response.md).
+
+**Partner wechselt seinen Schlüssel:** Planmäßige Wechsel übernimmt dieser Knoten automatisch (Partnerliste:
+*Schlüssel gewechselt*, bisheriger Fingerprint bis zum Ende der Übergangszeit). Hat der Partner die
+Mitteilung nicht zustellen können oder nach einer Kompromittierung ohne Mitteilung gewechselt, die neue
+Knotenkarte unter *Neuen Schlüssel eintragen* aufnehmen und den Fingerprint telefonisch abgleichen.
 
 ## Updates
 
@@ -374,15 +475,17 @@ curl -s https://<domain>/readyz
 cd /opt/osp-data-mesh/deploy
 docker compose run --rm cli backup                     # 1. Sicherung
 git -C .. fetch --tags && git -C .. checkout <neue-version>
-docker compose build                                   # 2. neues Abbild
+docker compose build                                   # 2. neues Abbild (mit Superset: --profile bi)
 docker compose up -d                                   # 3. migrate läuft vor dem Start des Knotens
 docker compose ps -a                                   # migrate: Exited (0), node: healthy
+./verify-deployment.sh                                 # 4. TLS, Netztrennung, Proxy-Vertrauen
 ```
 
 Danach in *System* die Version prüfen. Weitere Updates:
 
 - **Betriebssystem/Pakete:** monatlich bzw. bei Sicherheitsmeldungen (`apt upgrade`; Docker: Abbilder neu
-  bauen mit `docker compose build --pull`).
+  bauen mit `docker compose build --pull` und die fertigen Abbilder von Datenbank und Caddy aktualisieren
+  mit `docker compose pull db caddy`, danach `docker compose up -d`).
 - **PostgreSQL-Nebenversionen** (18.x) über die Paketverwaltung bzw. `docker compose pull db`.
   **Hauptversionswechsel** (z. B. 18 → 19) mit `pg_upgrade` oder Sicherung/Wiederherstellung planen.
 - **Bun:** getestet ist die in der [Installation](installation.md#a1-pakete-installieren-administrationskonto)
@@ -391,6 +494,26 @@ Danach in *System* die Version prüfen. Weitere Updates:
   `curl -fsSL https://bun.sh/install | bash -s "bun-v<version>"` und
   `sudo install -m 0755 "$HOME/.bun/bin/bun" /usr/local/bin/bun`.
 - **Abhängigkeiten:** siehe [Schwachstellenmanagement](sicherheit.md#schwachstellenmanagement).
+
+**SBOM des Container-Abbilds (Release):** Neben der SBOM des Quellcodes (`bun run sbom`, siehe
+[Sicherheit](sicherheit.md)) beschreibt `sbom/osp-data-mesh.image.cdx.json` das gebaute Abbild des Knotens:
+Debian-Pakete (u. a. PostgreSQL-Client), npm-Pakete in `/app/node_modules`, ausführbare Dateien und
+Bibliotheken, CA-Zertifikate. Nach jedem Bau eines Release-Abbilds neu erzeugen und prüfen (auf dem
+Build-Rechner mit Bun und Docker, im Repository-Verzeichnis; mit Colima zusätzlich
+`DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` setzen):
+
+```sh
+docker build -f deploy/Dockerfile -t osp-data-mesh:<version> .
+bun x -p @cyclonedx/cdxgen@12.9.0 cdxgen -t docker osp-data-mesh:<version> \
+  -o sbom/osp-data-mesh.image.cdx.json
+bun x -p @cyclonedx/cdxgen@12.9.0 cdx-validate -i sbom/osp-data-mesh.image.cdx.json \
+  --no-deep --no-include-manual --strict --fail-severity critical
+```
+
+Die SBOM gilt nur für genau dieses Abbild (Abbild-ID in `metadata.component.purl`); ein Neubau ändert sie.
+Offene Lücken (Stand der ersten Erzeugung): Bun selbst erscheint ohne Version (`pkg:generic/bun`; die
+Version steht in `deploy/Dockerfile`, `ARG BUN_VERSION`), die Debian-Pakete ohne Lizenzangabe, Hersteller
+und Kontakt für Schwachstellenmeldungen fehlen in den Metadaten, die Datei ist nicht signiert.
 
 ## Aufbewahrung und Löschfristen
 
@@ -409,16 +532,145 @@ Danach in *System* die Version prüfen. Weitere Updates:
 ## Prüfung der Audit-Kette
 
 Das Audit-Log ist durch Datenbank-Trigger gegen Ändern und Löschen gesperrt; jeder Eintrag enthält den
-SHA-256 des vorherigen (Hash-Kette). Prüfung:
+SHA-256 des vorherigen (Hash-Kette). Prüfung der inneren Folge:
 
 - Oberfläche *Audit › Integrität prüfen* (Rollen `auditor`, `admin`),
 - Kommandozeile `bun --env-file=.env run cli verify-audit` (Exit 0 = intakt, 1 = Bruch mit Position),
 - SQL (als `mesh_owner`): `select * from audit_verify();`.
 
 Ein Bruch bedeutet Manipulation unter Umgehung der Trigger (nur mit Owner-/Superuser-Rechten möglich) oder
-Datenbankbeschädigung → [Incident Response](incident-response.md). Den Prüfwert (`hash` des letzten
-Eintrags) monatlich außerhalb des Systems notieren, damit auch ein vollständiges Neuschreiben der Kette
-erkennbar wird.
+Datenbankbeschädigung → [Incident Response](incident-response.md).
+
+### Externe Verankerung bei den Partnern
+
+Wer Eigentümerrechte an der Datenbank hat, kann das **Ende abschneiden** oder die Kette ab einem Eintrag
+**neu berechnen** – `audit_verify()` meldet dann weiter „intakt“. Dagegen hinterlegt der Knoten signierte
+**Prüfpunkte** (Laufnummer und Hash des letzten Eintrags) bei allen vertrauenswürdigen Partnern
+([ADR 0014](adr/0014-externe-verankerung-audit-kette.md)):
+
+- automatisch alle `MESH_AUDIT_CHECKPOINT_HOURS` Stunden (Standard 1; `0` = nur auf Anforderung), sofern
+  die Kette seitdem gewachsen ist, und als Lebenszeichen spätestens nach dem doppelten Intervall auch ohne
+  neue Einträge; auf Anforderung mit *Audit › Externe Verankerung › Prüfpunkt jetzt senden* oder
+  `bun --env-file=.env run cli audit-checkpoint`. Zustellung über das Ausgangspostfach. Maßgeblich für den
+  Planer ist der jüngste **gültig signierte** eigene Prüfpunkt (nicht aus der Zukunft); eigene Prüfpunkte
+  legt der Server nur über die Datenbankfunktion `audit_checkpoint_append()` an (`mesh_app` hat kein
+  `INSERT` auf `audit_checkpoint`). Belegt eine ungültige Zeile den Platz, steht `audit.checkpoint.invalid_row`
+  im Audit-Log – Hinweis auf einen kompromittierten Datenbankzugang ([Incident Response](incident-response.md)).
+- **Abgleich** (mindestens monatlich und bei jedem Verdacht): `bun --env-file=.env run cli verify-audit
+  --with-partners --profile <profil.json>` (unabhängig, siehe [Anker-Profil](#anker-profil-unabhängige-prüfung)),
+  ohne Profil bzw. in der Oberfläche *Audit › Mit Partnern abgleichen* nur als schnelle, **nicht
+  unabhängige** Kontrolle. Die Kette wird dabei im Programm aus den Rohspalten neu berechnet – nicht mit
+  `audit_verify()` und nicht über die gespeicherte Spalte `hash`, die der Eigentümer stehen lassen kann,
+  während er Inhalte ändert. Ergebnis je Partner (Fingerprint, Anzahl Prüfpunkte, bestätigte, letzte
+  Laufnummer, erste Abweichung) und insgesamt:
+
+  | Ergebnis | Exit-Code | Bedeutung |
+  |---|---|---|
+  | verankert und intakt | 0 | Kette intakt und enthält genau die bei den Partnern hinterlegten Paare (Laufnummer, Hash) – ohne Profil bei mindestens einem, mit Profil bei jedem Partner des Profils (bzw. begründet entschuldigt) und mindestens `minPartners` |
+  | Manipulation erkannt | 1 | Kette gebrochen, Laufnummer fehlt (abgeschnitten) oder Hash weicht ab (umgeschrieben) → [Incident Response](incident-response.md) |
+  | nicht verankert | 3 | ohne Profil: kein Partner bestätigt; mit Profil: ein Partner des Profils nicht erreichbar/ohne Bestätigung (ohne Begründung) oder weniger als `minPartners` |
+  | Klärung nötig | 4 | kein Beleg für Manipulation, aber Hinweise, die erklärt und dokumentiert werden müssen: Prüfpunkte durch eine Wiederherstellung verloren (ohne Profil), Epoche nicht im Profil, unbekannte Epoche, Abweichung mit einem als kompromittiert abgelösten Schlüssel („nicht beweiskräftig“), Partner in der Datenbank gesperrt oder mit anderer Adresse/anderem Schlüssel als im Profil, **veralteter Anker**: der jüngste bestätigte Prüfpunkt ist älter als das Dreifache von `MESH_AUDIT_CHECKPOINT_HOURS` (Planer oder Zustellung gestört, oder der Knoten lief lange nicht – dann `audit-checkpoint` und erneut prüfen) |
+
+  Mit Profil ist außerdem **Manipulation** (Exit 1): ein Prüfpunkt, den eine im Profil nicht dokumentierte
+  Wiederherstellung „verloren“ hätte, und ein Prüfpunkt hinter dem vor einer Wiederherstellung
+  festgehaltenen Kopf (dieser Fall auch ohne Profil). Jede Prüfung nennt außerdem, bis zu welcher
+  Laufnummer die Kette von genug Partnern bestätigt ist und **wie viele Einträge danach noch nicht verankert**
+  sind („Verankert / anchored: bis seq …; … Einträge danach noch nicht verankert“) – nur diese könnte der
+  Eigentümer der Datenbank unbemerkt ändern oder löschen. Alte Einträge (vor Migration 0620) mit `|` in
+  einem Feld werden als Hinweis gezählt ([ADR 0006](adr/0006-db-rollen-audit-hashkette.md), Restrisiko).
+
+  Der Abgleich wird protokolliert (`audit.anchor.verify` mit Quelle `database` bzw. `profile` und
+  Prüfsumme des Profils, bei Abweichung `outcome = error`). Er muss mit unveränderter Software laufen
+  (z. B. die Kommandozeile aus einem geprüften Stand auf einem eigenen Rechner).
+- Eigene Schlüssel gelten für Prüfpunkte nur in ihrem **Gültigkeitszeitraum** (ab dem Wechsel, der sie
+  einführte, bis zum Ende der Übergangszeit des Wechsels, der sie ablöste; bei Kompromittierung bis zu
+  dessen Zeitpunkt). Abweichungen, die mit einem als kompromittiert abgelösten Schlüssel signiert sind,
+  gelten nicht als Beweis (Klärung nötig): Wer den Schlüssel gestohlen hat, könnte sie selbst erzeugt haben.
+- Partner verwahren die Prüfpunkte nur anhängbar und protokollieren den Empfang
+  (`audit.checkpoint.received`); ein widersprüchlicher Prüfpunkt (gleiche Epoche und Laufnummer, anderer
+  Hash) wird dort abgewiesen und als `audit.checkpoint.conflict` protokolliert – ein Hinweis, beim Partner
+  nachzufragen. Je Partner, Epoche und signierendem Schlüssel nimmt ein Knoten nur steigende Laufnummern an
+  (ein gestohlener, inzwischen ersetzter Schlüssel blockiert die Prüfpunkte des neuen nicht) und höchstens
+  `MESH_AUDIT_CHECKPOINT_MAX_PER_DAY` (Standard 48) neue Prüfpunkte in 24 Stunden; Ablehnungen stehen
+  zusammengefasst im Audit-Log (`audit.checkpoint.rejected`, `checkpoint_not_increasing` bzw.
+  `checkpoint_rate_limited`, `suppressed`). Ungeschützt bleibt nur der Teil nach dem letzten zugestellten
+  Prüfpunkt.
+
+#### Anker-Profil (unabhängige Prüfung)
+
+Partnerliste, Adressen und Schlüssel der Partner sowie die früheren eigenen Schlüssel liegen in derselben
+Datenbank wie das Audit-Log – teils sogar für `mesh_app` änderbar. Wer sie verändert, könnte Partner
+sperren (Ergebnis dann „nicht verankert“ statt „Manipulation“) oder eine Partneradresse auf einen eigenen
+Dienst mit eigenem Schlüssel umstellen und „ok“ unter dem Namen eines echten Partners erhalten. Das
+**Anker-Profil** hält diese Angaben außerhalb der Datenbank fest:
+
+1. Exportieren (Rolle Administration, Server-Umgebung):
+   `bun --env-file=.env run cli audit-anchor-profile --out anker-profil-<datum>.json [--min-partners 2]
+   [--previous <altes-profil>.json]` (Docker: `docker compose run --rm cli audit-anchor-profile --out …`
+   in ein gemountetes Verzeichnis). Inhalt: Knoten-ID, eigene Schlüssel mit Fingerprint und
+   Gültigkeitszeitraum, Epochen der Kette, vertrauenswürdige Partner mit Knoten-ID, Adresse, Schlüssel und
+   Fingerprint, Mindestzahl bestätigender Partner (Standard 1), je Wiederherstellung SHA-256 und Zeitpunkt
+   der Sicherung sowie der Kopf der Kette davor.
+   **Mit `--previous`** ist das alte Profil die Grundlage und die Datenbank nur ein Vorschlag (sie kann
+   verändert sein, teils schon mit `mesh_app`-Rechten): Die Mindestzahl bleibt die des alten Profils (ändern
+   nur ausdrücklich mit `--min-partners`), die Ausgabe listet jede Abweichung, und jede Kategorie muss
+   **ausdrücklich angenommen** werden, sonst wird nichts geschrieben („NICHT EXPORTIERT“, Exit 4,
+   protokolliert):
+
+   | Abweichung | Annahme mit |
+   |---|---|
+   | Partner entfernt (in der Datenbank gesperrt/fehlt), hinzugekommen, Schlüssel oder Adresse geändert | `--accept-partner-changes` |
+   | eigener Schlüssel neu, Gültigkeitszeitraum oder Art der Ablösung geändert | `--accept-key-changes` |
+   | Epoche neu (Wiederherstellung) oder geändert | `--accept-epochs` |
+
+   Vorgehen: erst ohne `--accept-…` aufrufen, jede angezeigte Abweichung mit den Unterlagen abgleichen
+   (Vertrauensaufnahme, Protokoll des Schlüsselwechsels bzw. der Wiederherstellung mit Prüfsumme der
+   Sicherung und Kopf davor), dann nur die geprüften Kategorien annehmen. Eine Abweichung, zu der es keine
+   Unterlage gibt, nicht annehmen, sondern [Incident Response](incident-response.md). Eigene Schlüssel und
+   Epochen, die nur das alte Profil kennt, bleiben erhalten; Änderungen nur des Anzeigenamens eines Partners
+   werden ohne Annahme übernommen.
+2. Die ausgegebenen **Fingerprints** der Partner mit den Unterlagen der Vertrauensaufnahme (telefonischer
+   Abgleich) vergleichen, jede Wiederherstellung in der Epochenliste mit ihrem Protokoll.
+3. Profil **offline neben dem Sicherungsschlüssel** verwahren (z. B. Tresor bzw. Passwortmanager der
+   Leitung, zweite Kopie bei der Revision) und die ausgegebene **SHA-256-Prüfsumme** notieren. Es enthält
+   keine Geheimnisse, aber wer es unbemerkt ändern kann, kann die Prüfung täuschen.
+4. Prüfen: `bun --env-file=.env run cli verify-audit --with-partners --profile anker-profil.json`. Die
+   Ausgabe nennt Prüfsumme und Fingerprint jedes Partners; Partner, Adressen und Schlüssel stammen
+   ausschließlich aus dem Profil. Jeder Partner des Profils muss bestätigen. Ist einer bekanntermaßen
+   nicht verfügbar (Wartung, Ausscheiden): `--excuse <knoten-id>[,…] --reason "<Begründung>"` – die
+   Begründung wird protokolliert, die Mindestzahl gilt weiter. Weichen Partnerzeilen der Datenbank vom
+   Profil ab (gesperrt, andere Adresse, anderer Schlüssel), erscheint das als Hinweis (Exit 4).
+5. **Neu exportieren** nach jedem eigenen Schlüsselwechsel (sonst gelten neue Prüfpunkte als „unbekannter
+   Schlüssel“ und der Abgleich schlägt fehl; `--accept-key-changes`), nach Schlüsselwechsel, Umzug, Aufnahme
+   oder Ausscheiden eines Partners (`--accept-partner-changes`) und nach jeder Wiederherstellung
+   (`--accept-epochs`) – jeweils mit `--previous` und erneutem Abgleich der Fingerprints.
+
+Auch der exportierte Prüfpunkt lässt sich mit Profil prüfen:
+`verify-audit --checkpoint pruefpunkt.json --profile anker-profil.json` (Exit 0 passt, 1 Abweichung,
+4 Klärung nötig, z. B. Prüfpunkt einer früheren Epoche).
+
+**Grenzen:** Wer Datenbank **und** das prüfende Programm bzw. dessen Rechner kontrolliert, kann auch das
+Ergebnis fälschen; ein Superuser des PostgreSQL-Clusters kann eingebaute Funktionen ändern oder dem
+Prüfprogramm gezielt andere Zeilen zeigen als anderen Lesern. Deshalb: Prüfung von einem sauberen Rechner
+mit geprüfter Software, Profil und Prüfpunkt-Exporte außerhalb des Knotens, Superuser-Zugang nur für die
+Datenbankadministration.
+
+**Verankerung außerhalb des Netzes:** *Prüfpunkt herunterladen* bzw.
+`bun --env-file=.env run cli audit-checkpoint --out pruefpunkt.json` erzeugt eine Datei mit Aussage,
+Signatur, öffentlichem Schlüssel und Fingerprint, z. B. monatlich an den Datenschutzbeauftragten. Später
+prüfen mit `bun --env-file=.env run cli verify-audit --checkpoint pruefpunkt.json` (Exit 0/1) oder ohne die
+Software mit OpenSSL 3:
+
+```sh
+jq -j .statement pruefpunkt.json > statement.txt
+jq -r .signature pruefpunkt.json | base64 -d > signature.bin
+( printf '302a300506032b6570032100' | xxd -r -p; jq -r .publicKey pruefpunkt.json | base64 -d ) > pub.der
+openssl pkey -pubin -inform DER -in pub.der -out pub.pem
+openssl pkeyutl -verify -pubin -inkey pub.pem -rawin -in statement.txt -sigfile signature.bin
+```
+
+Den Fingerprint der Datei mit dem außerhalb notierten Wert vergleichen; Laufnummer und Hash der Aussage
+müssen in der Kette stehen (`select hash from audit_log where seq = …`).
 
 ## Kapazität
 

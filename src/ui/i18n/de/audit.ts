@@ -30,6 +30,77 @@ export const audit = {
   verifying: 'Prüfung läuft …',
   verifyOk: 'Hash-Kette intakt: {checked} {checked|Eintrag|Einträge} geprüft.',
   verifyBroken: 'Hash-Kette unterbrochen ab Laufnummer {seq} ({checked} Einträge geprüft).',
+  verifyLocalOnly:
+    'Geprüft ist die innere Folge der Einträge. Ob jemand mit Datenbankrechten das Ende abgeschnitten oder die Kette neu berechnet hat, zeigt erst der Abgleich mit den Partnern (Externe Verankerung).',
+  anchorsTitle: 'Externe Verankerung',
+  anchorsIntro:
+    'Dieser Knoten unterschreibt regelmäßig Laufnummer und Hash des letzten Eintrags (Prüfpunkt) und hinterlegt sie bei allen vertrauenswürdigen Partnern. Der Abgleich erkennt so auch ein Abschneiden oder Umschreiben durch jemanden mit Datenbankrechten.',
+  anchorsLatest: 'Letzter Prüfpunkt: Laufnummer {seq}, {date}',
+  anchorsNone: 'Noch kein Prüfpunkt',
+  anchorsInterval: 'automatisch alle {hours} Std.',
+  anchorsManualOnly: 'nur auf Anforderung',
+  anchorsDelivery: 'Zustellung: {pending} ausstehend, {failed} fehlgeschlagen',
+  anchorsDelivered: 'an alle Partner zugestellt',
+  anchorsFailedCount: '{count} nicht zugestellt',
+  anchorsCreate: 'Prüfpunkt jetzt senden',
+  anchorsCreating: 'Wird gesendet …',
+  anchorsCreated: 'Prüfpunkt {seq} an {peers} Partner gesendet.',
+  anchorsExisting: 'Für Laufnummer {seq} besteht bereits ein Prüfpunkt.',
+  anchorsVerify: 'Mit Partnern abgleichen',
+  anchorsVerifying: 'Abgleich läuft …',
+  anchorsDownload: 'Prüfpunkt herunterladen',
+  anchorsLocalOk: 'Innere Folge der Kette intakt ({checked} Einträge).',
+  anchorsCheckpoints: 'Prüfpunkte',
+  anchorsLatestSeq: 'Letzte Laufnummer',
+  anchorsNoPartners: 'Keine vertrauenswürdigen Partner.',
+  anchorsProblemMissing:
+    'Laufnummer {seq} fehlt hier: Das Ende der Kette wurde abgeschnitten ({count} {count|Abweichung|Abweichungen}).',
+  anchorsProblemHash:
+    'Laufnummer {seq} hat hier einen anderen Hash: Die Kette wurde umgeschrieben ({count} {count|Abweichung|Abweichungen}).',
+  anchorsHeldTitle: 'Für Partner verwahrte Prüfpunkte',
+  anchorsHeldIntro: 'Prüfpunkte, die Partner bei diesem Knoten hinterlegt haben (ohne Personenbezug).',
+  anchorsHeld: '{count} {count|Prüfpunkt|Prüfpunkte}, zuletzt Laufnummer {seq}',
+  anchorResult: {
+    ok: 'Verankert und intakt: Die Kette enthält genau die bei Partnern hinterlegten Prüfpunkte.',
+    manipulated:
+      'Manipulation erkannt: Die Kette weicht von den bei Partnern hinterlegten Prüfpunkten ab oder ist unterbrochen. Vorgehen nach Incident Response.',
+    unanchored:
+      'Nicht verankert: Kein Partner konnte einen Prüfpunkt bestätigen (nicht erreichbar oder noch keiner hinterlegt).',
+    needs_review:
+      'Klärung nötig: Kein Beleg für eine Manipulation, aber Hinweise, die erklärt und dokumentiert werden müssen (siehe unten).',
+  },
+  anchorStatus: {
+    ok: 'Stimmt überein',
+    mismatch: 'Abweichung',
+    needs_review: 'Klärung nötig',
+    no_checkpoints: 'Noch kein Prüfpunkt hinterlegt',
+    unreachable: 'Nicht erreichbar',
+    error: 'Fehler',
+  },
+  anchorsNotIndependent:
+    'Dieser Abgleich läuft im Server: Partnerliste, Adressen und Schlüssel der Partner sowie frühere eigene Schlüssel stammen aus derselben Datenbank wie das Audit-Log. Er ist deshalb nicht unabhängig von ihr – wer die Datenbank verändern kann, kann auch dieses Ergebnis beeinflussen. Unabhängig prüft die Kommandozeile mit Anker-Profil: verify-audit --with-partners --profile <datei> (Betrieb › Prüfung der Audit-Kette).',
+  anchorsEpoch: 'Epoche der Kette: {epoch}',
+  anchorsFindings: 'Hinweise',
+  anchorsLostByRestore:
+    '{count} {count|Prüfpunkt|Prüfpunkte} bei {node} durch eine Wiederherstellung verloren (frühere Epoche, nach der übernommenen Laufnummer). Wiederherstellung mit ihrem Protokoll abgleichen.',
+  anchorsUnknownEpoch: '{count} {count|Prüfpunkt|Prüfpunkte} bei {node} mit unbekannter Epoche.',
+  anchorsInconclusive:
+    '{count} {count|Abweichung|Abweichungen} bei {node}, signiert mit einem als kompromittiert abgelösten Schlüssel: kein Beweis, klären.',
+  anchorsRestoreEpoch: 'Wiederherstellung am {date}: Einträge bis Laufnummer {seq} übernommen, neue Epoche.',
+  anchorsInsufficient: 'Nur {count} von mindestens {required} Partnern bestätigen die Kette.',
+  anchorsOtherFinding: 'Hinweis {code}{node}.',
+  anchorsStale:
+    'Der jüngste von Partnern bestätigte Prüfpunkt (Laufnummer {seq}, {date}) ist älter als {hours} Stunden; {count} {count|Eintrag danach ist|Einträge danach sind} nicht verankert und {count|könnte|könnten} unbemerkt geändert oder gelöscht sein. Planer und Zustellung prüfen.',
+  anchorsLegacyAmbiguous:
+    '{count} {count|alter Eintrag|alte Einträge} (Hash-Version 1) {count|enthält|enthalten} „|“ in einem Feld: Dort wäre eine Verschiebung zwischen benachbarten Feldern nicht erkennbar.',
+  anchorsLostUndocumented:
+    '{count} {count|Prüfpunkt|Prüfpunkte} bei {node} wären durch eine im Anker-Profil nicht dokumentierte Wiederherstellung verloren: gilt als Abschneiden.',
+  anchorsProblemPreRestore:
+    'Laufnummer {seq} liegt hinter dem Kopf, den die Wiederherstellung vorher festhielt: Kette vorher abgeschnitten oder Angaben erfunden ({count} {count|Abweichung|Abweichungen}).',
+  anchorsUnanchored:
+    'Verankert bis Laufnummer {seq} ({date}); {count} {count|Eintrag|Einträge} danach noch nicht verankert.',
+  anchorsUnanchoredNone:
+    'Noch kein von Partnern bestätigter Prüfpunkt; {count} {count|Eintrag|Einträge} nicht verankert.',
   exportCsv: 'CSV',
   exportJson: 'JSON',
   exportHint: 'Export für den gewählten Zeitraum:',
@@ -57,6 +128,8 @@ export const audit = {
     federation_message: 'Partnernachricht',
     import_run: 'Importlauf',
     master_key: 'Hauptschlüssel',
+    node_key: 'Knotenschlüssel',
+    audit_checkpoint: 'Prüfpunkt der Audit-Kette',
     outbox: 'Ausgangspostfach',
     outbox_message: 'Mitteilung an Partner',
     peer: 'Partnerknoten',

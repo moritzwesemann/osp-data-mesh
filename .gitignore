@@ -8,3 +8,6 @@ dist/
 coverage/
 docs/site/
 .DS_Store
+
+# Private Schlüssel des optionalen BI-Datenbankzugangs (deploy/docker-compose.bi-db.yml)
+deploy/postgres/tls/

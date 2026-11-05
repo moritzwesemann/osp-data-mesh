@@ -13,10 +13,11 @@ import {
   type RequestEnvelope,
   ResponseEnvelope,
 } from '../../../shared/contract/federation-wire.ts';
-import { ed25519Verify } from '../../core/crypto.ts';
 import type { Deps } from '../../core/deps.ts';
 import { AppError } from '../../core/errors.ts';
+import type { Signer } from '../../core/node-identity.ts';
 import { DENY_REASONS } from '../releases/engine.ts';
+import { confirmRotationByNewKey, type PeerKeys, verifyPeerSignature } from './keys.ts';
 import {
   decodeUtf8,
   FEDERATION_PATH,
@@ -62,11 +63,10 @@ export function errorCodeOf(err: unknown): string {
   return 'internal_error';
 }
 
-/** Minimale Sicht auf eine Partnerzeile */
-export interface PeerTarget {
+/** Minimale Sicht auf eine Partnerzeile (bisheriger Schlüssel: nur in der Übergangszeit eines Wechsels) */
+export interface PeerTarget extends PeerKeys {
   node_id: string;
   base_url: string;
-  public_key: string;
 }
 
 export interface SignedReply<T> {
@@ -92,17 +92,48 @@ export async function sendSigned<T = unknown>(
   peer: PeerTarget,
   type: MessageType,
   body: unknown,
-  opts: { timeoutMs?: number; schema?: z.ZodType<T> } = {},
+  opts: {
+    timeoutMs?: number;
+    schema?: z.ZodType<T>;
+    /**
+     * Signierender Schlüssel; Standard: für diesen Partner gültiger Schlüssel (im Übergang eines
+     * Schlüsselwechsels ggf. der bisherige, NodeIdentity.signerFor)
+     */
+    signer?: Signer;
+  } = {},
 ): Promise<SignedReply<T>> {
   const base = normalizeBaseUrl(peer.base_url, deps.config.MESH_FEDERATION_ALLOW_HTTP);
   if (!base.ok) throw new PeerCallError('peer_unreachable', { reason: base.code });
   const url = `${base.url}${FEDERATION_PATH}/${type}`;
 
-  const req = signRequest(deps.identity, peer.node_id, type, body, deps.now());
+  const signer = opts.signer ?? (await deps.identity.signerFor(deps.db, peer.node_id, deps.now()));
+  const req = signRequest(signer, peer.node_id, type, body, deps.now());
   try {
     return await exchange(deps, peer, url, req, opts);
   } catch (err) {
     if (err instanceof PeerCallError) err.messageId = req.envelope.id;
+    // Übergangszeit eines eigenen Schlüsselwechsels: mit dem bisherigen Schlüssel signiert und vom Partner als
+    // bad_signature abgelehnt – er kennt vermutlich schon den neuen (manuell eingetragen). Einmal mit dem
+    // neuen wiederholen; gelingt das, gilt der Partner als bestätigt (keys.ts, ADR 0013).
+    const previous = deps.identity.previousPublicKey;
+    if (
+      err instanceof PeerCallError &&
+      err.code === 'peer_rejected' &&
+      err.remoteCode === 'bad_signature' &&
+      previous !== null &&
+      signer.publicKey === previous &&
+      previous !== deps.identity.publicKey
+    ) {
+      const retry = signRequest(deps.identity, peer.node_id, type, body, deps.now());
+      let reply: SignedReply<T>;
+      try {
+        reply = await exchange(deps, peer, url, retry, opts);
+      } catch {
+        throw err;
+      }
+      await confirmRotationByNewKey(deps, peer.node_id, type);
+      return reply;
+    }
     throw err;
   }
 }
@@ -152,7 +183,8 @@ async function exchange<T>(
   if (res.headers.get(HEADER_NODE) !== peer.node_id) {
     throw new PeerCallError('signature_invalid', { reason: 'wrong_sender' });
   }
-  if (!ed25519Verify(peer.public_key, bytes, signature)) {
+  // bisheriger Schlüssel des Partners nur in der Übergangszeit nach seinem Schlüsselwechsel
+  if (!verifyPeerSignature(peer, bytes, signature, deps.now())) {
     throw new PeerCallError('signature_invalid', { reason: 'bad_signature' });
   }
 

@@ -49,4 +49,5 @@ export const myData: Messages['myData'] = {
   snippetPython: 'Python (requests and pandas)',
   snippetPowerQuery: 'Power BI and Excel (Power Query)',
   tokenPlaceholder: 'YOUR-API-TOKEN',
+  powerQueryAuthHint: 'Power Query credentials: choose “Anonymous” – the token is sent in the header',
 };

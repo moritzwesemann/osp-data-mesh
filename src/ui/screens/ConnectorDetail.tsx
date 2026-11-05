@@ -127,6 +127,16 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
       ],
       [t('connectors.dateFormat'), dateFormatLabel(i, cfg.dateFormat)],
     );
+  } else if (cfg.type === 'xlsx') {
+    technical.push(
+      [t('connectors.sheet'), cfg.sheet ? `„${cfg.sheet}“` : t('connectors.sheetFirst')],
+      [t('connectors.headerRow'), cfg.headerRow],
+      [
+        t('connectors.textDecimalSeparator'),
+        cfg.decimalSeparator === ',' ? t('connectors.decimalComma') : t('connectors.decimalPoint'),
+      ],
+      [t('connectors.textDateFormat'), dateFormatLabel(i, cfg.dateFormat)],
+    );
   } else {
     const p = cfg.pagination;
     const query = Object.entries(cfg.query);
@@ -147,12 +157,40 @@ function ConnectorView({ connector: c }: { connector: Connector }) {
           <>
             {t('connectors.authHeader')}: <span className="mono">{cfg.auth.headerName}</span>
           </>
+        ) : cfg.auth.type === 'oauth2_client_credentials' ? (
+          t('connectors.authOauth2')
         ) : cfg.auth.type === 'bearer' ? (
           t('connectors.authBearer')
         ) : (
           t('connectors.authNone')
         ),
       ],
+      ...(cfg.auth.type === 'oauth2_client_credentials'
+        ? ([
+            [
+              t('connectors.tokenUrl'),
+              <span key="token" className="mono break">
+                {cfg.auth.tokenUrl}
+              </span>,
+            ],
+            [
+              t('connectors.clientId'),
+              <span key="client" className="mono">
+                {cfg.auth.clientId}
+              </span>,
+            ],
+            [t('connectors.scope'), cfg.auth.scope || t('common.empty')],
+            ...(cfg.auth.audience
+              ? [[t('connectors.audience'), cfg.auth.audience] as [ReactNode, ReactNode]]
+              : []),
+            [
+              t('connectors.clientAuth'),
+              cfg.auth.clientAuth === 'body'
+                ? t('connectors.clientAuthBody')
+                : t('connectors.clientAuthBasic'),
+            ],
+          ] as [ReactNode, ReactNode][])
+        : []),
       [
         t('connectors.pagination'),
         p.type === 'page' ? (

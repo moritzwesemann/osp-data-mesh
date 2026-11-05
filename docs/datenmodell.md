@@ -2,7 +2,8 @@
 
 Jeder Knoten hat eine eigene PostgreSQL-Datenbank (Standardname `mesh`). Das Schema entsteht
 ausschließlich durch versionierte Migrationen in `migrations/` (aktuell `0001_core.sql`,
-`0300_bi_view_names.sql`, `0500_exchange_delivery_basis.sql`); die Rechte setzt `migrations/grants.sql`. Diese Seite beschreibt Zweck und
+`0300_bi_view_names.sql`, `0500_exchange_delivery_basis.sql`, `0700_connector_xlsx.sql` – Quellart
+`xlsx_upload`); die Rechte setzt `migrations/grants.sql`. Diese Seite beschreibt Zweck und
 wichtige Spalten jeder Tabelle, die Beziehungen und die JSON-Strukturen, die in JSONB-Spalten gespeichert
 werden. Maßgeblich im Detail sind die SQL-Dateien und der HTTP-Vertrag (`src/shared/contract/`).
 
@@ -59,7 +60,9 @@ werden. Maßgeblich im Detail sind die SQL-Dateien und der HTTP-Vertrag (`src/sh
 
 | Tabelle | Zweck | Wichtige Spalten |
 |---|---|---|
-| `node_identity` | Identität des Knotens, genau eine Zeile (`id = 1`) | `node_id` (unveränderlich), `display_name`, `base_url`, `public_key` (Ed25519, base64), `private_key_enc` und `pseudonym_secret_enc` (mit Master-Key verschlüsselt), `previous_public_key` (für künftige Schlüsselrotation), `key_created_at` |
+| `node_identity` | Identität des Knotens, genau eine Zeile (`id = 1`) | `node_id` (unveränderlich), `display_name`, `base_url`, `public_key` (Ed25519, base64), `private_key_enc` und `pseudonym_secret_enc` (mit Master-Key verschlüsselt), `previous_public_key` (bisheriger Schlüssel während der Übergangszeit eines Wechsels, sonst `null`), `key_created_at` |
+| `node_key_rotation` | Verlauf der eigenen Schlüsselwechsel ([ADR 0013](adr/0013-knotenschluessel-rotation.md)); höchstens ein laufender (`finished_at is null`, partieller eindeutiger Index) | `id`, `mode` (`routine`/`compromised`), `old_public_key`, `new_public_key`, `old_private_key_enc` (bisheriger privater Schlüssel, verschlüsselt mit AAD `node_key_rotation.old_private_key:<id>`, nur während der Übergangszeit; danach `null`), `statement` (exakt signierte Rotationsaussage, JSON), `signature_old`, `signature_new`, `rotated_at`, `grace_until`, `finished_at`, `rotated_by` |
+| `node_key_rotation_peer` | Benachrichtigung und Bestätigung je Partner | `rotation_id`, `peer_id`, `outbox_message_id`, `confirmed_at` (signierte Antwort des Partners; bis dahin signiert der Knoten für ihn mit dem bisherigen Schlüssel) |
 | `setting` | Schlüssel-Wert-Einstellungen | `key`, `value` (JSONB) |
 | `app_error` | Protokoll unerwarteter Fehler (für *System › Letzte Fehler*) | `at`, `request_id`, `method`, `path`, `status`, `code`, `message`, `user_id` |
 | `backup_run` | Sicherungsläufe | `started_at`, `finished_at`, `status` (`running`/`ok`/`failed`), `file_name`, `size_bytes`, `sha256`, `trigger` (`manual`/`schedule`/`cli`), `error_code` |
@@ -94,7 +97,7 @@ der Person erhalten haben, erhalten eine Löschmitteilung über das Ausgangspost
 |---|---|---|
 | `dataset` | Struktur einer Datenart (z. B. Sprungkraft) | `slug`, `name`, `category` (`master`, `performance`, `training`, `health`, `competition`, `other`), `special_category` (Art. 9; bei `health` erzwungen), `shareability` (`internal`/`on_request`), `version`, `fields` (JSONB, `FieldDef[]`), `key_fields` (fachlicher Schlüssel), `observed_at_field` (Messdatum), `owner_contact` |
 | `dataset_record` | ein Eintrag (Messung) einer Person | `dataset_id`, `athlete_id`, `record_key` (aus `key_fields`), `observed_at`, `data` (JSONB: Feldname → Wert), `import_run_id`; eindeutig je (Datensatz, Person, Schlüssel) → erneuter Import aktualisiert statt zu duplizieren |
-| `connector` | wiederverwendbare Quelle mit Zuordnung | `slug`, `kind` (`csv_upload`/`http_api`), `target_type` (`athletes`/`dataset`), `target_dataset_id`, `config` (JSONB, CSV- bzw. API-Einstellungen ohne Geheimnisse), `mapping` (JSONB, `FieldMapping[]`), `athlete_match` (Zuordnung über Name+Geburtsdatum oder Kennung), `secret_enc` (verschlüsseltes API-Geheimnis), `on_error` (`skip_row`/`abort`), `version`, `active` |
+| `connector` | wiederverwendbare Quelle mit Zuordnung | `slug`, `kind` (`csv_upload`/`xlsx_upload`/`http_api`), `target_type` (`athletes`/`dataset`), `target_dataset_id`, `config` (JSONB, CSV-, Excel- bzw. API-Einstellungen ohne Geheimnisse), `mapping` (JSONB, `FieldMapping[]`), `athlete_match` (Zuordnung über Name+Geburtsdatum oder Kennung), `secret_enc` (verschlüsseltes API-Geheimnis: Token, Header-Wert oder OAuth2-Client-Geheimnis), `on_error` (`skip_row`/`abort`), `version`, `active` |
 | `import_run` | ein Importlauf (Vorschau → Übernahme oder Verwerfen) | `connector_id`, `connector_version`, `status` (`previewed`, `committed`, `discarded`, `failed`), `source_name`, `source_sha256`, `source_size`, `staged` (JSONB `{ rows, subjects }`: vorgemerkte, geprüfte Zeilen und je Zeile der Personenbezug, siehe unten; nur im Status `previewed`, danach `null`), `preview` (JSONB `{ sourceColumns, rows }`, höchstens 50 Zeilen; `rows` wird bei Übernahme, Verwerfen und Ablauf geleert), Zähler (`total_rows`, `valid_rows`, `error_rows`, `warning_rows`, `inserted_rows`, `updated_rows`), `failure_code` |
 | `import_error` | Fehlerprotokoll je Zeile und Feld | `run_id`, `row_number` (1-basiert ohne Kopfzeile), `field`, `code` (übersetzbarer Fehlercode), `severity` (`error`/`warning`), `raw_value` (Rohwert, höchstens 500 Zeichen; nur solange der Lauf im Status `previewed` ist, danach `null`; bei Zuordnungsfehlern nie Name, Geburtsdatum oder Kennung), `params` |
 
@@ -121,9 +124,9 @@ Rohwerte vorsorglich vollständig geleert.
 
 | Tabelle | Zweck | Wichtige Spalten |
 |---|---|---|
-| `peer` | Partnerknoten | `node_id` (eindeutig), `display_name`, `base_url`, `public_key`, `fingerprint`, `status` (`pending`/`trusted`/`suspended`), `trusted_at`, `trusted_by`, `last_seen_at`, `last_error` |
+| `peer` | Partnerknoten | `node_id` (eindeutig), `display_name`, `base_url`, `public_key`, `fingerprint`, `status` (`pending`/`trusted`/`suspended`), `trusted_at`, `trusted_by`, `last_seen_at`, `last_error`, `previous_public_key` und `previous_key_valid_until` (bisheriger Schlüssel nach einer Rotationsmitteilung des Partners, angenommen bis zu diesem Zeitpunkt; danach geleert), `key_rotated_at` (Migration 0600) |
 | `federation_nonce` | Replay-Schutz: gesehene Nachrichten-IDs je Absender (15 min) | `node_id`, `nonce`, `seen_at` |
-| `outbox_message` | Ausgangspostfach für signierte Mitteilungen | `peer_id`, `type`, `body` (JSONB, `NoticeBody`), `status` (`pending`/`delivered`/`failed`), `attempts`, `next_attempt_at`, `last_error`, `delivered_at` |
+| `outbox_message` | Ausgangspostfach für signierte Mitteilungen | `peer_id`, `type`, `body` (JSONB, `NoticeBody`: `release_revoked`, `subjects_withdrawn`, `key_rotated`, `audit_checkpoint`), `status` (`pending`/`delivered`/`failed`), `attempts`, `next_attempt_at`, `last_error`, `delivered_at` |
 | `exchange_log` | Austauschprotokoll (gesendet und empfangen) | `direction` (`outgoing`/`incoming`), `peer_id`, `peer_node_id`, `release_id` (eigene Freigabe) bzw. `remote_release_id`, `product_ref`, `purpose`, `outcome` (`delivered`/`denied`/`error`), `deny_reason`, `row_count`, `columns`, `subjects` (übermittelte Pseudonyme, nur ausgehend), `data_category` (Datenkategorie bei Lieferung: Kategorie des Datensatzes bzw. `master` für den Athletenkern), `consent_applied` (Einwilligungspflicht bei Lieferung: `true`, wenn nur Personen mit gültiger Einwilligung für Zweck und Kategorie geliefert wurden – Einwilligungspflicht der Freigabe oder besondere Kategorie), `payload_sha256`, `request_id`, `at`. `data_category` und `consent_applied` sind nur bei gelieferten ausgehenden Datenabrufen gesetzt (Migration 0500; für ältere Lieferungen hat die Migration sie bestmöglich aus dem Stand zum Zeitpunkt der Migration nachgetragen, frühere Einstufungen sind nicht bekannt). Ein Einwilligungswiderruf wird gegen diese Angaben geprüft, nicht gegen die heutige Einstufung |
 | `received_product` | empfangene Kopie eines Partnerprodukts (je Partner, Freigabe und Zweck) | `peer_id`, `remote_release_id`, `remote_product_id`, `remote_product_slug`, `title`, `purpose`, `columns` (JSONB, `ColumnDef[]`), `product_version`, `special_category`, `release_valid_until`, `status` (`active`/`revoked`/`expired`/`deleted`), `row_count`, `payload_sha256` und `response_signature` (Herkunftsnachweis), `last_pulled_at`, `status_reason` |
 | `received_row` | Zeilen der empfangenen Kopie | `received_product_id`, `subject` (Pseudonym; vom Datenhalter freigabebezogen erzeugt, aktuell 32 Hex-Zeichen, siehe [ADR 0009](adr/0009-freigabebezogene-pseudonyme.md)), `data` (JSONB) |
@@ -132,15 +135,44 @@ Rohwerte vorsorglich vollständig geleert.
 
 | Tabelle | Zweck | Wichtige Spalten |
 |---|---|---|
-| `audit_log` | nur anhängbares Protokoll mit Hash-Kette | `seq` (lückenlose Position), `at`, `actor_type` (`user`/`peer`/`system`/`anonymous`), `actor_id`, `actor_label`, `action` (`<bereich>.<vorgang>`), `object_type`, `object_id`, `outcome` (`success`/`denied`/`error`), `details` (JSONB, keine Rohdaten), `ip`, `request_id`, `prev_hash`, `hash` |
+| `audit_log` | nur anhängbares Protokoll mit Hash-Kette | `seq` (lückenlose Position), `at`, `actor_type` (`user`/`peer`/`system`/`anonymous`), `actor_id`, `actor_label`, `action` (`<bereich>.<vorgang>`), `object_type`, `object_id`, `outcome` (`success`/`denied`/`error`), `details` (JSONB, keine Rohdaten), `ip`, `request_id`, `prev_hash`, `hash`, `digest_version` (Version der Hash-Eingabe: 1 = Einträge vor Migration 0620, 2 = alle neuen; nie fallend) |
 
 Datenbankfunktionen und Trigger:
 
 - `audit_log_chain()` (vor `INSERT`): serialisiert Einträge (Advisory-Lock), vergibt `seq`, setzt
-  `prev_hash` und berechnet `hash = SHA-256(audit_digest_input(Zeile))`.
+  `prev_hash`, `digest_version = 2` und berechnet `hash = SHA-256(audit_digest_input(Zeile))`.
+- `audit_digest_input()`: Eingabe des Hashes je `digest_version` – Version 1: Felder mit `|` verbunden
+  (`concat_ws`, mehrdeutig); Version 2 (Migration 0620): `'osp-audit-digest@2'` und je Feld `'|'` +
+  (`'~'` für `NULL`, sonst UTF-8-Byte-Länge `:` Wert; Hilfsfunktion `audit_digest_field()`), eindeutig
+  ([ADR 0006, Nachtrag](adr/0006-db-rollen-audit-hashkette.md)). Die Prüfung im Programm
+  (`modules/audit/chain.ts`) rechnet beide Byte für Byte gleich nach.
 - `audit_log_immutable()` (vor `UPDATE`/`DELETE`/`TRUNCATE`): bricht mit Fehler ab – das Log ist nur
   anhängbar.
-- `audit_verify()`: prüft die gesamte Kette; liefert `checked` und `first_broken_seq`.
+- `audit_verify()`: prüft die gesamte Kette (auch: Version fällt nie zurück); liefert `checked` und
+  `first_broken_seq`.
+
+Externe Verankerung ([ADR 0014](adr/0014-externe-verankerung-audit-kette.md), Migrationen 0600, 0610 und
+0630). `peer_audit_checkpoint` ist für `mesh_app` nur lesbar und anhängbar; `audit_checkpoint` nur lesbar,
+neue eigene Prüfpunkte nur über die Funktion `audit_checkpoint_append()` (`SECURITY DEFINER`, Eigentümer
+`mesh_owner`: nur aktuelle Epoche, nur eine vorhandene Laufnummer mit ihrem gespeicherten Hash, `created_at`
+setzt die Datenbank); der Epochenverlauf nur lesbar (`grants.sql`; geschrieben nur von Migration und
+`restore` als `mesh_owner`). In `node_key_rotation` darf `mesh_app` nur `finished_at` und
+`old_private_key_enc` ändern (Spaltenrechte); der Trigger `node_key_rotation_guard` macht `finished_at`
+endgültig (nicht vor `rotated_at`) und lässt einen verworfenen bisherigen Schlüssel nicht zurückkehren. Für
+`mesh_bi` ist nichts davon zugänglich. Keine personenbezogenen Daten.
+
+| Tabelle | Zweck | Wichtige Spalten |
+|---|---|---|
+| `audit_chain_epoch` | Epochen der eigenen Audit-Kette: die erste aus der Migration, jede Wiederherstellung beginnt eine neue (die aktuelle ist die mit der höchsten `n`; eine wiederhergestellte Datenbank bringt den Verlauf der Sicherung mit, `restore` trägt danach die neue ein) | `n`, `epoch` (UUID), `started_at`, `reason` (`initial`/`restore`), `previous_epoch`, `restored_seq` (höchste aus der Sicherung übernommene Laufnummer: Einträge bis dahin stammen aus der vorigen Epoche), `backup_sha256`, `backup_created_at`, `pre_restore_epoch`, `pre_restore_seq`, `pre_restore_hash` (Kopf der Kette der ersetzten Datenbank unmittelbar vor der Wiederherstellung, Migration 0630; `null` = leer/unbekannt) |
+| `audit_checkpoint` | eigene signierte Prüfpunkte des Kettenkopfs (an alle vertrauenswürdigen Partner gesendet) | `epoch`, `seq` (eindeutig je Epoche), `hash`, `at`, `statement` (exakt signierte Aussage `{format, nodeId, epoch, seq, hash, at}`), `signature`, `public_key`, `trigger` (`schedule`/`manual`/`cli`), `peers` |
+| `peer_audit_checkpoint` | von Partnern hinterlegte Prüfpunkte ihrer Audit-Kette | `peer_id`, `epoch` (aus der Aussage; `null` bei Aussagen von Knoten vor Migration 0610), `seq` (eindeutig je Partner und Epoche, `nulls not distinct`; ein zweiter Prüfpunkt mit anderem Hash wird abgewiesen, je Partner, Epoche und signierendem Schlüssel nur steigend, Index `peer_audit_checkpoint_key_order`), `hash`, `checkpoint_at`, `statement`, `signature`, `public_key` (Schlüssel des Partners, mit dem geprüft wurde), `message_id`, `received_at` (Index je Partner für die Grenze `MESH_AUDIT_CHECKPOINT_MAX_PER_DAY`) |
+
+Das **Anker-Profil** (`audit-anchor-profile`) ist keine Tabelle, sondern eine JSON-Datei außerhalb der
+Datenbank (`osp-data-mesh/audit-anchor-profile@1`): `nodeId`, `createdAt`, `minPartners`, `keys[]`
+(`publicKey`, `fingerprint`, `validFrom`, `validUntil`, `retired`), `epochs[]` (wie `audit_chain_epoch`:
+`epoch`, `n`, `startedAt`, `reason`, `previousEpoch`, `restoredSeq`, `backupSha256`, `backupCreatedAt`,
+`preRestoreEpoch`, `preRestoreSeq`, `preRestoreHash`; die letzten fünf fehlen in älteren Profilen),
+`partners[]` (`nodeId`, `displayName`, `baseUrl`, `publicKey`, `fingerprint`).
 
 ## JSON-Strukturen
 
@@ -173,7 +205,7 @@ Zuordnung einer Quellspalte zu einem Ziel.
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `source` | Text | Spaltenüberschrift (CSV) bzw. Punkt-Pfad im JSON-Eintrag (API), z. B. `athlete.id` |
+| `source` | Text | Spaltenüberschrift (CSV, Excel) bzw. Punkt-Pfad im JSON-Eintrag (API), z. B. `athlete.id` |
 | `target` | `athlete.<feld>`, `athlete.external_id` oder `data.<feld>` | Feld des Athletenkerns (`last_name`, `first_name`, `date_of_birth`, `sport`, `squad_status`, `sex`, `club`, `discipline`), Kennung im Quellsystem oder Feld des Ziel-Datensatzes |
 | `transform` | `none`, `trim` (Standard), `upper`, `lower` | einfache Umformung |
 | `valueMap` | Objekt Text → Text, optional | Wertübersetzung, z. B. `{"Olympiakader": "OK"}` |
@@ -220,8 +252,15 @@ Vergleiche nur zwischen gleichen Typen (Zahl/Zahl, Text/Text inkl. ISO-Datum, Bo
 
 - `ColumnDef` (`received_product.columns`, Antworten): `{ key, label, type, unit? }` – Spaltenbeschreibung,
   wie Empfänger sie sehen.
-- `connector.config`: CSV (`delimiter`, `encoding`, `decimalSeparator`, `dateFormat`) oder HTTP-API (`url`,
-  `itemsPath`, `auth` ohne Geheimnis, `pagination`, `query`, `dateFormat`, `timeoutMs`).
+- `connector.config`: CSV (`delimiter`, `encoding`, `decimalSeparator`, `dateFormat`), Excel (`type: "xlsx"`,
+  `sheet` – Name des Tabellenblatts, leer = erstes Blatt; `headerRow` – Kopfzeile ist die erste nicht leere
+  Zeile ab dieser Zeilennummer; `decimalSeparator` und `dateFormat` für Werte, die als Text gespeichert sind,
+  Standard Komma und `DD.MM.YYYY`) oder HTTP-API (`url`, `itemsPath`, `auth` ohne Geheimnis, `pagination`,
+  `query`, `dateFormat`, `timeoutMs`). `auth` ist `none`, `bearer`, `header` (`headerName`) oder
+  `oauth2_client_credentials` (`tokenUrl`, `clientId`, optional `scope`, `audience`, `clientAuth`
+  `basic`/`body`); das Geheimnis steht nie in `config`, sondern verschlüsselt in `secret_enc`.
+  OAuth2-Zugriffstoken werden nicht gespeichert (nur im Arbeitsspeicher des Knotens, siehe
+  [Sicherheit](sicherheit.md#schutz-vor-server-side-request-forgery-ssrf)).
 - `outbox_message.body`: `NoticeBody` des [Föderationsprotokolls](protokoll.md#nachrichten)
   (`release_revoked` oder `subjects_withdrawn`).
 
@@ -247,4 +286,14 @@ entfernen Einwilligungswiderruf und Löschung die Zeilen einer Person in der aus
 - Vorhandene Migrationen: `0001_core.sql` (Grundschema), `0300_bi_view_names.sql` (ersetzt die
   Eindeutigkeit von `bi_view.view_name` durch den partiellen Index `bi_view_view_name_live` über nicht
   entfernte Views), `0500_exchange_delivery_basis.sql` (Spalten `data_category` und `consent_applied` im
-  Austauschprotokoll: Einstufung, unter der eine Lieferung an einen Partner erfolgte).
+  Austauschprotokoll: Einstufung, unter der eine Lieferung an einen Partner erfolgte),
+  `0600_node_key_rotation_audit_anchor.sql` (Wechsel des Knotenschlüssels: `node_key_rotation`,
+  `node_key_rotation_peer`, Spalten `previous_public_key`, `previous_key_valid_until`, `key_rotated_at` in
+  `peer`; Prüfpunkte der Audit-Kette: `audit_checkpoint`, `peer_audit_checkpoint`),
+  `0610_audit_anchor_epochs.sql` (Epochen der Audit-Kette `audit_chain_epoch` mit erster Epoche; Spalte
+  `epoch` in `audit_checkpoint` und `peer_audit_checkpoint`, Eindeutigkeit je Epoche, Index für die
+  Ratenbegrenzung), `0620_audit_digest_v2.sql` (Spalte `audit_log.digest_version`, eindeutige Hash-Eingabe
+  Version 2 für neue Einträge, `audit_digest_field()`, `audit_verify()` mit Versionsprüfung),
+  `0630_audit_anchor_hardening.sql` (`audit_checkpoint_append()`, Kopf vor der Wiederherstellung in
+  `audit_chain_epoch` samt Nachtrag aus `backup.restore`, Trigger `node_key_rotation_guard`, Index für die
+  Reihenfolge je Schlüssel beim Partner).

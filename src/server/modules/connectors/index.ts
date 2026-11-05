@@ -1,5 +1,5 @@
 /**
- * Modul "connectors": Datenquellen (CSV-Upload, HTTP-API), Feldzuordnungen, portable Definitionen und
+ * Modul "connectors": Datenquellen (CSV- und Excel-Upload, HTTP-API), Feldzuordnungen, portable Definitionen und
  * Vorlagen, Importläufe mit Vorschau, Fehlerprotokoll und Übernahme.
  *
  * Schreibt: connector, import_run, import_error, dataset_record, athlete/athlete_identifier (Import),
@@ -17,6 +17,7 @@ import {
   type ConnectorDefinition,
   type ConnectorInput,
   CsvConfig,
+  XlsxConfig,
 } from '../../../shared/contract/connectors.ts';
 import { pgCode } from '../../core/db.ts';
 import type { Module } from '../../core/deps.ts';
@@ -26,7 +27,7 @@ import { writeTx } from '../../core/tx.ts';
 import { createDataset, datasetInputOf } from '../datasets/index.ts';
 import { validateConnectorInput } from './definition.ts';
 import { presentPatch } from './patch.ts';
-import { decodeText, parseCsv, SAMPLE_ROWS, tableFromItems } from './pipeline.ts';
+import { clipValues, decodeText, parseCsv, SAMPLE_ROWS, tableFromItems } from './pipeline.ts';
 import { connectorInputOf, loadConnectors, loadDataset, toImportRun, toTargetDataset } from './repo.ts';
 import { eraseSubjectFromRuns, startRetention, stopRetention } from './retention.ts';
 import {
@@ -34,13 +35,16 @@ import {
   discardRun,
   loadRunDetail,
   MAX_UPLOAD_BYTES,
+  oauthFor,
   type RequestContext,
   secretAad,
   sourceDenied,
   startRun,
 } from './runs.ts';
-import { checkSource, fetchApiItems, hostOf, secretTarget } from './source-http.ts';
+import { checkSource, deniedHost, fetchApiItems, hostOf, secretTarget } from './source-http.ts';
+import { tokenCacheOf } from './source-oauth.ts';
 import { type ConnectorTemplate, loadTemplates } from './templates.ts';
+import { readXlsx } from './xlsx.ts';
 
 export { secretAad };
 
@@ -194,6 +198,8 @@ export const connectorsModule: Module = {
             trx,
           );
         });
+        // zwischengespeichertes OAuth2-Token gilt nur für die bisherige Konfiguration
+        tokenCacheOf(deps).delete(params.id);
         return (await getConnector(params.id))!;
       },
 
@@ -227,6 +233,7 @@ export const connectorsModule: Module = {
             trx,
           );
         });
+        tokenCacheOf(deps).delete(params.id);
         return { ok: true as const };
       },
 
@@ -318,6 +325,51 @@ export const connectorsModule: Module = {
       'connectors.inspect': async ({ body: form, actor, ip, requestId }) => {
         let config = parseConfigField(form.get('config'));
         const file = form.get('file');
+        if (isFile(file) && config?.type === 'xlsx') {
+          if (file.size > MAX_UPLOAD_BYTES) throw new AppError('payload_too_large');
+          const xlsx = XlsxConfig.parse(config);
+          // für die Zuordnung genügen die Beispielzeilen; die Datei wird nicht weiter gelesen
+          const read = readXlsx(new Uint8Array(await file.arrayBuffer()), {
+            sheet: xlsx.sheet,
+            headerRow: xlsx.headerRow,
+            decimalSeparator: xlsx.decimalSeparator,
+            maxRows: SAMPLE_ROWS,
+          });
+          const limit = read.ok ? read.table.limit : undefined;
+          await deps.audit.record({
+            actor,
+            action: 'connector.inspect',
+            outcome: read.ok && limit !== 'too_many_columns' ? 'success' : 'error',
+            objectType: 'source',
+            details: {
+              kind: 'xlsx',
+              ...(read.ok
+                ? {
+                    columns: read.table.columns.length,
+                    rows: read.table.rows.length,
+                    sheets: read.sheets.length,
+                    truncated: limit === 'too_many_rows',
+                  }
+                : { code: read.code, ...(read.params.reason ? { reason: read.params.reason } : {}) }),
+            },
+            ip,
+            requestId,
+          });
+          if (!read.ok) {
+            throw new AppError('import_failed', {
+              reason: read.code === 'sheet_not_found' ? 'sheet_not_found' : String(read.params.reason),
+            });
+          }
+          if (limit === 'too_many_columns')
+            throw new AppError('payload_too_large', { reason: 'too_many_columns' });
+          return {
+            columns: read.table.columns,
+            sampleRows: read.table.rows.slice(0, SAMPLE_ROWS).map((r) => ({ ...clipValues(r.raw) })),
+            detectedDelimiter: null,
+            sheets: read.sheets,
+            sheet: read.sheet,
+          };
+        }
         if (isFile(file)) {
           if (config && config.type !== 'csv') throw invalid({ 'body.config.type': 'kind_mismatch' });
           if (file.size > MAX_UPLOAD_BYTES) throw new AppError('payload_too_large');
@@ -343,13 +395,15 @@ export const connectorsModule: Module = {
           });
           return {
             columns: table.columns,
-            sampleRows: table.rows.slice(0, SAMPLE_ROWS).map((r) => r.raw),
+            sampleRows: table.rows.slice(0, SAMPLE_ROWS).map((r) => clipValues(r.raw)),
             detectedDelimiter: table.delimiter,
           };
         }
         // Gespeichertes Geheimnis eines Connectors: nur an dessen gespeichertes Ziel (URL und
         // Authentifizierung aus der Anfrage werden ignoriert), sonst könnte es an andere Hosts gehen
         let secret: string | null = null;
+        /** nur mit gespeichertem Geheimnis: OAuth2-Token des Connectors wiederverwenden */
+        let cacheKey: string | null = null;
         const connectorId = form.get('connectorId');
         if (typeof connectorId === 'string' && connectorId !== '') {
           if (!UUID_RE.test(connectorId)) throw invalid({ 'body.connectorId': 'invalid' });
@@ -359,6 +413,7 @@ export const connectorsModule: Module = {
             .where('id', '=', connectorId)
             .executeTakeFirst();
           if (!stored) throw notFound();
+          cacheKey = stored.id;
           const storedConfig = stored.config as ConnectorConfigT;
           if (storedConfig.type !== 'http_api') throw invalid({ 'body.connectorId': 'kind_mismatch' });
           if (!config) config = storedConfig;
@@ -369,7 +424,10 @@ export const connectorsModule: Module = {
         }
         // einmalig mitgegebenes Geheimnis (nicht gespeichert)
         const formSecret = form.get('secret');
-        if (typeof formSecret === 'string' && formSecret !== '') secret = formSecret;
+        if (typeof formSecret === 'string' && formSecret !== '') {
+          secret = formSecret;
+          cacheKey = null;
+        }
         if (config?.type !== 'http_api') throw invalid({ 'body.file': 'required' });
         const denial = checkSource(config, secret, deps.config);
         if (denial) {
@@ -380,7 +438,7 @@ export const connectorsModule: Module = {
             objectType: 'source',
             details: {
               reason: denial,
-              host: hostOf(config.url),
+              host: deniedHost(config, denial, deps.config.MESH_SOURCE_ALLOW_INSECURE_HTTP),
               ...(typeof connectorId === 'string' && connectorId !== '' ? { connectorId } : {}),
             },
             ip,
@@ -391,6 +449,7 @@ export const connectorsModule: Module = {
         const res = await fetchApiItems(deps.fetch, config, secret, {
           maxPages: 1,
           allowInsecureHttp: deps.config.MESH_SOURCE_ALLOW_INSECURE_HTTP,
+          oauth: oauthFor(deps, config, secret, cacheKey),
         });
         await deps.audit.record({
           actor,
@@ -406,16 +465,23 @@ export const connectorsModule: Module = {
           requestId,
         });
         if (!res.ok) {
-          const reason = res.params.status
-            ? `http_${res.params.status}`
-            : String(res.params.reason ?? res.code);
+          // Grund vor HTTP-Status: beim Token-Endpunkt sagt er mehr (z. B. oauth_invalid_client)
+          const reason = res.params.reason
+            ? String(res.params.reason)
+            : res.params.status
+              ? `http_${res.params.status}`
+              : res.code;
           throw new AppError(res.code === 'source_unreachable' ? 'source_unreachable' : 'import_failed', {
             reason,
           });
         }
         const table = tableFromItems(res.items.slice(0, SAMPLE_ROWS));
         if (table.limit) throw new AppError('payload_too_large', { reason: table.limit });
-        return { columns: table.columns, sampleRows: table.rows.map((r) => r.raw), detectedDelimiter: null };
+        return {
+          columns: table.columns,
+          sampleRows: table.rows.map((r) => clipValues(r.raw)),
+          detectedDelimiter: null,
+        };
       },
 
       'imports.start': async ({ params, body, user, actor, ip, requestId }) => {

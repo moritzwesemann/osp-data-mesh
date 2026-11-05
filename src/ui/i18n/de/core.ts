@@ -204,6 +204,26 @@ export const reasons = {
   not_json: 'Die Datenquelle hat kein gültiges JSON geliefert.',
   items_not_array: 'Unter dem angegebenen Pfad liefert die Datenquelle keine Liste von Einträgen.',
   http_status: 'Die Datenquelle hat mit HTTP-Status {status} geantwortet.',
+  // Excel-Dateien (import_error.params.reason bzw. error.reason)
+  not_xlsx: 'Die Datei ist keine Excel-Arbeitsmappe (.xlsx).',
+  xls_or_encrypted:
+    'Die Datei ist eine alte Excel-Datei (.xls) oder kennwortgeschützt; bitte ohne Kennwort als .xlsx speichern.',
+  xlsx_corrupt: 'Die Excel-Datei ist beschädigt oder unvollständig.',
+  xlsx_too_large:
+    'Die Excel-Datei ist entpackt zu groß (höchstens 100 MB) oder enthält einen übergroßen Zellwert.',
+  xlsx_unsupported:
+    'Die Excel-Datei nutzt eine nicht unterstützte Funktion (z. B. ZIP64, Verschlüsselung, Binärformat .xlsb).',
+  // OAuth2 (Client Credentials) bei API-Quellen
+  token_url_not_allowed:
+    'Der Token-Endpunkt (OAuth2) ist für Abrufe nicht freigegeben (MESH_SOURCE_ALLOWED_HOSTS).',
+  token_network: 'Die Verbindung zum Token-Endpunkt (OAuth2) ist fehlgeschlagen.',
+  token_timeout: 'Der Token-Endpunkt (OAuth2) hat nicht rechtzeitig geantwortet.',
+  token_rejected: 'Der Token-Endpunkt (OAuth2) hat die Anmeldung abgelehnt.',
+  token_invalid: 'Der Token-Endpunkt (OAuth2) hat kein gültiges Zugriffstoken geliefert.',
+  oauth_invalid_client: 'Client-Kennung oder Client-Geheimnis ist falsch (OAuth2).',
+  oauth_invalid_scope: 'Der angeforderte Scope ist ungültig oder nicht erlaubt (OAuth2).',
+  oauth_unauthorized_client: 'Der Client darf dieses Anmeldeverfahren nicht verwenden (OAuth2).',
+  secret_missing: 'Für die Quelle ist kein Zugangsgeheimnis (bei OAuth2: Client-Geheimnis) hinterlegt.',
   // Datenprodukte und Freigaben
   product_retired: 'Das Datenprodukt ist stillgelegt.',
   dataset_missing: 'Der zugrunde liegende Datensatz existiert nicht mehr.',
@@ -242,6 +262,15 @@ export const reasons = {
   pg_dump_failed: 'pg_dump ist mit einem Fehler beendet worden.',
   backup_write_failed: 'Die Sicherungsdatei konnte nicht geschrieben werden.',
   backup_failed: 'Die Sicherung ist fehlgeschlagen.',
+  // Knotenschlüssel und Verankerung der Audit-Kette (ADR 0013, 0014)
+  key_rotation_in_progress:
+    'Es läuft bereits ein Schlüsselwechsel; ein weiterer ist erst nach dem Ende der Übergangszeit möglich (bei Verdacht auf Kompromittierung jederzeit).',
+  key_rotation_expired:
+    'Die Übergangszeit des Schlüsselwechsels ist abgelaufen; der Partner muss die neue Knotenkarte aufnehmen und den Fingerprint abgleichen.',
+  audit_log_empty: 'Das Audit-Log enthält noch keine Einträge.',
+  checkpoint_signature_invalid: 'Der Partner hat Prüfpunkte mit ungültiger Signatur geliefert.',
+  checkpoint_slot_occupied:
+    'Der Prüfpunkt konnte nicht gespeichert werden: Der Platz ist wiederholt durch ungültige Einträge belegt (protokolliert). Datenbankzugang prüfen (Incident Response).',
 };
 
 /** Ablehnungsgründe der Freigabeprüfung (releases/engine.ts DENY_REASONS). */
@@ -304,6 +333,10 @@ export const importErrors = {
   invalid_response: 'Die Antwort der Datenquelle ist ungültig.',
   too_many_columns: 'Die Quelle hat mehr Spalten als zulässig.',
   too_many_rows: 'Die Quelle hat mehr Zeilen als zulässig.',
+  invalid_file: 'Die Datei kann nicht gelesen werden.',
+  sheet_not_found: 'Das Tabellenblatt wurde in der Datei nicht gefunden.',
+  header_row_detected:
+    'Titelzeilen über der Tabelle wurden übersprungen; die Kopfzeile wurde automatisch erkannt.',
 };
 
 /** Zusatzangaben im Fehlerprotokoll eines Imports (ImportError.params): Bezeichnungen und Werte. */
@@ -324,6 +357,8 @@ export const importParams = {
   firstRow: 'Erstmals in Zeile',
   encoding: 'Gelesen als',
   pages: 'Seiten',
+  sheet: 'Tabellenblatt',
+  headerRow: 'Kopfzeile in Zeile',
   status: 'HTTP-Status',
   phase: 'Bemerkt',
   phases: {
@@ -338,6 +373,19 @@ export const importParams = {
     too_large: 'Antwort zu groß',
     not_json: 'kein gültiges JSON',
     items_not_array: 'keine Liste unter dem Pfad',
+    not_xlsx: 'keine Excel-Datei (.xlsx)',
+    xls_or_encrypted: 'alte .xls-Datei oder kennwortgeschützt',
+    xlsx_corrupt: 'Datei beschädigt',
+    xlsx_too_large: 'entpackt zu groß',
+    xlsx_unsupported: 'nicht unterstützte Dateifunktion',
+    token_network: 'Verbindung zum Token-Endpunkt fehlgeschlagen',
+    token_timeout: 'Zeitüberschreitung beim Token-Endpunkt',
+    token_rejected: 'Anmeldung am Token-Endpunkt abgelehnt',
+    token_invalid: 'ungültige Antwort des Token-Endpunkts',
+    oauth_invalid_client: 'Client-Kennung oder Client-Geheimnis falsch',
+    oauth_invalid_scope: 'Scope ungültig oder nicht erlaubt',
+    oauth_unauthorized_client: 'Client für dieses Verfahren nicht zugelassen',
+    secret_missing: 'kein Zugangsgeheimnis hinterlegt',
   },
 };
 

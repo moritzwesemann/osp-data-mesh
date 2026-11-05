@@ -62,7 +62,7 @@ Abnahmekriterien sind im Entwicklungsumfeld erfüllt. Einzelnachweise je Anforde
 | Betrieb | Docker Compose mit Caddy (HTTPS), Installations- und Betriebsdoku, Sicherung/Wiederherstellung |
 | Übergabe | Quellcode, Migrationen, API-Doku, Tests, Architekturentscheidungen, SBOM nach BSI TR-03183-2, deutsche HTML-Doku |
 
-**Geprüft wurde:** 843 automatisierte Tests, 10 Abläufe im Browser, eine Demo mit drei Knoten
+**Geprüft wurde:** 847 automatisierte Tests, 12 Abläufe im Browser, eine Demo mit drei Knoten
 (57 Prüfungen), eine Neuinstallation nur nach Doku – nativ und mit Docker – und ein Prüfskript für die
 Docker-Installation (TLS, Netztrennung, BI-Zugang, Superset). Dazu mehrere unabhängige Sicherheitsreviews, alle Befunde behoben.
 
@@ -148,7 +148,7 @@ Ed25519-signed messages and pseudonyms; there is no central data store. Imports 
 partner nodes; BI via Apache Superset or a read-only database role and REST (CSV/JSON/XML).
 
 Status: 38 of 52 tender requirements implemented and tested, 13 implemented without a dedicated test,
-1 partial; 843 automated tests, 10 browser flows, a three-node demo and a verified Docker deployment. Open:
+1 partial; 847 automated tests, 12 browser flows, a three-node demo and a verified Docker deployment. Open:
 pilot with real centres, vendor-specific connectors, penetration test, legal review. Independent project,
 not commissioned by the federation; all people in the sample data are fictitious; built with AI
 assistance. Quick start: `bun install && bun run build && bun run demo -- --keep-running`. Documentation is

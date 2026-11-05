@@ -7,7 +7,7 @@ Status: **getestet** = umgesetzt und durch automatisierte Tests bzw. die Demo (`
 **umgesetzt** = umgesetzt und dokumentiert, ohne eigenen automatisierten Test · **nicht verifiziert** =
 umgesetzt, aber in der Entwicklungsumgebung nicht lauffähig prüfbar · **teilweise** · **offen**.
 
-Stand der Prüfung: `bun test` (Unit und Integration) bestanden; `bun run test:e2e` 10 Browser-Abläufe
+Stand der Prüfung: `bun test` (Unit und Integration) bestanden; `bun run test:e2e` 12 Browser-Abläufe
 bestanden; `bun run demo` 57 Prüfungen bestanden (3 Knoten, 3 PostgreSQL-Cluster, echtes HTTP);
 Neuinstallation nach Dokumentation nativ und mit Docker durchgeführt; `deploy/verify-deployment.sh`
 (TLS, Netztrennung, BI-Zugang, Superset) bestanden. Genaue Zahlen im Abschnitt „Interner
@@ -37,7 +37,7 @@ Vorabnahme-Durchlauf“ von [Abnahme](abnahme.md).
 | D7 | Datenprodukte als Views | `products`, `bi` | `products.test.ts`, `bi.test.ts` | getestet |
 | D8 | CSV-, JSON-, XML-Exporte | `access.data` | `products.test.ts`, Demo | getestet |
 | D9 | API-Endpunkte | REST `/api/v1`, API-Tokens, OpenAPI | `products.test.ts`, `contract.test.ts` | getestet |
-| D10 | Mobil-responsives Frontend für Datenausschnitte | `src/ui` | `bun run test:e2e` (10 Abläufe im Browser gegen echte Knoten, Desktop und 390 px; 5 Läufe in Folge bestanden), [Oberfläche](oberflaeche.md), `ui-i18n.test.ts` | getestet |
+| D10 | Mobil-responsives Frontend für Datenausschnitte | `src/ui` | `bun run test:e2e` (12 Abläufe im Browser gegen echte Knoten, Desktop, 1000 px und 390 px; 5 Läufe in Folge bestanden), [Oberfläche](oberflaeche.md), `ui-i18n.test.ts` | getestet |
 
 ## Austausch und Metadaten
 

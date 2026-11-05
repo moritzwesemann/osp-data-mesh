@@ -50,8 +50,14 @@ System). Jede Person sieht nur die Punkte ihrer Rollen.
 *Athleten* (Rolle `data_steward`) listet den Athletenkern mit Suche und Filtern nach Sportart und
 Kaderstatus. Jeder Lesezugriff auf Personendaten wird protokolliert.
 
-Im Personendetail stehen Stammdaten und die **Einwilligungen** (Zweck, Datenkategorie, Gültigkeit,
-Nachweis); widerrufene Einwilligungen und die Kennungen in Quellsystemen sind aufklappbar. *Widerruf erfassen* beendet eine Einwilligung sofort: Die Person
+Im Personendetail stehen Stammdaten, **alle Daten der Person** je Datensatz und die **Einwilligungen**
+(Zweck, Datenkategorie, Gültigkeit, Nachweis); widerrufene Einwilligungen und die Kennungen in
+Quellsystemen sind aufklappbar. *Daten im Überblick* nennt je Datensatz die Zahl der Einträge und springt
+zum Abschnitt mit allen Einträgen der Person (neueste zuerst), z. B. allen Leistungsdiagnostiken. Ab zwei
+datierten Messungen zeigt ein **Verlauf** die Entwicklung einer Messgröße (wählbar, z. B. VO2max oder
+Sprunghöhe); gibt es ein Auswahlfeld wie Testart oder Testprotokoll, vergleicht der Verlauf nur
+Gleichartiges (z. B. nur CMJ-Sprünge). Jeder Abruf wird protokolliert (`dataset.read` mit Personenbezug);
+Gesundheitsdaten sind als besondere Kategorie gekennzeichnet. *Widerruf erfassen* beendet eine Einwilligung sofort: Die Person
 entfällt aus allen Freigaben mit Einwilligungsprüfung, BI-Tabellen werden bereinigt, und Partner, die
 Daten der Person erhalten haben, bekommen eine Löschmitteilung
 ([Widerruf und Weitergabe](widerruf-und-weitergabe.md)). *Person endgültig löschen* setzt das Recht auf

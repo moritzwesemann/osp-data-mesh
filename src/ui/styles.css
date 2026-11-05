@@ -1776,3 +1776,89 @@ pre.json {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* --- Verlauf (TrendChart) --- */
+.trend-chart {
+  position: relative;
+  width: 100%;
+}
+.trend-chart svg {
+  display: block;
+  overflow: visible;
+}
+.trend-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.trend-axis {
+  fill: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.trend-line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.trend-dot {
+  fill: var(--primary);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.trend-crosshair {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.trend-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.trend-tip {
+  position: absolute;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+.trend-tip span {
+  color: var(--text-2);
+  font-size: 0.75rem;
+}
+/* Auswahlfelder neben Überschriften (z. B. Verlauf): lange Feldnamen nicht über den Rand */
+.inline-select {
+  max-width: 100%;
+  min-width: 0;
+}
+.inline-select select.input-sm {
+  min-width: 0;
+  max-width: min(16rem, 100%);
+  text-overflow: ellipsis;
+}
+.trend-controls {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .trend-controls,
+  .trend-controls .inline-select {
+    width: 100%;
+  }
+  .trend-controls .inline-select select.input-sm {
+    flex: 1;
+    width: 100%;
+    max-width: none;
+  }
+}

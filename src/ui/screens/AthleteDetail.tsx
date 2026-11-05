@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { Consent } from '../../shared/contract/index.ts';
+import { AthleteDatasetSection } from '../components/athletes/AthleteData.tsx';
 import { ConsentDialog } from '../components/athletes/ConsentDialog.tsx';
 import { ConfirmDialog } from '../components/Dialog.tsx';
 import { DateTime, DescriptionList, Details } from '../components/Misc.tsx';
@@ -68,11 +69,18 @@ function AthleteDetailBody({ athlete: a }: { athlete: Detail }) {
     { key: 'value', header: t('athletes.identifierValue'), className: 'mono break', render: (x) => x.value },
   ];
 
+  const canReadRecords = session.can('datasets.records') && session.can('datasets.get');
+  // Übersicht: Sprung zum Abschnitt mit allen Einträgen der Person
   const recordColumns: Column<RecordCount>[] = [
     {
       key: 'dataset',
       header: t('athletes.dataset'),
-      render: (r) => <Link to={`/datensaetze/${r.datasetId}`}>{r.datasetName}</Link>,
+      render: (r) =>
+        canReadRecords ? (
+          <a href={`#daten-${r.datasetId}`}>{r.datasetName}</a>
+        ) : (
+          <Link to={`/datensaetze/${r.datasetId}`}>{r.datasetName}</Link>
+        ),
     },
     { key: 'count', header: t('athletes.recordCount'), className: 'num', render: (r) => r.count },
   ];
@@ -184,15 +192,30 @@ function AthleteDetailBody({ athlete: a }: { athlete: Detail }) {
           />
         </Section>
         <Section title={t('athletes.records')}>
-          <Table
-            columns={recordColumns}
-            rows={a.recordCounts}
-            rowKey={(r) => r.datasetId}
-            caption={t('athletes.records')}
-            empty={t('athletes.recordsEmpty')}
-          />
+          {a.recordCounts.length === 0 ? (
+            <p className="muted">{t('athletes.recordsEmpty')}</p>
+          ) : (
+            <Table
+              columns={recordColumns}
+              rows={a.recordCounts}
+              rowKey={(r) => r.datasetId}
+              caption={t('athletes.records')}
+            />
+          )}
         </Section>
       </div>
+
+      {/* Alle Daten der Person je Datensatz: Verlauf und Einträge (Lesezugriff wird protokolliert) */}
+      {canReadRecords &&
+        a.recordCounts.map((r) => (
+          <AthleteDatasetSection
+            key={r.datasetId}
+            athleteId={a.id}
+            datasetId={r.datasetId}
+            datasetName={r.datasetName}
+            count={r.count}
+          />
+        ))}
 
       <Section
         title={t('athletes.consents.title')}

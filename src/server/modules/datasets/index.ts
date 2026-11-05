@@ -146,10 +146,12 @@ export const datasetsModule: Module = {
           .where('id', '=', params.id)
           .executeTakeFirst();
         if (!dataset) throw notFound();
+        const athleteId = query.athleteId;
         const { total } = await deps.db
           .selectFrom('dataset_record')
           .select((eb) => eb.fn.countAll<number>().as('total'))
           .where('dataset_id', '=', params.id)
+          .$if(athleteId !== undefined, (qb) => qb.where('athlete_id', '=', athleteId as string))
           .executeTakeFirstOrThrow();
         const rows = await deps.db
           .selectFrom('dataset_record as r')
@@ -165,6 +167,7 @@ export const datasetsModule: Module = {
             'a.first_name',
           ])
           .where('r.dataset_id', '=', params.id)
+          .$if(athleteId !== undefined, (qb) => qb.where('r.athlete_id', '=', athleteId as string))
           .orderBy(sql`r.observed_at desc nulls last`)
           .orderBy('a.last_name')
           .orderBy('a.first_name')
@@ -177,7 +180,12 @@ export const datasetsModule: Module = {
           action: 'dataset.read',
           objectType: 'dataset',
           objectId: params.id,
-          details: { count: rows.length, total: Number(total), page: query.page },
+          details: {
+            count: rows.length,
+            total: Number(total),
+            page: query.page,
+            ...(athleteId ? { athleteId } : {}),
+          },
           ip,
           requestId,
         });

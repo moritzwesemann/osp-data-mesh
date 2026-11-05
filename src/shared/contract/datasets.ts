@@ -118,10 +118,13 @@ export const datasetRoutes = {
     method: 'GET',
     path: '/api/v1/datasets/:id/records',
     auth: ['data_steward'],
-    summary: 'Einträge eines Datensatzes (Zugriff wird protokolliert)',
+    summary: 'Einträge eines Datensatzes, optional nur einer Person (Zugriff wird protokolliert)',
     tag: 'Datensätze',
     params: IdParam,
-    query: Pagination,
+    query: Pagination.extend({
+      /** nur Einträge dieser Person (Personenansicht „alle Daten einer Athletin/eines Athleten“) */
+      athleteId: Uuid.optional(),
+    }),
     response: paginated(DatasetRecord),
   }),
 } as const;

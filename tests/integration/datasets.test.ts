@@ -231,4 +231,56 @@ describe('Datensätze', () => {
       403,
     );
   });
+
+  test('Einträge einer Person (Personenansicht): nur diese Person, Filter im Audit-Log', async () => {
+    const other = await node.deps.db
+      .insertInto('athlete')
+      .values({
+        last_name: 'Andere',
+        first_name: 'Anna',
+        date_of_birth: '2001-03-03',
+        sport: 'Ringen',
+        squad_status: 'NK1',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await node.deps.db
+      .insertInto('dataset_record')
+      .values({
+        dataset_id: ds.id,
+        athlete_id: other.id,
+        record_key: 'k:["2026-03-01","Kniebeuge"]',
+        observed_at: new Date('2026-03-01T00:00:00Z'),
+        data: JSON.stringify({ test_date: '2026-03-01', exercise: 'Kniebeuge', one_rm: 95 }),
+      })
+      .execute();
+    type Page = { items: { athleteId: string; athleteName: string }[]; total: number };
+
+    const all = await node.request<Page>('GET', `/api/v1/datasets/${ds.id}/records`, { as: steward });
+    expect(all.json.total).toBe(2);
+
+    const one = await node.request<Page>('GET', `/api/v1/datasets/${ds.id}/records?athleteId=${other.id}`, {
+      as: steward,
+    });
+    expect(one.status).toBe(200);
+    expect(one.json.total).toBe(1);
+    expect(one.json.items.map((r) => [r.athleteId, r.athleteName])).toEqual([[other.id, 'Andere, Anna']]);
+    const [audit] = await auditEntries(node, 'dataset.read');
+    expect(audit!.details).toEqual({ count: 1, total: 1, page: 1, athleteId: other.id });
+
+    const none = await node.request<Page>(
+      'GET',
+      `/api/v1/datasets/${ds.id}/records?athleteId=${crypto.randomUUID()}`,
+      { as: steward },
+    );
+    expect(none.json).toMatchObject({ total: 0, items: [] });
+    expect(
+      (await node.request('GET', `/api/v1/datasets/${ds.id}/records?athleteId=kein-uuid`, { as: steward }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await node.request('GET', `/api/v1/datasets/${ds.id}/records?athleteId=${other.id}`, { as: analyst }))
+        .status,
+    ).toBe(403);
+  });
 });

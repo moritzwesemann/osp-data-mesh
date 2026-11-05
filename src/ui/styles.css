@@ -534,8 +534,11 @@ code,
 
 /* ------------------------------------------------------------------ Page */
 
+/* Inhaltsspalte mittig auf dem Blatt; alle Seiten gleich breit, damit beim Wechsel nichts springt */
 .page {
+  width: 100%;
   max-width: 1200px;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1696,14 +1699,70 @@ input[type="file"].input {
 
 /* Startseite: Gruß mit Suche, Aufgaben wie ein Posteingang, Kacheln */
 .home {
-  max-width: 980px;
   gap: 28px;
+  container: home / inline-size;
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px 48px;
+  align-items: start;
+}
+.home-main,
+.home-side {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+/* breit: Kennzahlen und Knotenangaben in einer schmalen Spalte rechts, so breit wie die Suche */
+@container home (min-width: 940px) {
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .home .page-actions {
+    flex-basis: 320px;
+  }
+  /* Kennzahlen als ruhige Liste: Bezeichnung links, Wert rechts */
+  .home-side .stat-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-top: 1px solid var(--border);
+  }
+  .home-side .stat {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 4px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: none;
+  }
+  .home-side .stat.link-card:hover {
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+  .home-side .stat-label {
+    font-size: 0.9375rem;
+    color: var(--text);
+  }
+  .home-side .stat-value {
+    font-size: 1rem;
+  }
+  .home-side .stat-text {
+    font-size: 0.875rem;
+    color: var(--text-2);
+    text-align: right;
+  }
 }
 .home .page-header-row {
   align-items: center;
 }
 .home .page-actions {
-  flex: 0 1 280px;
+  flex: 0 1 300px;
 }
 .home-search {
   display: block;

@@ -24,7 +24,8 @@ function greetingKey(): MessageKey {
 
 /**
  * / – Startseite: Gruß und Suche, offene Aufgaben wie ein Posteingang, zuletzt Geöffnetes und für mich
- * freigegebene Daten als Kacheln, Kennzahlen. Knotenkennung und Fingerprint aufklappbar am Ende.
+ * freigegebene Daten als Kacheln; Kennzahlen und Knotenangaben (aufklappbar) in einer schmalen Spalte
+ * rechts bzw. auf schmalen Bildschirmen darunter.
  */
 export function Overview() {
   const { t } = useI18n();
@@ -39,27 +40,33 @@ export function Overview() {
         description={`${s.node.displayName} · ${roles}`}
         actions={s.can('catalog.local') ? <HomeSearch /> : undefined}
       />
-      <Todos />
-      <Recent />
-      {s.can('access.list') && <MyDataSummary />}
-      <AtAGlance />
-      <Details summary={t('overview.thisNode')}>
-        <DescriptionList
-          items={[
-            [t('common.name'), s.node.displayName],
-            [
-              t('overview.nodeId'),
-              <span key="id" className="mono">
-                {s.node.nodeId}
-              </span>,
-            ],
-          ]}
-        />
-        <div className="stack-sm">
-          <span className="field-label">{t('common.fingerprint')}</span>
-          <FingerprintBox value={s.node.fingerprint} />
+      <div className="home-grid">
+        <div className="home-main">
+          <Todos />
+          <Recent />
+          {s.can('access.list') && <MyDataSummary />}
         </div>
-      </Details>
+        <div className="home-side">
+          <AtAGlance />
+          <Details summary={t('overview.thisNode')}>
+            <DescriptionList
+              items={[
+                [t('common.name'), s.node.displayName],
+                [
+                  t('overview.nodeId'),
+                  <span key="id" className="mono">
+                    {s.node.nodeId}
+                  </span>,
+                ],
+              ]}
+            />
+            <div className="stack-sm">
+              <span className="field-label">{t('common.fingerprint')}</span>
+              <FingerprintBox value={s.node.fingerprint} />
+            </div>
+          </Details>
+        </div>
+      </div>
     </div>
   );
 }

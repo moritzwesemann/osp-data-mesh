@@ -43,6 +43,11 @@ Freigaben, empfangene Daten, Partner, letzte Sicherung, Audit-Log); jede Kachel 
 *Dieser Knoten* (aufklappbar) zeigt Name, Knoten-ID und Fingerprint; die eigenen Rollen mit Beschreibung
 stehen unter *Konto*.
 
+Auf breiten Bildschirmen stehen Kennzahlen und *Dieser Knoten* in einer schmalen Spalte rechts, auf
+schmalen darunter. Alle Seiten stehen mittig auf dem Blatt und sind gleich breit.
+
+![Startseite mit aufgeklappter Seitenleiste](screenshots/20-seitenleiste-aufgeklappt.png)
+
 Links steht eine schmale **Symbolleiste** auf grauem Grund; der Inhalt liegt auf einem hellen Blatt.
 Fährt man mit der Maus über ein Symbol (oder springt mit der Tabulatortaste darauf), erscheint sein Name.
 Ein Klick auf das Logo oben klappt die Leiste auf und zeigt alle Namen in drei Gruppen: *Daten finden*

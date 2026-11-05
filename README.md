@@ -31,11 +31,13 @@ und nur das teilt, was er ausdrücklich freigibt.**
   <img src="assets/ueberblick.svg" width="760" alt="Drei Olympiastützpunkte mit je eigener Web-App, eigener Datenbank und optionalen Dashboards tauschen direkt nur freigegebene Daten aus – signiert und beidseitig protokolliert, ohne zentralen Server">
 </p>
 
-| Katalog: Daten finden – bei uns und bei Partnern | Freigabe: genau festlegen, wer was wofür bekommt |
+| Startseite: Aufgaben, zuletzt Geöffnetes, Kennzahlen | Seitenleiste: Symbole, mit einem Klick aufgeklappt |
 |---|---|
+| ![Startseite](docs/screenshots/02-uebersicht.png) | ![Aufgeklappte Seitenleiste](docs/screenshots/20-seitenleiste-aufgeklappt.png) |
+| **Katalog: Daten finden – bei uns und bei Partnern** | **Freigabe: genau festlegen, wer was wofür bekommt** |
 | ![Katalog](docs/screenshots/10-katalog-discovery.png) | ![Freigabe](docs/screenshots/06-freigabe-erstellen.png) |
-| **Startseite** | **Dashboard (Apache Superset)** |
-| ![Startseite](docs/screenshots/02-uebersicht.png) | ![Dashboard](docs/screenshots/17-superset-kader.png) |
+| **Import: Vorschau mit Prüfung, bevor etwas gespeichert wird** | **Dashboard (Apache Superset)** |
+| ![Import-Vorschau](docs/screenshots/04-quelle-import-vorschau.png) | ![Dashboard](docs/screenshots/17-superset-kader.png) |
 
 Mehr Bilder und ein Rundgang: [docs/oberflaeche.md](docs/oberflaeche.md).
 

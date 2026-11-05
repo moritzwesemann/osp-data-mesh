@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 440" width="800" height="440" role="img" aria-labelledby="t d">
+  <title id="t">OSP-Data-Mesh im Überblick</title>
+  <desc id="d">Drei Olympiastützpunkte (Nord, Mitte, Süd) betreiben je einen eigenen Knoten mit Web-App, eigener Datenbank und optionalen Dashboards. Sie tauschen direkt untereinander nur ausdrücklich freigegebene Daten aus, signiert und auf beiden Seiten protokolliert. Es gibt keinen zentralen Server.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; fill: #15191e; }
+      .title { font-size: 17px; font-weight: 700; }
+      .row { font-size: 13px; }
+      .muted { font-size: 12px; fill: #5f6873; }
+      .label { font-size: 12.5px; font-weight: 600; fill: #0b6676; }
+      .node { fill: #ffffff; stroke: #aab2bc; stroke-width: 1.5; }
+      .chip { fill: #f0f2f5; }
+      .chip-db { fill: #e2f1f3; }
+      .link { stroke: #0b6676; stroke-width: 2.5; stroke-dasharray: 7 6; fill: none; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0b6676"/>
+    </marker>
+  </defs>
+
+  <!-- eigener Hintergrund: lesbar in hellem und dunklem GitHub-Design -->
+  <rect x="1" y="1" width="798" height="438" rx="16" fill="#f5f6f8" stroke="#d7dce2"/>
+
+  <!-- Verbindungen -->
+  <path class="link" d="M268 105 L532 105" marker-start="url(#a)" marker-end="url(#a)"/>
+  <path class="link" d="M175 212 L292 240" marker-start="url(#a)" marker-end="url(#a)"/>
+  <path class="link" d="M625 212 L508 240" marker-start="url(#a)" marker-end="url(#a)"/>
+  <rect x="300" y="72" width="200" height="22" rx="11" fill="#f5f6f8"/>
+  <text class="label" x="400" y="88" text-anchor="middle">nur Freigegebenes</text>
+  <rect x="290" y="114" width="220" height="22" rx="11" fill="#f5f6f8"/>
+  <text class="label" x="400" y="130" text-anchor="middle">signiert · beidseitig protokolliert</text>
+
+  <!-- kein zentraler Server -->
+  <circle cx="400" cy="200" r="42" fill="none" stroke="#aab2bc" stroke-width="1.5" stroke-dasharray="3 5"/>
+  <text class="muted" x="400" y="196" text-anchor="middle">kein zentraler</text>
+  <text class="muted" x="400" y="212" text-anchor="middle">Server</text>
+
+  <!-- OSP Nord -->
+  <g>
+    <rect class="node" x="30" y="30" width="238" height="175" rx="12"/>
+    <text class="title" x="48" y="58">OSP Nord</text>
+    <rect class="chip" x="48" y="72" width="202" height="28" rx="6"/><text class="row" x="60" y="91">Web-App</text>
+    <rect class="chip-db" x="48" y="106" width="202" height="28" rx="6"/><text class="row" x="60" y="125">eigene Datenbank</text>
+    <rect class="chip" x="48" y="140" width="202" height="28" rx="6"/><text class="row" x="60" y="159">eigene Dashboards (optional)</text>
+    <text class="muted" x="48" y="190">Quellen: CSV, Excel, Messsystem-API</text>
+  </g>
+  <!-- OSP Mitte -->
+  <g>
+    <rect class="node" x="532" y="30" width="238" height="175" rx="12"/>
+    <text class="title" x="550" y="58">OSP Mitte</text>
+    <rect class="chip" x="550" y="72" width="202" height="28" rx="6"/><text class="row" x="562" y="91">Web-App</text>
+    <rect class="chip-db" x="550" y="106" width="202" height="28" rx="6"/><text class="row" x="562" y="125">eigene Datenbank</text>
+    <rect class="chip" x="550" y="140" width="202" height="28" rx="6"/><text class="row" x="562" y="159">eigene Dashboards (optional)</text>
+    <text class="muted" x="550" y="190">Quellen: CSV, Excel</text>
+  </g>
+  <!-- OSP Süd -->
+  <g>
+    <rect class="node" x="281" y="245" width="238" height="175" rx="12"/>
+    <text class="title" x="299" y="273">OSP Süd</text>
+    <rect class="chip" x="299" y="287" width="202" height="28" rx="6"/><text class="row" x="311" y="306">Web-App</text>
+    <rect class="chip-db" x="299" y="321" width="202" height="28" rx="6"/><text class="row" x="311" y="340">eigene Datenbank</text>
+    <rect class="chip" x="299" y="355" width="202" height="28" rx="6"/><text class="row" x="311" y="374">eigene Dashboards (optional)</text>
+    <text class="muted" x="299" y="405">Quellen: CSV</text>
+  </g>
+</svg>

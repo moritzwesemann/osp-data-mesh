@@ -27,21 +27,9 @@ und nur das teilt, was er ausdrücklich freigibt.**
 - **Auswertung** mit Apache Superset (drei fertige Dashboards) oder mit Excel, Power BI, Python & Co.
   über eine nur lesende Datenbankrolle bzw. eine REST-Schnittstelle (CSV, JSON, XML).
 
-```mermaid
-flowchart LR
-  subgraph nord[OSP Nord]
-    A1[Web-App] --- B1[(eigene Datenbank)]
-  end
-  subgraph mitte[OSP Mitte]
-    A2[Web-App] --- B2[(eigene Datenbank)]
-  end
-  subgraph sued[OSP Süd]
-    A3[Web-App] --- B3[(eigene Datenbank)]
-  end
-  nord <-- "nur Freigegebenes, signiert, beidseitig protokolliert" --> mitte
-  nord <--> sued
-  mitte <--> sued
-```
+<p align="center">
+  <img src="assets/ueberblick.svg" width="760" alt="Drei Olympiastützpunkte mit je eigener Web-App, eigener Datenbank und optionalen Dashboards tauschen direkt nur freigegebene Daten aus – signiert und beidseitig protokolliert, ohne zentralen Server">
+</p>
 
 | Katalog: Daten finden – bei uns und bei Partnern | Freigabe: genau festlegen, wer was wofür bekommt |
 |---|---|

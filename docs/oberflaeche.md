@@ -49,7 +49,8 @@ schmalen darunter. Alle Seiten stehen mittig auf dem Blatt und sind gleich breit
 ![Startseite mit aufgeklappter Seitenleiste](screenshots/20-seitenleiste-aufgeklappt.png)
 
 Links steht eine schmale **Symbolleiste** auf grauem Grund; der Inhalt liegt auf einem hellen Blatt.
-Fährt man mit der Maus über ein Symbol (oder springt mit der Tabulatortaste darauf), erscheint sein Name.
+Fährt man mit der Maus über ein Symbol (oder springt mit der Tabulatortaste darauf), erscheint sein Name;
+Escape blendet ihn wieder aus.
 Ein Klick auf das Logo oben klappt die Leiste auf und zeigt alle Namen in drei Gruppen: *Daten finden*
 (Meine Daten, Katalog), *Daten pflegen* (Athleten, Quellen, Datensätze, Datenprodukte, Freigaben) und
 *Verwaltung* (Partner, Audit, Benutzer, System); unten stehen *Hilfe*, *Konto* und *Abmelden*. Auf

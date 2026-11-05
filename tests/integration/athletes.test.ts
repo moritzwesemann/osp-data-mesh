@@ -176,7 +176,23 @@ describe('Stammdaten', () => {
     );
     expect(byIds.json.items.map((x) => x.lastName)).toEqual(['Beispiel', 'Zander']);
     const [idsAudit] = await auditEntries(node, 'athlete.list');
-    expect(idsAudit!.details).toEqual({ count: 2, total: 2, page: 1, filtered: true, ids });
+    expect(idsAudit!.details).toEqual({
+      count: 2,
+      total: 2,
+      page: 1,
+      filtered: true,
+      ids: byIds.json.items.map((x) => x.id),
+    });
+    // Audit nennt nur, was geliefert wurde: unbekannte IDs und Seitengröße zählen nicht mit
+    const unknown = '00000000-0000-4000-8000-000000000000';
+    const onePage = await node.request<{ items: Athlete[]; total: number }>(
+      'GET',
+      `/api/v1/athletes?ids=${[...ids, unknown].join(',')}&pageSize=1&sport=${encodeURIComponent(all.json.items[0]!.sport)}`,
+      { as: steward },
+    );
+    expect(onePage.json.items.map((x) => x.lastName)).toEqual(['Beispiel']);
+    const [pageAudit] = await auditEntries(node, 'athlete.list');
+    expect(pageAudit!.details).toMatchObject({ count: 1, ids: [all.json.items[0]!.id] });
     const badIds = await node.request('GET', '/api/v1/athletes?ids=keine-uuid', { as: steward });
     expect(badIds.status).toBe(400);
 

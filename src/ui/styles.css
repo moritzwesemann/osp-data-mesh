@@ -458,13 +458,14 @@ code,
   .rail-open .rail {
     width: var(--rail-w-open);
   }
+  /* beginnt direkt am Rand der Einträge (unsichtbarer Abstand links), damit die Maus den Namen erreicht */
   .rail-tip {
     display: block;
     position: fixed;
-    left: calc(var(--rail-w) - 2px);
+    left: calc(var(--rail-w) - 10px);
     z-index: 50;
+    padding-left: 8px;
     transform: translateY(-50%);
-    pointer-events: none;
   }
   .rail-tip::after {
     content: attr(data-label);

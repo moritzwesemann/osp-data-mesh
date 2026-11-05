@@ -84,8 +84,8 @@ export const athletesModule: Module = {
             total: Number(total),
             page: query.page,
             filtered: terms.length > 0 || ids !== null,
-            // welche Personen angezeigt wurden, wenn gezielt nach IDs gefragt wurde
-            ...(ids ? { ids } : {}),
+            // bei gezielter Abfrage nach IDs: welche Personen tatsächlich geliefert (angezeigt) wurden
+            ...(ids ? { ids: rows.map((r) => r.id) } : {}),
           },
           ip,
           requestId,

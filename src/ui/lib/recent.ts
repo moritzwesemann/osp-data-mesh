@@ -22,11 +22,10 @@ export const RECENT_KINDS = [
 ] as const;
 export type RecentKind = (typeof RECENT_KINDS)[number];
 
+/** Ein Eintrag: nur Art und ID, kein Zeitpunkt (die Reihenfolge genügt: neueste zuerst) */
 export interface RecentEntry {
   kind: RecentKind;
   id: string;
-  /** Zeitpunkt des Öffnens (ms seit 1970) */
-  at: number;
 }
 
 /** Route, mit der die Startseite die Bezeichnung lädt; ohne dieses Recht erscheint der Eintrag nicht. */
@@ -54,9 +53,7 @@ function isEntry(v: unknown): v is RecentEntry {
     typeof e.kind === 'string' &&
     (RECENT_KINDS as readonly string[]).includes(e.kind) &&
     typeof e.id === 'string' &&
-    UUID.test(e.id) &&
-    typeof e.at === 'number' &&
-    Number.isFinite(e.at)
+    UUID.test(e.id)
   );
 }
 
@@ -66,7 +63,13 @@ export function readRecent(nodeId: string, userId: string): RecentEntry[] {
     const raw = localStorage.getItem(storageKey(nodeId, userId));
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isEntry).slice(0, MAX_ENTRIES) : [];
+    // nur Art und ID übernehmen (ältere Einträge enthielten zusätzlich einen Zeitpunkt)
+    return Array.isArray(parsed)
+      ? parsed
+          .filter(isEntry)
+          .slice(0, MAX_ENTRIES)
+          .map((e) => ({ kind: e.kind, id: e.id }))
+      : [];
   } catch {
     return [];
   }
@@ -83,7 +86,7 @@ function writeRecent(nodeId: string, userId: string, entries: RecentEntry[]) {
 export function rememberVisit(nodeId: string, userId: string, kind: RecentKind, id: string) {
   if (!UUID.test(id)) return;
   const rest = readRecent(nodeId, userId).filter((e) => !(e.kind === kind && e.id === id));
-  writeRecent(nodeId, userId, [{ kind, id, at: Date.now() }, ...rest]);
+  writeRecent(nodeId, userId, [{ kind, id }, ...rest]);
 }
 
 /** Schlüssel eines Eintrags („athlete:<id>“), z. B. für forgetVisits */

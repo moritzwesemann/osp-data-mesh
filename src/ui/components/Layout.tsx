@@ -138,6 +138,21 @@ export function AppShell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [navOpen, overlay]);
 
+  // Escape blendet den Namen neben der Leiste aus, ohne den Fokus zu verschieben
+  const tipShown = tip !== null;
+  useEffect(() => {
+    if (!tipShown) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTip(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [tipShown]);
+
+  /** true, wenn die Maus zum Namen neben der Leiste bzw. in die Leiste wechselt (Name bleibt stehen) */
+  const movesWithin = (to: EventTarget | null, selector: string) =>
+    to instanceof Element && to.closest(selector) !== null;
+
   const toggleRail = () => {
     setTip(null);
     if (wide) {
@@ -205,9 +220,17 @@ export function AppShell() {
         className="rail"
         aria-label={t('nav.mainNav')}
         onMouseOver={(e) => showTip(e.target, false)}
-        onMouseLeave={() => setTip(null)}
+        onMouseLeave={(e) => {
+          if (!movesWithin(e.relatedTarget, '.rail-tip')) setTip(null);
+        }}
         onFocus={(e) => showTip(e.target, true)}
-        onBlur={() => setTip(null)}
+        onBlur={(e) => {
+          setTip(null);
+          // Fokus verlässt die über dem Inhalt liegende Leiste (z. B. Tab hinter „Abmelden“): Leiste schließen,
+          // damit der Fokus nicht unter ihr verschwindet
+          const to = e.relatedTarget;
+          if (overlay && to instanceof Node && !e.currentTarget.contains(to)) setRailOverlay(false);
+        }}
         onScroll={() => setTip(null)}
       >
         <button
@@ -286,7 +309,18 @@ export function AppShell() {
           onClick={() => setRailOverlay(false)}
         />
       )}
-      {tip && <div className="rail-tip" aria-hidden="true" data-label={tip.label} style={{ top: tip.top }} />}
+      {tip && (
+        // Name des Eintrags (Text über CSS, damit er nicht doppelt im Dokument steht); mit der Maus erreichbar
+        <div
+          className="rail-tip"
+          aria-hidden="true"
+          data-label={tip.label}
+          style={{ top: tip.top }}
+          onMouseLeave={(e) => {
+            if (!movesWithin(e.relatedTarget, '#app-nav')) setTip(null);
+          }}
+        />
+      )}
 
       <main id="main" className="sheet" tabIndex={-1}>
         <Suspense fallback={<Loading />}>

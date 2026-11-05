@@ -8,7 +8,14 @@ import { PageHeader } from '../components/PageHeader.tsx';
 import { QueryView, Skeleton } from '../components/QueryState.tsx';
 import { type MessageKey, useI18n } from '../i18n/index.tsx';
 import { useApiQuery } from '../lib/query.ts';
-import { forgetVisits, RECENT_SOURCE, type RecentEntry, readRecent, recentKey } from '../lib/recent.ts';
+import {
+  confirmedGone,
+  forgetVisits,
+  RECENT_SOURCE,
+  type RecentEntry,
+  type RecentListState,
+  readRecent,
+} from '../lib/recent.ts';
 import { useSession } from '../lib/session.tsx';
 import { cx } from '../lib/util.ts';
 
@@ -270,6 +277,7 @@ function Todos() {
 function Recent() {
   const { t } = useI18n();
   const s = useSession();
+  const [since] = useState(() => Date.now());
   const [entries] = useState(() =>
     readRecent(s.node.nodeId, s.user.id)
       .filter((e) => s.can(RECENT_SOURCE[e.kind]))
@@ -415,11 +423,31 @@ function Recent() {
   };
 
   const resolved = loaded ? entries.map((e) => ({ e, node: tile(e) })) : [];
-  // nicht mehr vorhandene Einträge vergessen (beim nächsten Besuch rücken andere nach)
-  const gone = resolved
-    .filter((x) => !x.node)
-    .map((x) => recentKey(x.e))
-    .join(' ');
+  // nicht mehr vorhandene Einträge vergessen (beim nächsten Besuch rücken andere nach) – nur, wenn eine nach
+  // dem Öffnen der Startseite frisch geladene Liste das bestätigt, nie aufgrund zwischengespeicherter Daten
+  const state = <T,>(
+    q: { data?: T; isSuccess: boolean; isFetching: boolean; dataUpdatedAt: number },
+    ids: (d: T) => string[],
+  ): RecentListState | undefined =>
+    q.isSuccess && q.data !== undefined
+      ? { ids: new Set(ids(q.data)), fetchedAt: q.dataUpdatedAt, fetching: q.isFetching }
+      : undefined;
+  const byId = (d: { items: { id: string }[] }) => d.items.map((x) => x.id);
+  const gone = loaded
+    ? confirmedGone(
+        entries,
+        {
+          athlete: state(athletes, byId),
+          dataset: state(datasets, byId),
+          product: state(products, byId),
+          connector: state(connectors, byId),
+          release: state(releases, byId),
+          received: state(received, byId),
+          myData: state(access, (d) => d.items.map((x) => x.releaseId)),
+        },
+        since,
+      ).join(' ')
+    : '';
   const nodeId = s.node.nodeId;
   const userId = s.user.id;
   useEffect(() => {

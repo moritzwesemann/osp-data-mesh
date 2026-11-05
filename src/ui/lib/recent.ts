@@ -105,6 +105,34 @@ export function forgetVisits(nodeId: string, userId: string, keys: readonly stri
   );
 }
 
+/** Stand einer Liste, mit der die Startseite die Einträge einer Art auflöst */
+export interface RecentListState {
+  /** IDs, die die Liste enthält */
+  ids: ReadonlySet<string>;
+  /** Zeitpunkt des letzten erfolgreichen Ladens (ms seit 1970) */
+  fetchedAt: number;
+  /** wird gerade neu geladen */
+  fetching: boolean;
+}
+
+/**
+ * Einträge, die es sicher nicht mehr gibt: Ihre Liste wurde nach `since` (Öffnen der Startseite) frisch
+ * geladen und enthält sie nicht. Zwischengespeicherte Listen zählen nicht – sie könnten veraltet sein
+ * (z. B. ein inzwischen angelegtes Datenprodukt fehlt noch).
+ */
+export function confirmedGone(
+  entries: readonly RecentEntry[],
+  lists: Partial<Record<RecentKind, RecentListState>>,
+  since: number,
+): string[] {
+  return entries
+    .filter((e) => {
+      const list = lists[e.kind];
+      return list !== undefined && !list.fetching && list.fetchedAt >= since && !list.ids.has(e.id);
+    })
+    .map(recentKey);
+}
+
 /** Auf Detailseiten: merkt sich den Eintrag, sobald er geladen ist (ready). */
 export function useRememberVisit(kind: RecentKind, id: string | undefined, ready: boolean) {
   const s = useSession();

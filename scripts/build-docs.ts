@@ -1,5 +1,5 @@
 /**
- * Deutsche HTML-Dokumentation: rendert docs/*.md und docs/adr/*.md mit marked zu einer statischen
+ * Deutsche HTML-Dokumentation: rendert docs/*.md, docs/adr/*.md und docs/konzepte/*.md mit marked zu einer statischen
  * Website unter dist/docs/ (vom Server unter /hilfe/ ausgeliefert).
  *
  *   bun run build:docs        (= bun scripts/build-docs.ts)
@@ -7,6 +7,7 @@
  * - gemeinsames Layout mit Navigationsleiste (feste Reihenfolge der Abschnitte), deutsche Bedienelemente
  * - responsives, schlichtes CSS ohne externe Ressourcen, ohne JavaScript
  * - relative Links *.md → *.html, Überschriften erhalten Anker-IDs
+ * - Konzepte zum Angebot (docs/konzepte/*.md) als eigener Navigationsabschnitt
  * - erzeugte Seiten: Startseite (docs/index.md + Seitenverzeichnis), Verzeichnis der ADRs
  * - Bilder aus docs/ (u. a. docs/screenshots/*.png für die Seite „Oberfläche“) werden mit gleichem
  *   relativem Pfad nach dist/docs/ kopiert
@@ -47,6 +48,19 @@ const SECTIONS: { title: string; pages: string[] }[] = [
   },
   { title: 'Schnittstellen', pages: ['api', 'bi'] },
   { title: 'Projekt und Übergabe', pages: ['requirements', 'abnahme', 'lizenzen', 'adr/index'] },
+  {
+    title: 'Konzepte zum Angebot',
+    pages: [
+      'konzepte/index',
+      'konzepte/produktkonzept',
+      'konzepte/sicherheitskonzept',
+      'konzepte/datenschutzkonzept',
+      'konzepte/betriebskonzept',
+      'konzepte/rollen-und-freigabekonzept',
+      'konzepte/mitwirkung',
+      'konzepte/annahmen',
+    ],
+  },
 ];
 
 interface Page {
@@ -79,6 +93,7 @@ function readPages(): Page[] {
   };
   add(SRC, '');
   add(join(SRC, 'adr'), 'adr/');
+  add(join(SRC, 'konzepte'), 'konzepte/');
   return pages;
 }
 

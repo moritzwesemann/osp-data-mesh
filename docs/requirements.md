@@ -88,11 +88,11 @@ Vorabnahme-Durchlauf“ von [Abnahme](abnahme.md).
 | U3 | API-Dokumentation | `/api/v1/openapi.json` (aus dem Vertrag erzeugt), [API](api.md) | getestet (`contract.test.ts`) |
 | U4 | Deployment-Konfiguration | `deploy/` (Compose, Caddy, Superset, systemd), `deploy/verify-deployment.sh` | getestet (Docker, siehe K2/S1/S5; systemd nicht geprüft) |
 | U5 | Testfälle, automatisierte Tests | `tests/` (Unit und Integration, `bun test`) und `tests/e2e/` (Browser, `bun run test:e2e`) | umgesetzt |
-| U6 | Architekturentscheidungen (ADRs) | `docs/adr/` (12 ADRs) | umgesetzt |
+| U6 | Architekturentscheidungen (ADRs) | `docs/adr/` (15 ADRs) | umgesetzt |
 | U7 | Betriebs- und Installationsdokumentation | [Installation](installation.md), [Betrieb](betrieb.md) | umgesetzt, nativ erprobt |
 | U8 | Drittkomponenten und Lizenzen | [Lizenzen](lizenzen.md) | umgesetzt |
-| U9 | SBOM CycloneDX (BSI TR-03183-2) | `sbom/osp-data-mesh.cdx.json` (Quellstand), Build-SBOM der Oberfläche, `sbom/osp-data-mesh.image.cdx.json` (Container), Signatur (`scripts/sbom-sign.ts`), Angaben in `sbom/sbom.config.json` (Projekt als Hersteller, Repository als Kontakt) | technisch vollständig (Schema- und TR-Selbstprüfung bestanden, sbomqs 9,9/10, `sbom.test.ts`); offen: Signaturschlüssel des Projekts, Lizenzangaben der Debian-Pakete im Container-SBOM – teilweise |
-| U10 | Deutschsprachige HTML-Webdokumentation | `bun run build:docs` → `/hilfe/` (31 Seiten) | umgesetzt |
+| U9 | SBOM CycloneDX (BSI TR-03183-2) | `sbom/osp-data-mesh.cdx.json` (Quellstand), Build-SBOM der Oberfläche, `sbom/osp-data-mesh.image.cdx.json` (Container, `bun run sbom -- image`), Signatur (`scripts/sbom-sign.ts`, Projektschlüssel `sbom/signing-key.pub.pem`, Fingerabdruck `sha256:dc51298d…bad9703`), Angaben in `sbom/sbom.config.json` (Projekt als Hersteller, Repository als Kontakt) | getestet: Quell- und Abbild-SBOM signiert und mit `verify` und `cdx-verify` geprüft, Schema (`cdx-validate --strict`) und TR-Selbstprüfung der Quell-SBOM bestanden, sbomqs 9,9/10, alle 152 Debian-Pakete der Abbild-SBOM mit deklarierter Lizenz, Bun mit Version; `sbom.test.ts`, `sbom-image.test.ts`. Bleibend: Lizenzen im Abbild nur deklariert (teils Debian-eigene Namen als `LicenseRef-Debian-…`), Dateien ohne Paketzuordnung ohne Lizenz, privater Schlüssel als Datei beim Maintainer ([Sicherheit, Offen](sicherheit.md#offen-entscheidung-des-eigentümers-bzw-bewusst-nicht-umgesetzt)) |
+| U10 | Deutschsprachige HTML-Webdokumentation | `bun run build:docs` → `/hilfe/` (42 Seiten, davon 8 [Konzepte zum Angebot](konzepte/index.md)) | umgesetzt |
 | U11 | Open-Source-Lizenz gemäß openCode | `LICENSE` (EUPL-1.2, [ADR 0012](adr/0012-lizenz-eupl.md)), `CONTRIBUTING.md`, `SECURITY.md` | umgesetzt |
 | – | Schulungen, Pflege, Leistungen nach Aufwand | nicht Teil der Software | offen (außerhalb des Umfangs) |
 

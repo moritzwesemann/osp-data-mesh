@@ -43,8 +43,8 @@ Mehr Bilder und ein Rundgang: [docs/oberflaeche.md](docs/oberflaeche.md).
 
 ## Stand: Was umgesetzt ist
 
-Von den 52 Anforderungen der Ausschreibung sind **38 umgesetzt und durch Tests belegt**, **13 umgesetzt**
-(Dokumentation, Prozesse, Lizenz – ohne eigenen automatisierten Test) und **1 teilweise**. Alle vier
+Von den 52 Anforderungen der Ausschreibung sind **39 umgesetzt und durch Tests belegt** und **13 umgesetzt**
+(Dokumentation, Prozesse, Lizenz – ohne eigenen automatisierten Test). Alle vier
 Abnahmekriterien sind im Entwicklungsumfeld erfüllt. Einzelnachweise je Anforderung:
 [docs/requirements.md](docs/requirements.md).
 
@@ -75,7 +75,7 @@ Docker-Installation (TLS, Netztrennung, BI-Zugang, Superset). Dazu mehrere unabh
 - **Betriebsumgebung:** Server mit Intel/AMD-Prozessor, öffentliche Domain mit automatischem Zertifikat,
   systemd-Dienst.
 - **Vor dem Echtbetrieb:** externer Penetrationstest, rechtliche Prüfung des Datenschutzkonzepts,
-  Zwei-Faktor-Anmeldung, Signaturschlüssel des Projekts für SBOM und Releases.
+  Zwei-Faktor-Anmeldung, signierte Releases (Git-Tags, Container-Abbilder; die SBOMs sind bereits signiert).
 - **Nicht Teil der Software:** Schulungen, Hosting und Wartung aus der Ausschreibung.
 
 ## Ausprobieren
@@ -120,6 +120,7 @@ Die Dokumentation ist auf Deutsch und wird vom Knoten unter `/hilfe/` angezeigt.
 | Installation, Betrieb | [docs/installation.md](docs/installation.md), [docs/betrieb.md](docs/betrieb.md) |
 | REST-API | [docs/api.md](docs/api.md) |
 | BI und Superset | [docs/bi.md](docs/bi.md) |
+| Konzepte zum Angebot (Produkt, Sicherheit, Datenschutz, Betrieb, Rollen und Freigaben, Mitwirkung, Annahmen) | [docs/konzepte/](docs/konzepte/index.md) |
 | Anforderungen und Nachweise | [docs/requirements.md](docs/requirements.md) |
 | Abnahme | [docs/abnahme.md](docs/abnahme.md) |
 | Architekturentscheidungen | [docs/adr/](docs/adr/) |
@@ -147,8 +148,7 @@ Ed25519-signed messages and pseudonyms; there is no central data store. Imports 
 (incl. OAuth2) are validated with a preview; all access is recorded in a hash-chained audit log anchored at
 partner nodes; BI via Apache Superset or a read-only database role and REST (CSV/JSON/XML).
 
-Status: 38 of 52 tender requirements implemented and tested, 13 implemented without a dedicated test,
-1 partial; 847 automated tests, 12 browser flows, a three-node demo and a verified Docker deployment. Open:
+Status: 39 of 52 tender requirements implemented and tested, 13 implemented without a dedicated test; 847 automated tests, 12 browser flows, a three-node demo and a verified Docker deployment. Open:
 pilot with real centres, vendor-specific connectors, penetration test, legal review. Independent project,
 not commissioned by the federation; all people in the sample data are fictitious; built with AI
 assistance. Quick start: `bun install && bun run build && bun run demo -- --keep-running`. Documentation is

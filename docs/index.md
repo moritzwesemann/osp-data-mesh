@@ -19,7 +19,7 @@ Zweck. Es gibt keine zentrale Datenhaltung und keine Gesamtsynchronisation.
 | Datenverantwortliche (Data Stewards) | [Freigaberegeln](freigaberegeln.md), [Datenmodell](datenmodell.md), [Rollen und Rechte](rollen.md) |
 | Analyse, BI, Wissenschaft | [BI-Anbindung](bi.md), [REST-API](api.md) |
 | Entwicklung, Weiterentwicklung | [Architektur](architektur.md), [Föderationsprotokoll](protokoll.md), [Architekturentscheidungen](adr/index.md) |
-| Vergabestelle, Abnahme | [Anforderungen und Nachverfolgbarkeit](requirements.md), [Abnahme](abnahme.md), [Lizenzen](lizenzen.md) |
+| Vergabestelle, Abnahme | [Konzepte zum Angebot](konzepte/index.md) (Produkt, Sicherheit, Datenschutz, Betrieb, Rollen und Freigaben, Mitwirkung, Annahmen), [Anforderungen und Nachverfolgbarkeit](requirements.md), [Abnahme](abnahme.md), [Lizenzen](lizenzen.md) |
 
 ## Bausteine eines Knotens
 

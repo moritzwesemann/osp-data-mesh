@@ -218,6 +218,8 @@ Nicht automatisch erfasst (nicht in `bun.lock`), aber für Betrieb bzw. Containe
 | Apache Superset (optional, Profil „bi“) | BI-Referenz-Dashboards | Apache-2.0 | https://superset.apache.org |
 | psycopg2-binary (optional, im Superset-Abbild) | PostgreSQL-Treiber für Superset | LGPL-3.0-or-later (mit Ausnahmen) | https://www.psycopg.org |
 
-Die Betriebssystempakete des Container-Abbilds beschreibt eine eigene Abbild-SBOM
-(`sbom/osp-data-mesh.image.cdx.json`, Befehl in [Betrieb](betrieb.md)); die gebaute Web-Oberfläche die
-Build-SBOM (`bun run sbom -- build-ui`, siehe [Sicherheitskonzept](sicherheit.md#sbom-und-bsi-tr-03183-2)).
+Die Betriebssystempakete des Container-Abbilds beschreibt eine eigene, signierte Abbild-SBOM
+(`sbom/osp-data-mesh.image.cdx.json`, `bun run sbom -- image <abbild>`, siehe [Betrieb](betrieb.md#updates)),
+mit der vom jeweiligen Debian-Paket erklärten Lizenz aus `/usr/share/doc/<paket>/copyright`; die gebaute
+Web-Oberfläche die Build-SBOM (`bun run sbom -- build-ui`, siehe
+[Sicherheitskonzept](sicherheit.md#sbom-und-bsi-tr-03183-2)).

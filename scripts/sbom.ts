@@ -11,13 +11,17 @@
  *   bun run sbom -- --release           streng: Abbruch bei Platzhaltern, fehlender Signatur oder TR-Lücken
  *   bun run sbom -- build-ui [--out-dir <dir>] [--output <datei>]
  *                                       Build-SBOM der Web-Oberfläche (baut dist/ui bzw. <dir>), siehe sbom-build.ts
+ *   bun run sbom -- image <abbild:tag> [--input <cdxgen.json>] [--output <datei>]
+ *                                       SBOM des Container-Abbilds (cdxgen -t docker + Lizenzen der Debian-Pakete,
+ *                                       Bun-Version, Hersteller/Kontakt) → sbom/osp-data-mesh.image.cdx.json,
+ *                                       siehe sbom-image.ts
  *   bun run sbom -- verify [<datei>] [--public-key <pem>]
  *                                       Signatur prüfen (Standard-Schlüssel: signing.publicKey aus der Konfiguration)
  *   bun run sbom -- keygen <verzeichnis außerhalb des Repositorys>
  *                                       Ed25519-Schlüsselpaar für die Signatur erzeugen
  *
- * Hersteller, Lieferant, SBOM-Ersteller und Sicherheitskontakt stehen in sbom/sbom.config.json
- * (Platzhalter, bis der Eigentümer entscheidet). Abbildung der TR-Felder: docs/sicherheit.md, Abschnitt SBOM.
+ * Hersteller, Lieferant, SBOM-Ersteller, Sicherheitskontakt und der öffentliche Signaturschlüssel stehen in
+ * sbom/sbom.config.json. Abbildung der TR-Felder: docs/sicherheit.md, Abschnitt SBOM.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -327,9 +331,10 @@ export function describeNpmComponent(comp: CdxComponent, c: Component, gaps: Set
     setProperty(comp, 'osp:platform-specific', c.meta.installed ? 'installed' : 'not-installed');
 }
 
-function bunVersionFromDockerfile(): string {
+/** Bun-Version aus deploy/Dockerfile (ARG BUN_VERSION); ohne Treffer die laufende Bun-Version. */
+export function bunVersionFromDockerfile(dockerfile = join(ROOT, 'deploy', 'Dockerfile')): string {
   try {
-    const df = readFileSync(join(ROOT, 'deploy', 'Dockerfile'), 'utf8');
+    const df = readFileSync(dockerfile, 'utf8');
     const m = df.match(/ARG BUN_VERSION=([0-9][0-9A-Za-z.+-]*)/);
     if (m?.[1]) return m[1];
   } catch {
@@ -570,12 +575,11 @@ export function applyMetadata(
   setProperty(md, 'osp:sbom-status', opts.status);
 }
 
-/** Sicherheitskontakt und Lizenz der Hauptkomponente. */
-export function describePrimary(comp: CdxComponent, cfg: SbomConfig, license: string) {
+/** Hersteller, Lieferant, Sicherheitskontakt und Quellcode-Verweise einer Komponente des Projekts. */
+export function describeProjectComponent(comp: CdxComponent, cfg: SbomConfig) {
   const supplier = cfg.supplier ?? cfg.manufacturer;
   comp.manufacturer = orgEntity(cfg.manufacturer);
   comp.supplier = orgEntity(supplier);
-  comp.licenses = licenseChoices(license, true);
   const sc = cfg.securityContact;
   if (sc.email) addRef(comp, { type: 'security-contact', url: `mailto:${sc.email}` });
   else if (sc.url) addRef(comp, { type: 'security-contact', url: sc.url });
@@ -584,6 +588,12 @@ export function describePrimary(comp: CdxComponent, cfg: SbomConfig, license: st
     addRef(comp, { type: 'vcs', url: cfg.sourceCodeUrl });
     addRef(comp, { type: 'source-distribution', url: cfg.sourceCodeUrl });
   }
+}
+
+/** Sicherheitskontakt und Lizenz der Hauptkomponente. */
+export function describePrimary(comp: CdxComponent, cfg: SbomConfig, license: string) {
+  describeProjectComponent(comp, cfg);
+  comp.licenses = licenseChoices(license, true);
   setProperty(comp, 'osp:tr03183:level', 'logical');
 }
 
@@ -822,8 +832,17 @@ export function trustedPublicKey(cfg: SbomConfig, args: string[]): { pem: string
   return { pem: readFileSync(abs, 'utf8'), path: abs };
 }
 
-/** Signiert (falls Schlüssel angegeben), prüft gegen den veröffentlichten Schlüssel und schreibt die Datei. */
-export function signAndWrite(bom: Bom, file: string, cfg: SbomConfig, args: string[]): boolean {
+/**
+ * Signiert (falls Schlüssel angegeben), prüft gegen den veröffentlichten Schlüssel und schreibt die Datei
+ * (`compact`: ohne Einrückung, für große SBOMs wie die des Container-Abbilds).
+ */
+export function signAndWrite(
+  bom: Bom,
+  file: string,
+  cfg: SbomConfig,
+  args: string[],
+  opts: { compact?: boolean } = {},
+): boolean {
   const key = resolveSigningKey(args);
   let out: Bom = bom;
   if (key) {
@@ -835,7 +854,7 @@ export function signAndWrite(bom: Bom, file: string, cfg: SbomConfig, args: stri
       `Signiert (JSF ${check.algorithm}, Schlüssel sha256:${check.keyFingerprint})${trusted ? ', geprüft gegen den veröffentlichten Schlüssel' : ''}`,
     );
   }
-  writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`);
+  writeFileSync(file, `${JSON.stringify(out, null, opts.compact ? undefined : 2)}\n`);
   return !!key;
 }
 
@@ -899,6 +918,10 @@ async function main(args: string[]) {
   if (args[0] === 'build-ui') {
     const { buildUiSbom } = await import('./sbom-build.ts');
     return buildUiSbom(args.slice(1));
+  }
+  if (args[0] === 'image') {
+    const { imageSbom } = await import('./sbom-image.ts');
+    return imageSbom(args.slice(1));
   }
   const release = args.includes('--release');
   const cfg = loadConfig();

@@ -28,6 +28,6 @@
   "sourceCodeUrl": "https://github.com/moritzwesemann/osp-data-mesh",
   "signing": {
     "$comment": "Pfad (relativ zum Repository) des veroeffentlichten oeffentlichen Signaturschluessels (PEM), z. B. sbom/signing-key.pub.pem; null = noch keiner festgelegt. Der private Schluessel gehoert NIE ins Repository.",
-    "publicKey": null
+    "publicKey": "sbom/signing-key.pub.pem"
   }
 }

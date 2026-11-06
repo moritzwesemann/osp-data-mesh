@@ -85,7 +85,9 @@ describe('SBOM-Signatur (JSF)', () => {
     meta.metadata.timestamp = '2020-01-01T00:00:00Z';
     expect(verifyBom(meta as never).ok).toBe(false);
     const badValue = structuredClone(signed);
-    badValue.signature.value = `${badValue.signature.value.slice(0, -2)}AA`;
+    // immer eine echte Änderung (endet die Signatur zufällig schon auf "AA", sonst kein Unterschied)
+    const v = badValue.signature.value;
+    badValue.signature.value = `${v.slice(0, -2)}${v.endsWith('AA') ? 'BA' : 'AA'}`;
     expect(verifyBom(badValue).ok).toBe(false);
   });
 

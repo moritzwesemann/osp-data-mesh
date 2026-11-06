@@ -604,9 +604,11 @@ Nicht automatisch erfasst (nicht in \`bun.lock\`), aber für Betrieb bzw. Contai
 |---|---|---|---|
 ${EXTERNAL_COMPONENTS.map((e) => `| ${md(e.name)} | ${md(e.use)} | ${md(e.license)} | ${e.source} |`).join('\n')}
 
-Die Betriebssystempakete des Container-Abbilds beschreibt eine eigene Abbild-SBOM
-(\`sbom/osp-data-mesh.image.cdx.json\`, Befehl in [Betrieb](betrieb.md)); die gebaute Web-Oberfläche die
-Build-SBOM (\`bun run sbom -- build-ui\`, siehe [Sicherheitskonzept](sicherheit.md#sbom-und-bsi-tr-03183-2)).
+Die Betriebssystempakete des Container-Abbilds beschreibt eine eigene, signierte Abbild-SBOM
+(\`sbom/osp-data-mesh.image.cdx.json\`, \`bun run sbom -- image <abbild>\`, siehe [Betrieb](betrieb.md#updates)),
+mit der vom jeweiligen Debian-Paket erklärten Lizenz aus \`/usr/share/doc/<paket>/copyright\`; die gebaute
+Web-Oberfläche die Build-SBOM (\`bun run sbom -- build-ui\`, siehe
+[Sicherheitskonzept](sicherheit.md#sbom-und-bsi-tr-03183-2)).
 `;
 }
 

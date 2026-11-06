@@ -239,7 +239,7 @@ Rechte werden nach jeder Migration und Wiederherstellung aus `migrations/grants.
 | Sicherungsschlüssel | wie oben | wie oben, getrennt von Sicherungen | neuer Schlüssel für neue Sicherungen; alter bis Ablauf der alten Sicherungen |
 | Ed25519-Knotenschlüssel | automatisch beim ersten Start; neu bei jedem Wechsel | Datenbank, verschlüsselt; der bisherige nur während der Übergangszeit (verschlüsselt), danach gelöscht | *Partner › Schlüssel wechseln* bzw. `rotate-node-key --routine` (Partner werden signiert benachrichtigt), bei Verdacht auf Kompromittierung `--compromised` ohne Mitteilung ([Betrieb](betrieb.md#knotenschlüssel-ed25519), [ADR 0013](adr/0013-knotenschluessel-rotation.md)) |
 | Pseudonym-Schlüssel | automatisch beim ersten Start | Datenbank, verschlüsselt | nicht vorgesehen (Pseudonyme bleiben je Freigabe stabil) |
-| Datenbankpasswörter | `openssl rand -hex 24` | `.env.owner` / `deploy/.env` + Passwortverwaltung | `bootstrap.sql` erneut ausführen |
+| Datenbankpasswörter | `openssl rand -hex 24` | `.env.owner` / `deploy/.env` + Passwortverwaltung | `db-bootstrap --rotate-passwords` ([Betrieb](betrieb.md#datenbankpasswörter-ändern)) |
 | TLS-Zertifikate | Caddy (ACME oder interne CA) | Caddy-Datenverzeichnis | automatisch |
 
 Organisatorisch: Zugriff auf Master- und Sicherungsschlüssel nur für benannte Personen (mindestens zwei),
@@ -395,7 +395,10 @@ Datenfelder in Abschnitt 8.2 auf CycloneDX ab. Diese Abbildung ist umgesetzt.
 |---|---|---|---|
 | **Quell-SBOM** (alle npm-Pakete inkl. Build-Werkzeuge, Laufzeit Bun, PostgreSQL) | `pre-build` (Source SBOM) | `sbom/osp-data-mesh.cdx.json` (im Repository) | `bun run sbom` |
 | **Build-SBOM der Web-Oberfläche** (ausgelieferte Dateien unter `dist/ui` mit SHA-512 und den darin gebündelten Paketen) | `build` (Build SBOM) | `dist/sbom/osp-data-mesh-ui.build.cdx.json` (je Build, nicht im Repository) | `bun run sbom -- build-ui` (baut `dist/ui` neu) |
-| **Abbild-SBOM** (Betriebssystempakete des Container-Abbilds, Bun-Binärdatei) | nach dem Bau (Analysed SBOM) | `sbom/osp-data-mesh.image.cdx.json` | Befehl siehe [Betrieb](betrieb.md) |
+| **Abbild-SBOM** (Betriebssystempakete des Container-Abbilds, Bun-Binärdatei, Dateien) | `post-build` (Analysed SBOM) | `sbom/osp-data-mesh.image.cdx.json` | `bun run sbom -- image osp-data-mesh:<version>` (Docker nötig, siehe [Betrieb](betrieb.md#updates)) |
+
+Alle drei werden mit dem Signaturschlüssel des Projekts signiert ([Signatur](#signatur)); Quell- und
+Abbild-SBOM im Repository sind signiert.
 
 **Quell-SBOM:** cdxgen (`@cyclonedx/cdxgen@12.9.0`, über `bun x`) liest `bun.lock` und liefert Komponenten,
 Paket-URL (purl), SHA-512 und Abhängigkeitsgraph (ohne Netz bzw. cdxgen: `bun run sbom -- --builtin`, dieselbe
@@ -415,6 +418,36 @@ Laufzeithilfen (Preload-Helfer, Rolldown-Laufzeit) erscheinen als Pakete `vite` 
 `/tmp/sbom/`). Für ein Release die Build-SBOM direkt nach dem Bau des ausgelieferten Artefakts erzeugen;
 das Container-Abbild baut `dist/ui` selbst (gleiche Eingaben ergeben dieselben Dateien, im Container nicht
 geprüft).
+
+**Abbild-SBOM:** `bun run sbom -- image <abbild>` (`scripts/sbom-image.ts`) lässt cdxgen das gebaute Abbild
+analysieren (`cdxgen -t docker`, CycloneDX 1.6: Debian-Pakete, npm-Pakete unter `/app/node_modules`,
+ausführbare Dateien und Bibliotheken, CA-Zertifikate und Schlüssel) und ergänzt, was cdxgen dort nicht liefert.
+Dazu startet es das Abbild einmal ohne Netz (`docker run --network none`, nur lesend) und liest
+`dpkg-query`, `bun --version`, den SHA-512 von `/usr/local/bin/bun` und alle Dateien
+`/usr/share/doc/<paket>/copyright`:
+
+- **Lizenzen der Debian-Pakete** aus den copyright-Dateien im maschinenlesbaren Format
+  ([DEP-5](https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/)): die Lizenzfelder aller
+  `Files`-Absätze, UND-verknüpft und nach SPDX abgebildet (`Expat` → `MIT`, `GPL-2+` →
+  `GPL-2.0-or-later`, `GPL-3+ with Bison exception` → `GPL-3.0-or-later WITH Bison-exception-2.2` usw.).
+  Debian-eigene Namen ohne SPDX-Kennung (z. B. `public-domain`, `BSD-3-clause-Berkeley`) stehen als
+  `LicenseRef-Debian-<Name>` im Ausdruck, die Originalfelder in der Eigenschaft `osp:debian-license`.
+  Kennzeichnung `acknowledgement: declared` (vom Paket erklärt), Herkunft in `osp:license-source`.
+  Quellpakete erhalten die Lizenz ihrer Binärpakete (Zuordnung über `dpkg-query`). Für die vier
+  Quellpakete mit Freitext-Datei (`gcc-14`, `krb5`, `libxcrypt`, `debian-archive-keyring`) ist die Lizenz
+  von Hand gelesen und in `MANUAL_DEBIAN_LICENSES` hinterlegt – zusammen mit der SHA-256-Prüfsumme der
+  Datei; ändert Debian die Datei, wird der Eintrag nicht mehr angewandt und als Lücke gemeldet.
+- **Bun:** Version aus `bun --version` im Abbild (abgeglichen mit `ARG BUN_VERSION` in `deploy/Dockerfile`;
+  eine Abweichung wird gemeldet), `purl` `pkg:generic/bun@<version>`, SHA-512 der Binärdatei, Lizenz,
+  Hersteller und Verweise wie in der Quell-SBOM; Kante von der Hauptkomponente zu Bun im Graphen.
+- **Metadaten** wie bei Quell- und Build-SBOM aus `sbom/sbom.config.json`: SBOM-Ersteller
+  (`metadata.manufacturer`, `metadata.authors`), Lieferant, Hersteller und Sicherheitskontakt der
+  Hauptkomponente (Abbild, Version = Tag), Lebenszyklus `post-build`.
+
+Danach Schema-Prüfung (`cdx-validate --strict`) und Signatur; `--release` bricht ab, wenn die Signatur fehlt,
+ein Debian-Paket ohne Lizenz bleibt oder Bun ohne Version ist. `--input <datei>` reichert eine vorhandene
+cdxgen-Ausgabe an (die Abbild-ID muss zum angegebenen Abbild passen). Tests: `tests/unit/sbom-image.test.ts`
+(DEP-5, SPDX-Abbildung, Anreicherung, Signatur; ohne Docker).
 
 ### Hersteller, Lieferant, SBOM-Ersteller und Sicherheitskontakt
 
@@ -436,8 +469,8 @@ Diese Angaben entscheidet der Eigentümer bzw. Auftraggeber; sie stehen an **ein
 (https://github.com/moritzwesemann/osp-data-mesh; TR-03183-2 erlaubt eine URL, wenn keine E-Mail-Adresse
 besteht), Schwachstellen werden vertraulich über GitHub gemeldet (`SECURITY.md` im Repository (vertrauliche Meldung über https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new)). Werte mit
 `tbd`, `TODO` oder `.invalid` gelten als Platzhalter: Dann warnt `bun run sbom` deutlich, die SBOM trägt
-`osp:sbom-status = ENTWURF …`, und `bun run sbom -- --release` bricht ab. Offen ist nur der
-Signaturschlüssel des Projekts (`signing.publicKey`).
+`osp:sbom-status = ENTWURF …`, und `bun run sbom -- --release` bricht ab. Der Signaturschlüssel des
+Projekts ist festgelegt (`signing.publicKey` = `sbom/signing-key.pub.pem`, siehe [Signatur](#signatur)).
 
 ### Abbildung der Datenfelder (TR-03183-2 v2.1.0, Abschnitte 5.2 und 8.2)
 
@@ -472,7 +505,15 @@ dafür CSAF/VEX, siehe [Schwachstellenmanagement](#schwachstellenmanagement)).
 **Prüfungen** (Ergebnis bei Erstellung am 05.11.2026):
 
 - **Schema:** jede erzeugte SBOM wird mit `cdx-validate --strict` (cdxgen 12.9.0) gegen das
-  CycloneDX-1.6-Schema geprüft – Quell-SBOM, signierte Quell-SBOM und signierte Build-SBOM: gültig.
+  CycloneDX-1.6-Schema geprüft – Quell-SBOM, signierte Quell-SBOM, signierte Build-SBOM und signierte
+  Abbild-SBOM (Abbild `osp-data-mesh:0.1.0`, `sha256:ff831243…29f6`): gültig.
+- **Signatur:** Quell- und Abbild-SBOM im Repository mit dem Projektschlüssel signiert, geprüft mit
+  `bun run sbom -- verify` und `cdx-verify` (cdxgen 12.9.0) gegen `sbom/signing-key.pub.pem`: gültig.
+- **Abbild-SBOM:** alle 152 Debian-Pakete (100 Binär-, 52 Quellpakete) mit deklarierter Lizenz – 140 aus
+  DEP-5-Dateien (davon 57 vollständig mit SPDX-Kennungen), 12 aus von Hand gelesenen Freitext-Dateien;
+  Bun mit Version 1.4.3 und SHA-512; Hersteller, Lieferant, SBOM-Ersteller und Sicherheitskontakt gesetzt.
+  Die TR-Selbstprüfung `checkTr03183` wird auf die Abbild-SBOM **nicht** angewandt (Gründe unter
+  [Offen](#offen-entscheidung-des-eigentümers-bzw-bewusst-nicht-umgesetzt)).
 - **Selbstprüfung der Pflichtfelder:** `checkTr03183` in `scripts/sbom.ts` meldet jede fehlende
   Pflichtangabe (Ausgabe von `bun run sbom`; Tests in `tests/unit/sbom.test.ts`) – Quell- und Build-SBOM: ok.
 - **Unabhängig:** `sbomqs compliance --bsi-v21` (Interlynk sbomqs 2.1.3, Prüfmodus TR-03183-2 v2.1.0):
@@ -493,23 +534,42 @@ sha256:<Fingerabdruck des öffentlichen Schlüssels>`. Kompatibel mit `cdx-sign`
 signiert → `bun run sbom -- verify` gültig; nach Änderung einer Komponentenversion melden beide Werkzeuge
 „ungültig“).
 
+**Signaturschlüssel des Projekts** (seit 05.11.2026):
+
+| | |
+|---|---|
+| Algorithmus | Ed25519 (JSF `Ed25519`) |
+| Öffentlicher Schlüssel | `sbom/signing-key.pub.pem` (in `sbom/sbom.config.json` unter `signing.publicKey`) |
+| Fingerabdruck (SHA-256 über SPKI/DER, = `keyId` der Signatur) | `sha256:dc51298d524644db4df630e71bda57e0e291ac8740c7cbc9d54f7feefbad9703` |
+| Privater Schlüssel | nur auf dem Release-Rechner des Maintainers, außerhalb des Repositorys (`~/.config/osp-data-mesh/sbom-signing/`, Verzeichnis `0700`, Datei `0600`) |
+
+Den Fingerabdruck unabhängig vom Werkzeug nachrechnen:
+`openssl pkey -pubin -in sbom/signing-key.pub.pem -outform DER | shasum -a 256`. Der Fingerabdruck steht
+auch in `SECURITY.md`; weicht der Schlüssel in einer Kopie des Repositorys davon ab, ist er nicht der des
+Projekts.
+
 ```sh
-# einmalig: Schlüsselpaar AUSSERHALB des Repositorys erzeugen (keygen verweigert Pfade im Repository)
-bun run sbom -- keygen ~/osp-sbom-schluessel
-cp ~/osp-sbom-schluessel/sbom-signing.pub.pem sbom/signing-key.pub.pem
+# einmalig (bereits erfolgt): Schlüsselpaar AUSSERHALB des Repositorys erzeugen (keygen verweigert Pfade im Repository)
+bun run sbom -- keygen ~/.config/osp-data-mesh/sbom-signing
+cp ~/.config/osp-data-mesh/sbom-signing/sbom-signing.pub.pem sbom/signing-key.pub.pem
 #   → in sbom/sbom.config.json: "signing": { "publicKey": "sbom/signing-key.pub.pem" }
-#   → Fingerabdruck (Ausgabe von keygen) z. B. in README und Release-Hinweisen veröffentlichen
+#   → Fingerabdruck (Ausgabe von keygen) hier, in SECURITY.md und in den Release-Hinweisen veröffentlichen
 
 # Release: signieren, gegen den veröffentlichten Schlüssel prüfen, Platzhalter/Lücken ausschließen
-OSP_SBOM_SIGNING_KEY=~/osp-sbom-schluessel/sbom-signing.key bun run sbom -- --release
-OSP_SBOM_SIGNING_KEY=~/osp-sbom-schluessel/sbom-signing.key bun run sbom -- build-ui --release
+export OSP_SBOM_SIGNING_KEY=~/.config/osp-data-mesh/sbom-signing/sbom-signing.key
+bun run sbom -- --release
+bun run sbom -- build-ui --release
+bun run sbom -- image osp-data-mesh:<version> --release     # nach docker build, siehe Betrieb
 
 # Empfänger: prüfen (Herkunft und Unversehrtheit mit dem veröffentlichten Schlüssel)
 bun run sbom -- verify sbom/osp-data-mesh.cdx.json --public-key sbom/signing-key.pub.pem
+bun run sbom -- verify sbom/osp-data-mesh.image.cdx.json --public-key sbom/signing-key.pub.pem
 bun x -p @cyclonedx/cdxgen@12.9.0 cdx-verify -i sbom/osp-data-mesh.cdx.json --public-key sbom/signing-key.pub.pem
+bun x -p @cyclonedx/cdxgen@12.9.0 cdx-verify -i sbom/osp-data-mesh.image.cdx.json --public-key sbom/signing-key.pub.pem
 ```
 
-Ohne `--public-key` (und ohne `signing.publicKey`) prüft `verify` nur gegen den eingebetteten Schlüssel:
+Ohne `--public-key` nimmt `verify` den Schlüssel aus `signing.publicKey`; ohne beides prüft es nur gegen den
+eingebetteten Schlüssel:
 Das belegt die Unversehrtheit, nicht die Herkunft – die Ausgabe sagt das und nennt den Fingerabdruck zum
 Vergleich. **Schlüsselverwaltung:** Der private Schlüssel gehört nie ins Repository, sondern in die
 Passwortverwaltung bzw. den Geheimnisspeicher der Release-Umgebung (Datei mit Rechten `0600`). Bei Verlust
@@ -519,22 +579,37 @@ Tests erzeugen ihre Schlüssel zur Laufzeit.
 
 ### Offen (Entscheidung des Eigentümers bzw. bewusst nicht umgesetzt)
 
-1. **Platzhalter** für Hersteller, Lieferant, SBOM-Ersteller, Sicherheitskontakt und `security.txt`-URL
-   sowie das öffentliche Repository (`sourceCodeUrl`) – Eintrag in `sbom/sbom.config.json`, siehe oben.
-2. **Signaturschlüssel**: noch keiner festgelegt; die SBOM im Repository ist deshalb **unsigniert**. Signiert
-   wird im Release-Schritt mit dem Schlüssel des Herstellers (`--release` erzwingt es).
-3. **Originallizenz bei Lizenzausdrücken:** CycloneDX 1.6 erlaubt je Komponente nur *einen* Lizenzausdruck.
+1. **Verwahrung des privaten Signaturschlüssels:** Er liegt als Datei auf dem Rechner des Maintainers und
+   wird dort von Hand benutzt; es gibt keinen automatisierten Release-Prozess, der aus einem
+   Geheimnisspeicher (bzw. HSM) signiert. Eine Sicherungskopie in der Passwortverwaltung anlegen; bei Verlust
+   oder Kompromittierung wie oben beschrieben wechseln.
+2. **Abbild-SBOM gilt nur für ein Abbild:** Sie beschreibt genau das Abbild mit der ID in
+   `metadata.component.purl` (hier `osp-data-mesh:0.1.0` auf linux/arm64). Ein Neubau – auch mit gleichem
+   Dockerfile, aber neueren Debian-Paketen – oder eine andere Architektur ergibt eine andere SBOM, die neu
+   erzeugt und signiert werden muss. Abbilder werden nicht veröffentlicht; Betreiber bauen selbst und
+   erzeugen die Abbild-SBOM dann für ihr Abbild.
+3. **Lizenzen in der Abbild-SBOM nur deklariert:** Die Debian-Pakete tragen die vom Paket erklärte Lizenz
+   (`declared`), keine Distributionslizenz (`concluded`) – die copyright-Datei beschreibt den ganzen
+   Quellbaum, nicht, welche Dateien im Binärpaket landen. 83 Pakete nennen (auch) Debian-eigene
+   Lizenznamen ohne SPDX-Kennung (`LicenseRef-Debian-…`). Die rund 3 700 von cdxgen gefundenen Dateien
+   (`pkg:generic`, ausführbare Dateien und Bibliotheken) und die 20 npm-Pakete tragen keine bzw. nur
+   cdxgens Lizenzangaben und keine TR-Eigenschaften; vollständig nach TR beschrieben sind diese npm-Pakete
+   in der Quell-SBOM. Deshalb wird `checkTr03183` auf die Abbild-SBOM nicht angewandt.
+4. **Originallizenz bei Lizenzausdrücken:** CycloneDX 1.6 erlaubt je Komponente nur *einen* Lizenzausdruck.
    Bei den 11 Paketen mit `MIT OR Apache-2.0` (Biome) steht daher nur die Distributionslizenz in `licenses`,
    die deklarierte zusätzlich in der Eigenschaft `osp:declared-license`. CycloneDX 1.7 hebt die Beschränkung
-   auf (TR erlaubt ≥ 1.6); umstellen, sobald die Empfängerwerkzeuge 1.7 lesen.
-4. **Distributionslizenz = deklarierte Lizenz:** keine eigene juristische Prüfung (CycloneDX versteht
+   auf (TR erlaubt ≥ 1.6); umstellen, sobald die Empfängerwerkzeuge 1.7 lesen (auch die Abbild-SBOM wird
+   deshalb als 1.6 erzeugt).
+5. **Distributionslizenz = deklarierte Lizenz:** keine eigene juristische Prüfung (CycloneDX versteht
    `concluded` als geprüft). Vor einer Veröffentlichung Lizenzprüfung empfohlen.
-5. **Copyright-Vermerke** fehlen bei 60 Komponenten: bei den 52 lokal nicht installierten Plattformpaketen
+6. **Copyright-Vermerke** fehlen bei 60 Komponenten: bei den 52 lokal nicht installierten Plattformpaketen
    (keine Lizenzdatei verfügbar) und bei Paketen ohne Vermerk in ihren Lizenzdateien (z. B. `pg-types`).
-6. **Quellcode-URI** je Paket ist das Repository ohne Versions-Tag (aus den Paketdaten nicht sicher
+   In der Abbild-SBOM werden die Copyright-Zeilen der Debian-Pakete nicht übernommen (nur in den
+   copyright-Dateien im Abbild).
+7. **Quellcode-URI** je Paket ist das Repository ohne Versions-Tag (aus den Paketdaten nicht sicher
    ableitbar); effektive Lizenz und Hash des Quellcodes (beide optional; für Letzteren legt die TR noch kein
    Verfahren fest) sind nicht gesetzt.
-7. Die Eigenschaft „ausführbar“ nicht installierter Plattformpakete ist angenommen (native Binärdateien),
+8. Die Eigenschaft „ausführbar“ nicht installierter Plattformpakete ist angenommen (native Binärdateien),
    nicht geprüft.
 
 ## Offene Punkte vor einem Produktivbetrieb
@@ -545,8 +620,12 @@ Tests erzeugen ihre Schlüssel zur Laufzeit.
    ([ADR 0013](adr/0013-knotenschluessel-rotation.md)). Offen: eine signierte Sperrmitteilung bei
    Kompromittierung (heute telefonische Benachrichtigung) und die Verwahrung in einem HSM bzw.
    Schlüsseldienst statt verschlüsselt in der Datenbank.
-4. Signaturschlüssel des Projekts und signierte Releases (SBOM-Signatur und Container-SBOM sind technisch
-   umgesetzt; Hersteller und Sicherheitskontakt sind gesetzt, siehe `SECURITY.md` im Repository (vertrauliche Meldung über https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new)).
+4. Signierte Releases: Der SBOM-Signaturschlüssel des Projekts ist festgelegt (Fingerabdruck
+   `sha256:dc51298d…bad9703`, siehe [Signatur](#signatur)); Quell- und Abbild-SBOM sind signiert, Hersteller
+   und Sicherheitskontakt gesetzt (`SECURITY.md` im Repository, vertrauliche Meldung über
+   https://github.com/moritzwesemann/osp-data-mesh/security/advisories/new). Offen: Signatur der
+   Release-Artefakte selbst (Git-Tags, ggf. Container-Abbilder), Verwahrung des privaten Schlüssels in
+   einem Geheimnisspeicher statt als Datei (siehe [Offen](#offen-entscheidung-des-eigentümers-bzw-bewusst-nicht-umgesetzt)).
 5. Ratenbegrenzung prozessübergreifend (Anmeldung und Föderation derzeit im Speicher eines Prozesses; nach
    einem Neustart beginnen die Zähler neu).
 6. Festlegung der Aufbewahrungsfristen (insbesondere Audit-Log) und eines Archivierungsverfahrens.

@@ -370,7 +370,8 @@ Wiederherstellung einer alten Sicherung den alten Wert für den `restore`-Aufruf
 
 ### Datenbankpasswörter ändern
 
-`bootstrap.sql` setzt bei jedem Aufruf die Passwörter neu. Nativ (als `osp-mesh` in
+Passwörter bestehender Rollen ändert `db-bootstrap` nur mit `--rotate-passwords` (Schutz davor, dass ein
+versehentlich in denselben Cluster installierter zweiter Knoten die Zugänge übernimmt). Nativ (als `osp-mesh` in
 `/opt/osp-data-mesh`):
 
 1. Neue Werte erzeugen (`openssl rand -hex 24`) und in `.env.owner` eintragen
@@ -381,7 +382,7 @@ Wiederherstellung einer alten Sicherung den alten Wert für den `restore`-Aufruf
    ```sh
    printf 'Passwort des PostgreSQL-Superusers postgres: '; read -rs SU_PW; echo
    export MESH_DB_SUPERUSER_URL="postgres://postgres:$SU_PW@127.0.0.1:5432/postgres"   # anpassen: Adresse/Port des Clusters
-   bun --silent --env-file=.env.owner run cli db-bootstrap
+   bun --silent --env-file=.env.owner run cli db-bootstrap --rotate-passwords
    unset MESH_DB_SUPERUSER_URL SU_PW
    ```
 
@@ -389,8 +390,8 @@ Wiederherstellung einer alten Sicherung den alten Wert für den `restore`-Aufruf
    (`sudo systemctl restart osp-data-mesh`), BI-Werkzeuge auf das neue `mesh_bi`-Passwort umstellen.
 
 Docker: neue Werte in `deploy/.env` eintragen, dann `docker compose exec db psql -U postgres -v
-ON_ERROR_STOP=1 -v db_name=mesh -v owner_password=… -v app_password=… -v bi_password=… -f
-/opt/osp-data-mesh/bootstrap.sql` und `docker compose up -d` (startet die Dienste mit den neuen Werten).
+ON_ERROR_STOP=1 -v db_name=mesh -v owner_password=… -v app_password=… -v bi_password=… -v
+rotate_passwords=true -f /opt/osp-data-mesh/bootstrap.sql` und `docker compose up -d` (startet die Dienste mit den neuen Werten).
 
 ### Knotenschlüssel (Ed25519)
 
@@ -496,24 +497,36 @@ Danach in *System* die Version prüfen. Weitere Updates:
 - **Abhängigkeiten:** siehe [Schwachstellenmanagement](sicherheit.md#schwachstellenmanagement).
 
 **SBOM des Container-Abbilds (Release):** Neben der SBOM des Quellcodes (`bun run sbom`, siehe
-[Sicherheit](sicherheit.md)) beschreibt `sbom/osp-data-mesh.image.cdx.json` das gebaute Abbild des Knotens:
-Debian-Pakete (u. a. PostgreSQL-Client), npm-Pakete in `/app/node_modules`, ausführbare Dateien und
-Bibliotheken, CA-Zertifikate. Nach jedem Bau eines Release-Abbilds neu erzeugen und prüfen (auf dem
-Build-Rechner mit Bun und Docker, im Repository-Verzeichnis; mit Colima zusätzlich
-`DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` setzen):
+[Sicherheit](sicherheit.md#sbom-und-bsi-tr-03183-2)) beschreibt `sbom/osp-data-mesh.image.cdx.json` das
+gebaute Abbild des Knotens: Debian-Pakete (u. a. PostgreSQL-Client) mit ihren Lizenzen, npm-Pakete in
+`/app/node_modules`, Bun mit Version und SHA-512, ausführbare Dateien und Bibliotheken, CA-Zertifikate.
+Nach jedem Bau eines Release-Abbilds neu erzeugen, signieren und prüfen (auf dem Build-Rechner mit Bun und
+Docker, im Repository-Verzeichnis; mit Colima zusätzlich
+`export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`):
 
 ```sh
 docker build -f deploy/Dockerfile -t osp-data-mesh:<version> .
-bun x -p @cyclonedx/cdxgen@12.9.0 cdxgen -t docker osp-data-mesh:<version> \
-  -o sbom/osp-data-mesh.image.cdx.json
-bun x -p @cyclonedx/cdxgen@12.9.0 cdx-validate -i sbom/osp-data-mesh.image.cdx.json \
-  --no-deep --no-include-manual --strict --fail-severity critical
+OSP_SBOM_SIGNING_KEY=~/.config/osp-data-mesh/sbom-signing/sbom-signing.key \
+  bun run sbom -- image osp-data-mesh:<version> --release
+bun run sbom -- verify sbom/osp-data-mesh.image.cdx.json --public-key sbom/signing-key.pub.pem
 ```
 
+`bun run sbom -- image` führt `cdxgen -t docker` (cdxgen 12.9.0, CycloneDX 1.6) aus, liest aus dem Abbild
+(einmal gestartet, ohne Netz) die copyright-Dateien der Debian-Pakete, `dpkg-query` und `bun --version`,
+ergänzt Lizenzen, Bun-Version, Hersteller, Lieferant, SBOM-Ersteller und Sicherheitskontakt
+(`sbom/sbom.config.json`), prüft das Schema (`cdx-validate --strict`) und signiert. `--release` bricht ab
+ohne Signatur, bei Debian-Paketen ohne Lizenz oder bei Bun ohne Version. Ohne Signaturschlüssel (z. B. auf
+einem Betreiberrechner) entsteht eine unsignierte, sonst gleiche SBOM: den Befehl ohne
+`OSP_SBOM_SIGNING_KEY` und ohne `--release` ausführen. Einzelheiten:
+[Sicherheit](sicherheit.md#sbom-und-bsi-tr-03183-2).
+
 Die SBOM gilt nur für genau dieses Abbild (Abbild-ID in `metadata.component.purl`); ein Neubau ändert sie.
-Offene Lücken (Stand der ersten Erzeugung): Bun selbst erscheint ohne Version (`pkg:generic/bun`; die
-Version steht in `deploy/Dockerfile`, `ARG BUN_VERSION`), die Debian-Pakete ohne Lizenzangabe, Hersteller
-und Kontakt für Schwachstellenmeldungen fehlen in den Metadaten, die Datei ist nicht signiert.
+Stand im Repository: Abbild `osp-data-mesh:0.1.0` (linux/arm64, `sha256:ff831243…29f6`), alle 152
+Debian-Pakete mit deklarierter Lizenz, Bun 1.4.3, signiert mit dem Projektschlüssel. Bleibende Grenzen:
+Die Lizenzen der Debian-Pakete sind die vom Paket erklärten (`declared`, nicht juristisch geprüft), 83
+Pakete nennen Debian-eigene Lizenznamen ohne SPDX-Kennung (`LicenseRef-Debian-…`), und die rund 3 700
+einzeln aufgeführten Dateien ohne Paketzuordnung tragen keine Lizenz- und Herstellerangaben (siehe
+[Sicherheit, Offen](sicherheit.md#offen-entscheidung-des-eigentümers-bzw-bewusst-nicht-umgesetzt)).
 
 ## Aufbewahrung und Löschfristen
 
@@ -677,7 +690,8 @@ müssen in der Kette stehen (`select hash from audit_log where seq = …`).
 - Ausgelegt auf das Mengengerüst eines OSP: einige tausend Personen, zehn- bis hunderttausende Messwerte je
   Datensatz. Freigaberegeln werden in TypeScript ausgewertet (siehe [ADR 0004](adr/0004-freigabelogik-reine-funktionen.md)).
 - Uploads bis 20 MB je CSV-Datei, sonstige API-Anfragen bis 1 MB; im Partneraustausch Anfragen bis 2 MB
-  und Antworten bis 50 MB; der Datenabruf (`access.data`) ist auf 100 000 Zeilen je Anfrage begrenzt.
+  und Antworten bis 50 MB; der Datenabruf (`access.data`) lässt sich mit `limit` auf bis zu 100 000 Zeilen je Anfrage
+  begrenzen (ohne `limit` liefert er alle freigegebenen Zeilen).
 - Importe: höchstens 500 Spalten und 100 000 Zeilen (bzw. API-Einträge) je Lauf, API-Antworten insgesamt
   bis 50 MB; darüber schlägt der Lauf mit `too_many_columns` bzw. `too_many_rows` (bzw.
   `invalid_response`) fehl, ohne die Quelle weiter zu lesen.
